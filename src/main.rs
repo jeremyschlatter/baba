@@ -226,13 +226,6 @@ async fn main() {
         if !game_over {
             clear_background(LIGHTGRAY);
 
-//             let scale = ((screen_width() - 20.) / width as f32).min((screen_height() - 20.) / height as f32);
-//             let game_width = screen_width() * scale;
-//             let game_height = screen_height() * scale;
-//             let offset_x = (screen_width() - game_width) / 2. + 10.;
-//             let offset_y = (screen_height() - game_height) / 2. + 10.;
-//             let sq_size = (screen_height() - offset_y * 2.) / height as f32;
-
             let sq_size = ((screen_width() - 20.) / width as f32).min((screen_height() - 20.) / height as f32);
             let game_width = sq_size * width as f32;
             let game_height = sq_size * height as f32;
@@ -293,34 +286,6 @@ async fn main() {
                     }
                 }
             }
-
-            // draw_sprite(offset_x, offset_y, sq_size, sq_size, Entity::Noun(Baba), true);
-
-//             draw_rectangle(
-//                 offset_x + snake.head.0 as f32 * sq_size,
-//                 offset_y + snake.head.1 as f32 * sq_size,
-//                 sq_size,
-//                 sq_size,
-//                 DARKGREEN,
-//             );
-
-//             for (x, y) in &snake.body {
-//                 draw_rectangle(
-//                     offset_x + *x as f32 * sq_size,
-//                     offset_y + *y as f32 * sq_size,
-//                     sq_size,
-//                     sq_size,
-//                     LIME,
-//                 );
-//             }
-
-//             draw_rectangle(
-//                 offset_x + fruit.0 as f32 * sq_size,
-//                 offset_y + fruit.1 as f32 * sq_size,
-//                 sq_size,
-//                 sq_size,
-//                 GOLD,
-//             );
 
 //             draw_text(
 //                 format!("SCORE: {}", score).as_str(),
