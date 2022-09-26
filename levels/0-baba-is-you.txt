@@ -13,14 +13,14 @@
 # v = win (Victory)
 
 
-  biy     fiv
+  biy     fiv  
 
-  WWWWWWWWWWW
-  TTTTTRTTTTT
-  TBTTTRTTTFT
-  TTTTTRTTTTT
-  WWWWWWWWWWW
+  WWWWWWWWWWW  
+  TTTTTRTTTTT  
+  TBTTTRTTTFT  
+  TTTTTRTTTTT  
+  WWWWWWWWWWW  
 
-  wis     rip
+  wis     rip  
 
 

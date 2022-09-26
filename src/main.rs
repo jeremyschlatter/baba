@@ -82,7 +82,7 @@ enum Entity {
 
 fn parse_level(name: &str) -> Vec<Vec<Option<Entity>>> {
     let s = std::fs::read_to_string("./levels/".to_owned() + name).unwrap();
-    let lines: Vec<&str> = s.lines().skip_while(|l| l.starts_with("# ")).collect();
+    let lines: Vec<&str> = s.lines().skip_while(|l| l.starts_with("#")).collect();
     let max = lines.iter().map(|l| l.len()).max().unwrap_or_default();
     lines.iter()
         .map(
@@ -102,9 +102,9 @@ fn parse_level(name: &str) -> Vec<Vec<Option<Entity>>> {
                     _ => None
                 }) {
                     (Some(noun), _) => if c.is_lowercase() {
-                        Some(Entity::Noun(noun))
-                    } else {
                         Some(Entity::Text(Text::Object(noun)))
+                    } else {
+                        Some(Entity::Noun(noun))
                     }
                     (_, Some(adj)) => Some(Entity::Text(Text::Adjective(adj))),
                     _ => match c {
@@ -122,21 +122,9 @@ fn parse_level(name: &str) -> Vec<Vec<Option<Entity>>> {
 async fn main() {
     let level = parse_level("0-baba-is-you.txt");
 
-    let mut snake = Snake {
-        head: (0, 0),
-        dir: (1, 0),
-        body: LinkedList::new(),
-    };
-    let mut fruit: Point = (rand::gen_range(0, SQUARES), rand::gen_range(0, SQUARES));
-    let mut score = 0;
-    let mut speed = 0.3;
-    let mut last_update = get_time();
-    let mut game_over = false;
-
-    let up = (0, -1);
-    let down = (0, 1);
-    let right = (1, 0);
-    let left = (-1, 0);
+    let width = level[0].len();
+    let height = level.len();
+    println!("{}x{}", width, height);
 
     let sprites: Texture2D = load_texture("sprites.png").await.unwrap();
 
@@ -175,7 +163,7 @@ async fn main() {
         }
     };
 
-    let draw_sprite = |x, y, w, h, noun, text| {
+    let draw_sprite = |x, y, w, h, noun| {
         let sprite = sprite_map(noun);
         draw_texture_ex(
             sprites, x, y, WHITE, DrawTextureParams {
@@ -194,56 +182,76 @@ async fn main() {
         );
     };
 
-    return;
-
     loop {
-        if !game_over {
-            if is_key_down(KeyCode::Right) && snake.dir != left {
-                snake.dir = right;
-            } else if is_key_down(KeyCode::Left) && snake.dir != right {
-                snake.dir = left;
-            } else if is_key_down(KeyCode::Up) && snake.dir != down {
-                snake.dir = up;
-            } else if is_key_down(KeyCode::Down) && snake.dir != up {
-                snake.dir = down;
-            }
 
-            if get_time() - last_update > speed {
-                last_update = get_time();
-                snake.body.push_front(snake.head);
-                snake.head = (snake.head.0 + snake.dir.0, snake.head.1 + snake.dir.1);
-                if snake.head == fruit {
-                    fruit = (rand::gen_range(0, SQUARES), rand::gen_range(0, SQUARES));
-                    score += 100;
-                    speed *= 0.9;
-                } else {
-                    snake.body.pop_back();
-                }
-                if snake.head.0 < 0
-                    || snake.head.1 < 0
-                    || snake.head.0 >= SQUARES
-                    || snake.head.1 >= SQUARES
-                {
-                    game_over = true;
-                }
-                for (x, y) in &snake.body {
-                    if *x == snake.head.0 && *y == snake.head.1 {
-                        game_over = true;
-                    }
-                }
-            }
-        }
+//         if !game_over {
+//             if is_key_down(KeyCode::Right) && snake.dir != left {
+//                 snake.dir = right;
+//             } else if is_key_down(KeyCode::Left) && snake.dir != right {
+//                 snake.dir = left;
+//             } else if is_key_down(KeyCode::Up) && snake.dir != down {
+//                 snake.dir = up;
+//             } else if is_key_down(KeyCode::Down) && snake.dir != up {
+//                 snake.dir = down;
+//             }
+
+//             if get_time() - last_update > speed {
+//                 last_update = get_time();
+//                 snake.body.push_front(snake.head);
+//                 snake.head = (snake.head.0 + snake.dir.0, snake.head.1 + snake.dir.1);
+//                 if snake.head == fruit {
+//                     fruit = (rand::gen_range(0, SQUARES), rand::gen_range(0, SQUARES));
+//                     score += 100;
+//                     speed *= 0.9;
+//                 } else {
+//                     snake.body.pop_back();
+//                 }
+//                 if snake.head.0 < 0
+//                     || snake.head.1 < 0
+//                     || snake.head.0 >= SQUARES
+//                     || snake.head.1 >= SQUARES
+//                 {
+//                     game_over = true;
+//                 }
+//                 for (x, y) in &snake.body {
+//                     if *x == snake.head.0 && *y == snake.head.1 {
+//                         game_over = true;
+//                     }
+//                 }
+//             }
+//         }
+
+        let game_over = false;
+
         if !game_over {
             clear_background(LIGHTGRAY);
 
-            let game_size = screen_width().min(screen_height());
-            let offset_x = (screen_width() - game_size) / 2. + 10.;
-            let offset_y = (screen_height() - game_size) / 2. + 10.;
-            let sq_size = (screen_height() - offset_y * 2.) / SQUARES as f32;
+//             let scale = ((screen_width() - 20.) / width as f32).min((screen_height() - 20.) / height as f32);
+//             let game_width = screen_width() * scale;
+//             let game_height = screen_height() * scale;
+//             let offset_x = (screen_width() - game_width) / 2. + 10.;
+//             let offset_y = (screen_height() - game_height) / 2. + 10.;
+//             let sq_size = (screen_height() - offset_y * 2.) / height as f32;
 
-            draw_rectangle(offset_x, offset_y, game_size - 20., game_size - 20., WHITE);
+            let sq_size = ((screen_width() - 20.) / width as f32).min((screen_height() - 20.) / height as f32);
+            let game_width = sq_size * width as f32;
+            let game_height = sq_size * height as f32;
+            let offset_x = (screen_width() - game_width) / 2.;
+            let offset_y = (screen_height() - game_height) / 2.;
 
-            for i in 1..SQUARES {
+//             println!("
+//                 game_width={game_width}
+//                 game_height={game_height}
+//                 offset_x={offset_x}
+//                 offset_y={offset_y}
+//                 sq_size={sq_size}
+//                 width={width}
+//                 height={height}
+//             ");
+
+            draw_rectangle(offset_x, offset_y, game_width, game_height, WHITE);
+
+            for i in 1..height {
                 draw_line(
                     offset_x,
                     offset_y + sq_size * i as f32,
@@ -254,7 +262,7 @@ async fn main() {
                 );
             }
 
-            for i in 1..SQUARES {
+            for i in 1..width {
                 draw_line(
                     offset_x + sq_size * i as f32,
                     offset_y,
@@ -265,68 +273,91 @@ async fn main() {
                 );
             }
 
-            draw_rectangle(
-                offset_x + snake.head.0 as f32 * sq_size,
-                offset_y + snake.head.1 as f32 * sq_size,
-                sq_size,
-                sq_size,
-                DARKGREEN,
-            );
-
-            for (x, y) in &snake.body {
-                draw_rectangle(
-                    offset_x + *x as f32 * sq_size,
-                    offset_y + *y as f32 * sq_size,
-                    sq_size,
-                    sq_size,
-                    LIME,
-                );
+            for row in 0..height {
+                for col in 0..width {
+                    match level[row][col] {
+                        Some(e) => draw_sprite(
+                            offset_x + sq_size * col as f32,
+                            offset_y + sq_size * row as f32,
+                            sq_size,
+                            sq_size,
+                            e,
+                        ),
+                        None => draw_rectangle(
+                            offset_x + sq_size * col as f32,
+                            offset_y + sq_size * row as f32,
+                            sq_size,
+                            sq_size,
+                            BLACK,
+                        ),
+                    }
+                }
             }
 
-            draw_rectangle(
-                offset_x + fruit.0 as f32 * sq_size,
-                offset_y + fruit.1 as f32 * sq_size,
-                sq_size,
-                sq_size,
-                GOLD,
-            );
+            // draw_sprite(offset_x, offset_y, sq_size, sq_size, Entity::Noun(Baba), true);
 
-            draw_text(
-                format!("SCORE: {}", score).as_str(),
-                10.,
-                10.,
-                20.,
-                DARKGRAY,
-            );
+//             draw_rectangle(
+//                 offset_x + snake.head.0 as f32 * sq_size,
+//                 offset_y + snake.head.1 as f32 * sq_size,
+//                 sq_size,
+//                 sq_size,
+//                 DARKGREEN,
+//             );
 
-            draw_sprite(offset_x, offset_y, sq_size, sq_size, Entity::Noun(Baba), true);
+//             for (x, y) in &snake.body {
+//                 draw_rectangle(
+//                     offset_x + *x as f32 * sq_size,
+//                     offset_y + *y as f32 * sq_size,
+//                     sq_size,
+//                     sq_size,
+//                     LIME,
+//                 );
+//             }
+
+//             draw_rectangle(
+//                 offset_x + fruit.0 as f32 * sq_size,
+//                 offset_y + fruit.1 as f32 * sq_size,
+//                 sq_size,
+//                 sq_size,
+//                 GOLD,
+//             );
+
+//             draw_text(
+//                 format!("SCORE: {}", score).as_str(),
+//                 10.,
+//                 10.,
+//                 20.,
+//                 DARKGRAY,
+//             );
 
         } else {
-            clear_background(WHITE);
-            let text = "Game Over. Press [enter] to play again.";
-            let font_size = 30.;
-            let text_size = measure_text(text, None, font_size as _, 1.0);
 
-            draw_text(
-                text,
-                screen_width() / 2. - text_size.width / 2.,
-                screen_height() / 2. - text_size.height / 2.,
-                font_size,
-                DARKGRAY,
-            );
+//             clear_background(WHITE);
+//             let text = "Game Over. Press [enter] to play again.";
+//             let font_size = 30.;
+//             let text_size = measure_text(text, None, font_size as _, 1.0);
 
-            if is_key_down(KeyCode::Enter) {
-                snake = Snake {
-                    head: (0, 0),
-                    dir: (1, 0),
-                    body: LinkedList::new(),
-                };
-                fruit = (rand::gen_range(0, SQUARES), rand::gen_range(0, SQUARES));
-                score = 0;
-                speed = 0.3;
-                last_update = get_time();
-                game_over = false;
-            }
+//             draw_text(
+//                 text,
+//                 screen_width() / 2. - text_size.width / 2.,
+//                 screen_height() / 2. - text_size.height / 2.,
+//                 font_size,
+//                 DARKGRAY,
+//             );
+
+//             if is_key_down(KeyCode::Enter) {
+//                 snake = Snake {
+//                     head: (0, 0),
+//                     dir: (1, 0),
+//                     body: LinkedList::new(),
+//                 };
+//                 fruit = (rand::gen_range(0, SQUARES), rand::gen_range(0, SQUARES));
+//                 score = 0;
+//                 speed = 0.3;
+//                 last_update = get_time();
+//                 game_over = false;
+//             }
+
         }
         next_frame().await
     }
