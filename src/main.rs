@@ -17,8 +17,6 @@ struct Snake {
 
 // next steps:
 //
-// get a bunch of images for the objects
-// render them in the grid
 // render the corresponding text in the grid
 
 
@@ -90,21 +88,35 @@ async fn main() {
         Door => (3, 2),
     };
 
-    let draw_sprite = |x, y, w, h, noun| draw_texture_ex(
-        sprites, x, y, WHITE, DrawTextureParams {
-            dest_size: Some(Vec2{x: w, y: h}),
-            source: Some(Rect{
-                x: (sprite_map(noun).0 * SPRITE_SIZE) as f32,
-                y: (sprite_map(noun).1 * SPRITE_SIZE) as f32,
-                w: SPRITE_SIZE as f32,
-                h: SPRITE_SIZE as f32,
-            }),
-            rotation: 0.0,
-            flip_x: false,
-            flip_y: false,
-            pivot: None,
-        },
-    );
+    let sprite_text_map = |noun| match noun {
+        Baba => (1, 1),
+        Keke => (1, 2),
+        Flag => (1, 3),
+        Rock => (1, 4),
+        Wall => (1, 5),
+
+        Key  => (4, 1),
+        Door => (4, 2),
+    };
+
+    let draw_sprite = |x, y, w, h, noun, text| {
+        let sprite = (if text { sprite_text_map } else { sprite_map })(noun);
+        draw_texture_ex(
+            sprites, x, y, WHITE, DrawTextureParams {
+                dest_size: Some(Vec2{x: w, y: h}),
+                source: Some(Rect{
+                    x: (sprite.0 * SPRITE_SIZE) as f32,
+                    y: (sprite.1 * SPRITE_SIZE) as f32,
+                    w: SPRITE_SIZE as f32,
+                    h: SPRITE_SIZE as f32,
+                }),
+                rotation: 0.0,
+                flip_x: false,
+                flip_y: false,
+                pivot: None,
+            },
+        );
+    };
 
     loop {
         if !game_over {
@@ -209,7 +221,7 @@ async fn main() {
                 DARKGRAY,
             );
 
-            draw_sprite(offset_x, offset_y, sq_size, sq_size, Door);
+            draw_sprite(offset_x, offset_y, sq_size, sq_size, Baba, true);
 
         } else {
             clear_background(WHITE);
