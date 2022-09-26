@@ -2,7 +2,9 @@ use macroquad::prelude::*;
 
 use std::collections::LinkedList;
 
-const SQUARES: i16 = 16;
+const SQUARES: i16 = 10;
+
+const SPRITE_SIZE : i16 = 37;
 
 type Point = (i16, i16);
 
@@ -11,6 +13,51 @@ struct Snake {
     body: LinkedList<Point>,
     dir: Point,
 }
+
+
+// next steps:
+//
+// get a bunch of images for the objects
+// render them in the grid
+// render the corresponding text in the grid
+
+
+
+// objects:
+//
+// baba
+// keke
+// wall
+// door
+// key
+// flag
+//
+// statuses:
+//
+// you
+// win
+// defeat
+// stop
+// shut
+// open
+// push
+//
+// bare words:
+// is
+// and
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Noun {
+    Baba,
+    Keke,
+    Wall,
+    Door,
+    Key,
+    Flag,
+    Rock,
+}
+
+use Noun::*;
 
 #[macroquad::main("Snake")]
 async fn main() {
@@ -29,6 +76,35 @@ async fn main() {
     let down = (0, 1);
     let right = (1, 0);
     let left = (-1, 0);
+
+    let sprites: Texture2D = load_texture("sprites.png").await.unwrap();
+
+    let sprite_map = |noun| match noun {
+        Baba => (0, 1),
+        Keke => (0, 2),
+        Flag => (0, 3),
+        Rock => (0, 4),
+        Wall => (0, 5),
+
+        Key  => (3, 1),
+        Door => (3, 2),
+    };
+
+    let draw_sprite = |x, y, w, h, noun| draw_texture_ex(
+        sprites, x, y, WHITE, DrawTextureParams {
+            dest_size: Some(Vec2{x: w, y: h}),
+            source: Some(Rect{
+                x: (sprite_map(noun).0 * SPRITE_SIZE) as f32,
+                y: (sprite_map(noun).1 * SPRITE_SIZE) as f32,
+                w: SPRITE_SIZE as f32,
+                h: SPRITE_SIZE as f32,
+            }),
+            rotation: 0.0,
+            flip_x: false,
+            flip_y: false,
+            pivot: None,
+        },
+    );
 
     loop {
         if !game_over {
@@ -132,6 +208,9 @@ async fn main() {
                 20.,
                 DARKGRAY,
             );
+
+            draw_sprite(offset_x, offset_y, sq_size, sq_size, Door);
+
         } else {
             clear_background(WHITE);
             let text = "Game Over. Press [enter] to play again.";
