@@ -17,7 +17,7 @@ struct Snake {
 
 // next steps:
 //
-// render the corresponding text in the grid
+// represent the starting level
 
 
 
@@ -44,7 +44,7 @@ struct Snake {
 // is
 // and
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Noun {
     Baba,
     Keke,
@@ -53,12 +53,75 @@ enum Noun {
     Key,
     Flag,
     Rock,
+    Tile,
+}
+use Noun::*;
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+enum Adjective {
+    You,
+    Stop,
+    Push,
+    Win,
+}
+use Adjective::*;
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+enum Text {
+    Is,
+    And,
+    Object(Noun),
+    Adjective(Adjective),
 }
 
-use Noun::*;
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+enum Entity {
+    Noun(Noun),
+    Text(Text),
+}
+
+fn parse_level(name: &str) -> Vec<Vec<Option<Entity>>> {
+    let s = std::fs::read_to_string("./levels/".to_owned() + name).unwrap();
+    let lines: Vec<&str> = s.lines().skip_while(|l| l.starts_with("# ")).collect();
+    let max = lines.iter().map(|l| l.len()).max().unwrap_or_default();
+    lines.iter()
+        .map(
+            |l| l.chars()
+                .map(|c| match (match c.to_string().to_lowercase().as_str() {
+                    "b" => Some(Baba),
+                    "r" => Some(Rock),
+                    "t" => Some(Tile),
+                    "w" => Some(Wall),
+                    "f" => Some(Flag),
+                    _ => None,
+                }, match c {
+                    'y' => Some(You),
+                    's' => Some(Stop),
+                    'p' => Some(Push),
+                    'v' => Some(Win),
+                    _ => None
+                }) {
+                    (Some(noun), _) => if c.is_lowercase() {
+                        Some(Entity::Noun(noun))
+                    } else {
+                        Some(Entity::Text(Text::Object(noun)))
+                    }
+                    (_, Some(adj)) => Some(Entity::Text(Text::Adjective(adj))),
+                    _ => match c {
+                        'i' => Some(Entity::Text(Text::Is)),
+                        _ => None,
+                    }
+                })
+                .chain(std::iter::repeat(None))
+                .take(max)
+                .collect::<Vec<Option<Entity>>>())
+        .collect()
+}
 
 #[macroquad::main("Snake")]
 async fn main() {
+    let level = parse_level("0-baba-is-you.txt");
+
     let mut snake = Snake {
         head: (0, 0),
         dir: (1, 0),
@@ -77,30 +140,43 @@ async fn main() {
 
     let sprites: Texture2D = load_texture("sprites.png").await.unwrap();
 
-    let sprite_map = |noun| match noun {
-        Baba => (0, 1),
-        Keke => (0, 2),
-        Flag => (0, 3),
-        Rock => (0, 4),
-        Wall => (0, 5),
+    let sprite_map = |e| match e {
+        Entity::Noun(noun) => match noun {
+            Baba => (0, 1),
+            Keke => (0, 2),
+            Flag => (0, 3),
+            Rock => (0, 4),
+            Wall => (0, 5),
 
-        Key  => (3, 1),
-        Door => (3, 2),
-    };
+            Key  => (3, 1),
+            Door => (3, 2),
+            Tile => (3, 7),
+        }
+        Entity::Text(text) => match text {
+            Text::Is => (1, 0),
+            Text::And => (2, 0),
+            Text::Object(noun) => match noun {
+                Baba => (1, 1),
+                Keke => (1, 2),
+                Flag => (1, 3),
+                Rock => (1, 4),
+                Wall => (1, 5),
 
-    let sprite_text_map = |noun| match noun {
-        Baba => (1, 1),
-        Keke => (1, 2),
-        Flag => (1, 3),
-        Rock => (1, 4),
-        Wall => (1, 5),
-
-        Key  => (4, 1),
-        Door => (4, 2),
+                Key  => (4, 1),
+                Door => (4, 2),
+                Tile => (4, 7),
+            },
+            Text::Adjective(adj) => match adj {
+                You => (2, 1),
+                Win => (2, 3),
+                Push => (2, 4),
+                Stop => (2, 5),
+            },
+        }
     };
 
     let draw_sprite = |x, y, w, h, noun, text| {
-        let sprite = (if text { sprite_text_map } else { sprite_map })(noun);
+        let sprite = sprite_map(noun);
         draw_texture_ex(
             sprites, x, y, WHITE, DrawTextureParams {
                 dest_size: Some(Vec2{x: w, y: h}),
@@ -117,6 +193,8 @@ async fn main() {
             },
         );
     };
+
+    return;
 
     loop {
         if !game_over {
@@ -221,7 +299,7 @@ async fn main() {
                 DARKGRAY,
             );
 
-            draw_sprite(offset_x, offset_y, sq_size, sq_size, Baba, true);
+            draw_sprite(offset_x, offset_y, sq_size, sq_size, Entity::Noun(Baba), true);
 
         } else {
             clear_background(WHITE);

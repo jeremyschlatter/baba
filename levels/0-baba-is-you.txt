@@ -1,0 +1,26 @@
+# uppercase = noun
+# lowercase = text
+#
+# b = baba
+# r = rock
+# t = tile
+# w = wall
+# f = flag
+# i = is
+# y = you
+# s = stop
+# p = push
+# v = win (Victory)
+
+
+  biy     fiv
+
+  WWWWWWWWWWW
+  TTTTTRTTTTT
+  TBTTTRTTTFT
+  TTTTTRTTTTT
+  WWWWWWWWWWW
+
+  wis     rip
+
+
