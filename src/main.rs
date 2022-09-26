@@ -80,7 +80,8 @@ enum Entity {
     Text(Text),
 }
 
-type Level = Vec<Vec<Option<Entity>>>;
+type Cell = Option<Entity>;
+type Level = Vec<Vec<Cell>>;
 
 fn parse_level(name: &str) -> Level {
     let s = std::fs::read_to_string("./levels/".to_owned() + name).unwrap();
@@ -129,8 +130,74 @@ use Predicate::*;
 
 type Rule = (Noun, Predicate);
 
-fn scan_rules(l: Level) -> Vec<Rule> {
+fn scan_rules_line<'a, I>(line: I) -> Vec<Rule>
+where
+    I: Iterator<Item = &'a Cell>,
+{
     [].into()
+}
+
+fn scan_rules(l: Level) -> Vec<Rule> {
+    l.iter()
+     .map(|row| Box::new(row.iter()) as Box<dyn Iterator<Item = &Cell>>)
+     .chain(Cols::new(&l).map(|x| Box::new(x) as Box<dyn Iterator<Item = &Cell>>))
+     .map(|line| scan_rules_line(line))
+     .flatten()
+     .collect()
+}
+
+struct Cols<'a> {
+    col: usize,
+    level: &'a Level,
+}
+
+impl <'a> Cols<'a> {
+    fn new(level: &'a Level) -> Cols<'a> {
+        Cols {
+            col: 0,
+            level: level,
+        }
+    }
+}
+
+impl <'a> Iterator for Cols<'a> {
+    type Item = ColIter<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.col += 1;
+        if self.level.len() > 0 && self.col <= self.level[0].len() {
+            Some(ColIter::new(self.level, self.col - 1))
+        } else {
+            None
+        }
+    }
+}
+
+struct ColIter<'a> {
+    row: usize,
+    col: usize,
+    level: &'a Level,
+}
+
+impl <'a> ColIter<'a> {
+    fn new(level: &'a Level, col: usize) -> ColIter<'a> {
+        ColIter {
+            row: 0,
+            col: col,
+            level: level,
+        }
+    }
+}
+
+impl <'a> Iterator for ColIter<'a> {
+    type Item = &'a Cell;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.row += 1;
+        if self.row <= self.level.len() {
+            Some(&self.level[self.row][self.col])
+        } else {
+            None
+        }
+    }
 }
 
 #[macroquad::main("Snake")]
@@ -139,7 +206,6 @@ async fn main() {
 
     let width = level[0].len();
     let height = level.len();
-    println!("{}x{}", width, height);
 
     let sprites: Texture2D = load_texture("sprites.png").await.unwrap();
 
@@ -197,6 +263,8 @@ async fn main() {
             },
         );
     };
+
+    return;
 
     loop {
 
