@@ -134,10 +134,38 @@ fn scan_rules_line<'a, I>(line: I) -> Vec<Rule>
 where
     I: Iterator<Item = &'a Cell>,
 {
-    [].into()
+    let mut rules = vec![];
+    enum ScanState {
+        HaveSubject(Noun),
+        HaveSubjectIs(Noun),
+    }
+    use ScanState::*;
+    let mut state = None;
+    for cell in line {
+        state = match (state, cell) {
+            (state, Some(Entity::Text(text))) => match (state, text) {
+                (None, Text::Object(noun)) => Some(HaveSubject(*noun)),
+                (None, _) => None,
+                (Some(HaveSubject(noun)), Text::Is) => Some(HaveSubjectIs(noun)),
+                (Some(HaveSubject(_)), Text::Object(noun)) => Some(HaveSubject(*noun)),
+                (Some(HaveSubject(_)), _) => None,
+                (Some(HaveSubjectIs(noun)), Text::Object(obj)) => {
+                    rules.push((noun, IsNoun(*obj)));
+                    Some(HaveSubject(noun))
+                },
+                (Some(HaveSubjectIs(noun)), Text::Adjective(adj)) => {
+                    rules.push((noun, IsAdjective(*adj)));
+                    None
+                },
+                (Some(HaveSubjectIs(_)), _) => None,
+            },
+            _ => None,
+        };
+    }
+    rules
 }
 
-fn scan_rules(l: Level) -> Vec<Rule> {
+fn scan_rules(l: &Level) -> Vec<Rule> {
     l.iter()
      .map(|row| Box::new(row.iter()) as Box<dyn Iterator<Item = &Cell>>)
      .chain(Cols::new(&l).map(|x| Box::new(x) as Box<dyn Iterator<Item = &Cell>>))
@@ -193,7 +221,7 @@ impl <'a> Iterator for ColIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.row += 1;
         if self.row <= self.level.len() {
-            Some(&self.level[self.row][self.col])
+            Some(&self.level[self.row - 1][self.col])
         } else {
             None
         }
@@ -202,7 +230,13 @@ impl <'a> Iterator for ColIter<'a> {
 
 #[macroquad::main("Snake")]
 async fn main() {
-    let level = parse_level("0-baba-is-you.txt");
+    let mut level = parse_level("0-baba-is-you.txt");
+    let mut rules = scan_rules(&level);
+
+    println!("the rules:");
+    for rule in rules {
+        println!("\t{:?}", rule);
+    }
 
     let width = level[0].len();
     let height = level.len();
