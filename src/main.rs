@@ -80,7 +80,9 @@ enum Entity {
     Text(Text),
 }
 
-fn parse_level(name: &str) -> Vec<Vec<Option<Entity>>> {
+type Level = Vec<Vec<Option<Entity>>>;
+
+fn parse_level(name: &str) -> Level {
     let s = std::fs::read_to_string("./levels/".to_owned() + name).unwrap();
     let lines: Vec<&str> = s.lines().skip_while(|l| l.starts_with("#")).collect();
     let max = lines.iter().map(|l| l.len()).max().unwrap_or_default();
@@ -118,6 +120,19 @@ fn parse_level(name: &str) -> Vec<Vec<Option<Entity>>> {
         .collect()
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+enum Predicate {
+    IsNoun(Noun),
+    IsAdjective(Adjective),
+}
+use Predicate::*;
+
+type Rule = (Noun, Predicate);
+
+fn scan_rules(l: Level) -> Vec<Rule> {
+    [].into()
+}
+
 #[macroquad::main("Snake")]
 async fn main() {
     let level = parse_level("0-baba-is-you.txt");
@@ -130,49 +145,50 @@ async fn main() {
 
     let sprite_map = |e| match e {
         Entity::Noun(noun) => match noun {
-            Baba => (0, 1),
-            Keke => (0, 2),
-            Flag => (0, 3),
-            Rock => (0, 4),
-            Wall => (0, 5),
+            Baba => (0, 1, Some((0, 1, 0, 0))),
+            Keke => (0, 2, None),
+            Flag => (0, 3, None),
+            Rock => (0, 4, None),
+            Wall => (0, 5, None),
 
-            Key  => (3, 1),
-            Door => (3, 2),
-            Tile => (3, 7),
+            Key  => (3, 1, None),
+            Door => (3, 2, None),
+            Tile => (3, 7, Some((2, 2, 0, 0))),
         }
         Entity::Text(text) => match text {
-            Text::Is => (1, 0),
-            Text::And => (2, 0),
+            Text::Is => (1, 0, Some((1, 0, 1, 1))),
+            Text::And => (2, 0, None),
             Text::Object(noun) => match noun {
-                Baba => (1, 1),
-                Keke => (1, 2),
-                Flag => (1, 3),
-                Rock => (1, 4),
-                Wall => (1, 5),
+                Baba => (1, 1, None),
+                Keke => (1, 2, None),
+                Flag => (1, 3, None),
+                Rock => (1, 4, None),
+                Wall => (1, 5, None),
 
-                Key  => (4, 1),
-                Door => (4, 2),
-                Tile => (4, 7),
+                Key  => (4, 1, None),
+                Door => (4, 2, None),
+                Tile => (4, 7, None),
             },
             Text::Adjective(adj) => match adj {
-                You => (2, 1),
-                Win => (2, 3),
-                Push => (2, 4),
-                Stop => (2, 5),
+                You => (2, 1, None),
+                Win => (2, 3, None),
+                Push => (2, 4, Some((0, 1, 0, 0))),
+                Stop => (2, 5, Some((0, 1, 0, 0))),
             },
         }
     };
 
     let draw_sprite = |x, y, w, h, noun| {
         let sprite = sprite_map(noun);
+        let off = sprite.2.unwrap_or_default();
         draw_texture_ex(
             sprites, x, y, WHITE, DrawTextureParams {
                 dest_size: Some(Vec2{x: w, y: h}),
                 source: Some(Rect{
-                    x: (sprite.0 * SPRITE_SIZE) as f32,
-                    y: (sprite.1 * SPRITE_SIZE) as f32,
-                    w: SPRITE_SIZE as f32,
-                    h: SPRITE_SIZE as f32,
+                    x: (sprite.0 * SPRITE_SIZE + off.0) as f32,
+                    y: (sprite.1 * SPRITE_SIZE + off.1) as f32,
+                    w: (SPRITE_SIZE - off.2) as f32,
+                    h: (SPRITE_SIZE - off.3) as f32,
                 }),
                 rotation: 0.0,
                 flip_x: false,
@@ -184,7 +200,9 @@ async fn main() {
 
     loop {
 
-//         if !game_over {
+        // update
+        {
+
 //             if is_key_down(KeyCode::Right) && snake.dir != left {
 //                 snake.dir = right;
 //             } else if is_key_down(KeyCode::Left) && snake.dir != right {
@@ -194,7 +212,6 @@ async fn main() {
 //             } else if is_key_down(KeyCode::Down) && snake.dir != up {
 //                 snake.dir = down;
 //             }
-
 //             if get_time() - last_update > speed {
 //                 last_update = get_time();
 //                 snake.body.push_front(snake.head);
@@ -219,11 +236,11 @@ async fn main() {
 //                     }
 //                 }
 //             }
-//         }
 
-        let game_over = false;
+        }
 
-        if !game_over {
+        // render
+        {
             clear_background(LIGHTGRAY);
 
             let sq_size = ((screen_width() - 20.) / width as f32).min((screen_height() - 20.) / height as f32);
@@ -232,15 +249,15 @@ async fn main() {
             let offset_x = (screen_width() - game_width) / 2.;
             let offset_y = (screen_height() - game_height) / 2.;
 
-//             println!("
-//                 game_width={game_width}
-//                 game_height={game_height}
-//                 offset_x={offset_x}
-//                 offset_y={offset_y}
-//                 sq_size={sq_size}
-//                 width={width}
-//                 height={height}
-//             ");
+    //             println!("
+    //                 game_width={game_width}
+    //                 game_height={game_height}
+    //                 offset_x={offset_x}
+    //                 offset_y={offset_y}
+    //                 sq_size={sq_size}
+    //                 width={width}
+    //                 height={height}
+    //             ");
 
             draw_rectangle(offset_x, offset_y, game_width, game_height, WHITE);
 
@@ -287,43 +304,16 @@ async fn main() {
                 }
             }
 
-//             draw_text(
-//                 format!("SCORE: {}", score).as_str(),
-//                 10.,
-//                 10.,
-//                 20.,
-//                 DARKGRAY,
-//             );
-
-        } else {
-
-//             clear_background(WHITE);
-//             let text = "Game Over. Press [enter] to play again.";
-//             let font_size = 30.;
-//             let text_size = measure_text(text, None, font_size as _, 1.0);
-
-//             draw_text(
-//                 text,
-//                 screen_width() / 2. - text_size.width / 2.,
-//                 screen_height() / 2. - text_size.height / 2.,
-//                 font_size,
-//                 DARKGRAY,
-//             );
-
-//             if is_key_down(KeyCode::Enter) {
-//                 snake = Snake {
-//                     head: (0, 0),
-//                     dir: (1, 0),
-//                     body: LinkedList::new(),
-//                 };
-//                 fruit = (rand::gen_range(0, SQUARES), rand::gen_range(0, SQUARES));
-//                 score = 0;
-//                 speed = 0.3;
-//                 last_update = get_time();
-//                 game_over = false;
-//             }
+    //             draw_text(
+    //                 format!("SCORE: {}", score).as_str(),
+    //                 10.,
+    //                 10.,
+    //                 20.,
+    //                 DARKGRAY,
+    //             );
 
         }
+
         next_frame().await
     }
 }
