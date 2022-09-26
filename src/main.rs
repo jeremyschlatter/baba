@@ -215,7 +215,7 @@ async fn main() {
             Keke => (0, 2, None),
             Flag => (0, 3, None),
             Rock => (0, 4, None),
-            Wall => (0, 5, None),
+            Wall => (0, 5, Some((9, 10, 18, 18))),
 
             Key  => (3, 1, None),
             Door => (3, 2, None),
