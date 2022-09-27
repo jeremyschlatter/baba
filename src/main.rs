@@ -367,16 +367,6 @@ async fn main() {
             let offset_x = (screen_width() - game_width) / 2.;
             let offset_y = (screen_height() - game_height) / 2.;
 
-    //             println!("
-    //                 game_width={game_width}
-    //                 game_height={game_height}
-    //                 offset_x={offset_x}
-    //                 offset_y={offset_y}
-    //                 sq_size={sq_size}
-    //                 width={width}
-    //                 height={height}
-    //             ");
-
             draw_rectangle(offset_x, offset_y, game_width, game_height, BLACK);
 
             for row in 0..height {
@@ -392,14 +382,6 @@ async fn main() {
                     }
                 }
             }
-
-    //             draw_text(
-    //                 format!("SCORE: {}", score).as_str(),
-    //                 10.,
-    //                 10.,
-    //                 20.,
-    //                 DARKGRAY,
-    //             );
 
         }
 
