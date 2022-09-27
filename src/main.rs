@@ -259,11 +259,12 @@ fn step(l: &Level, input: Input) -> Level {
               })
              .collect::<HashSet<&Noun>>();
 
-    let contains = |level: &Level, x: usize, y: usize, set: &HashSet<&Noun>|
+    fn contains(level: &Level, x: usize, y: usize, set: &HashSet<&Noun>) -> bool {
         level[y][x].iter().any(|e| match e {
             Entity::Noun(n) if set.contains(n) => true,
             _ => false,
-        });
+        })
+    }
 
     let stops = adjs(Stop);
 
