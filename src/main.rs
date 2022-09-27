@@ -234,7 +234,7 @@ impl <'a> Iterator for ColIter<'a> {
     }
 }
 
-#[macroquad::main("Snake")]
+#[macroquad::main("Baba Is Clone")]
 async fn main() {
     let mut level = parse_level("0-baba-is-you.txt");
     let mut rules = scan_rules(&level);
