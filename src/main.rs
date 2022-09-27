@@ -4,36 +4,6 @@ use std::collections::HashSet;
 
 const SPRITE_SIZE : i16 = 37;
 
-
-// next steps:
-//
-// represent the starting level
-
-
-
-// objects:
-//
-// baba
-// keke
-// wall
-// door
-// key
-// flag
-//
-// statuses:
-//
-// you
-// win
-// defeat
-// stop
-// shut
-// open
-// push
-//
-// bare words:
-// is
-// and
-
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Noun {
     Baba,
