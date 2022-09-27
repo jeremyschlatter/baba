@@ -166,66 +166,32 @@ where
 }
 
 fn scan_rules(l: &Level) -> Vec<Rule> {
-    l.iter()
-     .map(|row| Box::new(row.iter()) as Box<dyn Iterator<Item = &Cell>>)
-     .chain(Cols::new(&l).map(|x| Box::new(x) as Box<dyn Iterator<Item = &Cell>>))
-     .map(|line| scan_rules_line(line))
-     .flatten()
-     .collect()
-}
-
-struct Cols<'a> {
-    col: usize,
-    level: &'a Level,
-}
-
-impl <'a> Cols<'a> {
-    fn new(level: &'a Level) -> Cols<'a> {
-        Cols {
-            col: 0,
-            level: level,
-        }
+    if l.len() == 0 {
+        return vec![];
     }
-}
 
-impl <'a> Iterator for Cols<'a> {
-    type Item = ColIter<'a>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.col += 1;
-        if self.level.len() > 0 && self.col <= self.level[0].len() {
-            Some(ColIter::new(self.level, self.col - 1))
-        } else {
-            None
-        }
+    let mut rules = l.iter()
+                     .map(|row| scan_rules_line(row.iter()))
+                     .flatten()
+                     .collect::<Vec<Rule>>();
+
+    for col in 0..l[0].len() {
+        let mut row = -1;
+        rules.extend(
+            scan_rules_line(
+                std::iter::from_fn(|| {
+                    row += 1;
+                    if row as usize == l.len() {
+                        None
+                    } else {
+                        Some(&l[row as usize][col])
+                    }
+                })
+            )
+        );
     }
-}
 
-struct ColIter<'a> {
-    row: usize,
-    col: usize,
-    level: &'a Level,
-}
-
-impl <'a> ColIter<'a> {
-    fn new(level: &'a Level, col: usize) -> ColIter<'a> {
-        ColIter {
-            row: 0,
-            col: col,
-            level: level,
-        }
-    }
-}
-
-impl <'a> Iterator for ColIter<'a> {
-    type Item = &'a Cell;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.row += 1;
-        if self.row <= self.level.len() {
-            Some(&self.level[self.row - 1][self.col])
-        } else {
-            None
-        }
-    }
+    rules
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
