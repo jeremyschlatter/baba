@@ -375,7 +375,7 @@ async fn main() {
                     .next()
             },
             (t, Some(x)) => {
-                if now - t > 0.15 {
+                if now - t > 0.15 || x.1 == Undo && now - t > 0.075 {
                     last_input = (now, Some(x));
                     Some(x.1)
                 } else {
