@@ -391,7 +391,7 @@ async fn main() {
                     (KeyCode::Up, Up),
                     (KeyCode::Down, Down),
                     (KeyCode::A, Wait),
-                    (KeyCode::X, Undo),
+                    (KeyCode::Z, Undo),
                 ].iter()
                     .filter(|(k, _)| is_key_down(*k))
                     .map(|(k, i)| {last_input = (now, Some((*k, *i))); *i})
