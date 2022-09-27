@@ -1,5 +1,7 @@
 use macroquad::prelude::*;
 
+use std::collections::HashSet;
+
 const SPRITE_SIZE : i16 = 37;
 
 
@@ -249,6 +251,22 @@ fn step(l: &Level, input: Input) -> Level {
     let mut level = l.clone();
     let rules = scan_rules(&level);
 
+    let adjs = |adj|
+        rules.iter()
+             .filter_map(|r| match r {
+                 (subj, IsAdjective(a)) if *a == adj => Some(subj),
+                 _ => None,
+              })
+             .collect::<HashSet<&Noun>>();
+
+    let contains = |level: &Level, x: usize, y: usize, set: &HashSet<&Noun>|
+        level[y][x].iter().any(|e| match e {
+            Entity::Noun(n) if set.contains(n) => true,
+            _ => false,
+        });
+
+    let stops = adjs(Stop);
+
     // Move you.
     match match input {
         Left  => Some((-1, 0)),
@@ -261,16 +279,17 @@ fn step(l: &Level, input: Input) -> Level {
         None => (),
         Some((dx, dy)) => {
             // Find all nouns that are you.
-            let yous: std::collections::HashSet<&Noun> = rules.iter()
-                 .filter_map(|r| match r {
-                     (subj, IsAdjective(You)) => Some(subj),
-                     _ => None,
-                  })
-                 .collect();
+            let yous = adjs(You);
             // Iterate through all object entities, move the ones that are you.
             let mut movers: Vec<((usize, usize), Entity)> = vec![];
             for y in 0..level.len() {
                 for x in 0..level[y].len() {
+                    // skip if adjacent to stop or edge
+                    let (x_, y_) = clip(&level, x as i16 + dx, y as i16 + dy);
+                    if x == x_ && y == y_ || contains(&level, x_, y_, &stops) {
+                        continue;
+                    }
+
                     let (go, stay) = level[y][x].iter().partition(|e| match e {
                         Entity::Noun(noun) if yous.contains(noun) => true,
                         _ => false,
