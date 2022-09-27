@@ -296,9 +296,7 @@ async fn main() {
         );
     };
 
-    let mut last_input: Option<KeyCode> = None;
-
-    // #[derive(PartialEq, Eq)]
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     enum Input {
         Right,
         Left,
@@ -308,11 +306,14 @@ async fn main() {
     }
     use Input::*;
 
+    let mut last_input: (f64, Option<(KeyCode, Input)>) = (0., None);
+
     loop {
 
         // update
+        let now = get_time();
         let current_input = match last_input {
-            None => {
+            (_, None) => {
                 [
                     (KeyCode::Right, Right),
                     (KeyCode::Left, Left),
@@ -321,16 +322,22 @@ async fn main() {
                     (KeyCode::A, Wait),
                 ].iter()
                     .filter(|(k, i)| is_key_down(*k))
-                    .map(|(k, i)| {last_input = Some(*k); i})
+                    .map(|(k, i)| {last_input = (now, Some((*k, *i))); *i})
                     .next()
             },
-            Some(i) => {
-                if !is_key_down(i) {
-                    last_input = None;
+            (t, Some(x)) => {
+                if now - t > 0.15 {
+                    last_input = (now, Some(x));
+                    Some(x.1)
+                } else {
+                    if !is_key_down(x.0) {
+                        last_input = (now, None);
+                    }
+                    None
                 }
-                None
             },
         };
+
         match current_input {
             None => (),
             Some(i) => {
