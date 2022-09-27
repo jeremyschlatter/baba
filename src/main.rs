@@ -80,7 +80,7 @@ enum Entity {
     Text(Text),
 }
 
-type Cell = Option<Entity>;
+type Cell = Vec<Entity>;
 type Level = Vec<Vec<Cell>>;
 
 fn parse_level(name: &str) -> Level {
@@ -105,19 +105,19 @@ fn parse_level(name: &str) -> Level {
                     _ => None
                 }) {
                     (Some(noun), _) => if c.is_lowercase() {
-                        Some(Entity::Text(Text::Object(noun)))
+                        vec![Entity::Text(Text::Object(noun))]
                     } else {
-                        Some(Entity::Noun(noun))
+                        vec![Entity::Noun(noun)]
                     }
-                    (_, Some(adj)) => Some(Entity::Text(Text::Adjective(adj))),
+                    (_, Some(adj)) => vec![Entity::Text(Text::Adjective(adj))],
                     _ => match c {
-                        'i' => Some(Entity::Text(Text::Is)),
-                        _ => None,
+                        'i' => vec![Entity::Text(Text::Is)],
+                        _ => vec![],
                     }
                 })
-                .chain(std::iter::repeat(None))
+                .chain(std::iter::repeat(vec![]))
                 .take(max)
-                .collect::<Vec<Option<Entity>>>())
+                .collect::<Vec<Vec<Entity>>>())
         .collect()
 }
 
@@ -142,8 +142,14 @@ where
     use ScanState::*;
     let mut state = None;
     for cell in line {
-        state = match (state, cell) {
-            (state, Some(Entity::Text(text))) => match (state, text) {
+        let text = cell.iter()
+            .filter_map(|e| match e {
+                Entity::Text(text) => Some(text),
+                _ => None,
+             })
+            .next();
+        state = match text {
+            Some(text) => match (state, text) {
                 (None, Text::Object(noun)) => Some(HaveSubject(*noun)),
                 (None, _) => None,
                 (Some(HaveSubject(noun)), Text::Is) => Some(HaveSubjectIs(noun)),
@@ -159,8 +165,8 @@ where
                 },
                 (Some(HaveSubjectIs(_)), _) => None,
             },
-            _ => None,
-        };
+            None => None,
+        }
     }
     rules
 }
@@ -234,7 +240,7 @@ async fn main() {
     let mut rules = scan_rules(&level);
 
     println!("the rules:");
-    for rule in rules {
+    for rule in &rules {
         println!("\t{:?}", rule);
     }
 
@@ -298,12 +304,48 @@ async fn main() {
         );
     };
 
-    return;
+    let mut last_input: Option<KeyCode> = None;
 
     loop {
 
         // update
-        {
+        let current_input = match last_input {
+            None => {
+                use KeyCode::*;
+                [Right, Left, Up, Down, A].iter()
+                    .filter(|k| is_key_down(**k))
+                    .map(|k| {last_input = Some(*k); k})
+                    .next()
+            },
+            Some(i) => {
+                if !is_key_down(i) {
+                    last_input = None;
+                }
+                None
+            },
+        };
+        match current_input {
+            None => (),
+            Some(k) => {
+                // Move you.
+                if *k != KeyCode::A {
+                    // Find all nouns that are you.
+                    let yous: std::collections::HashSet<&Noun> = rules.iter()
+                         .filter_map(|r| match r {
+                             (subj, IsAdjective(You)) => Some(subj),
+                             _ => None,
+                          })
+                         .collect();
+                    // Iterate through all object entities, move the ones that are you.
+
+//                     level.iter()
+//                          .flatten()
+//                          .filter_map(|x| *x)
+//                          .filter
+
+                }
+            },
+        };
 
 //             if is_key_down(KeyCode::Right) && snake.dir != left {
 //                 snake.dir = right;
@@ -339,8 +381,6 @@ async fn main() {
 //                 }
 //             }
 
-        }
-
         // render
         {
             clear_background(LIGHTGRAY);
@@ -361,47 +401,18 @@ async fn main() {
     //                 height={height}
     //             ");
 
-            draw_rectangle(offset_x, offset_y, game_width, game_height, WHITE);
-
-            for i in 1..height {
-                draw_line(
-                    offset_x,
-                    offset_y + sq_size * i as f32,
-                    screen_width() - offset_x,
-                    offset_y + sq_size * i as f32,
-                    2.,
-                    LIGHTGRAY,
-                );
-            }
-
-            for i in 1..width {
-                draw_line(
-                    offset_x + sq_size * i as f32,
-                    offset_y,
-                    offset_x + sq_size * i as f32,
-                    screen_height() - offset_y,
-                    2.,
-                    LIGHTGRAY,
-                );
-            }
+            draw_rectangle(offset_x, offset_y, game_width, game_height, BLACK);
 
             for row in 0..height {
                 for col in 0..width {
-                    match level[row][col] {
-                        Some(e) => draw_sprite(
+                    for e in &level[row][col] {
+                        draw_sprite(
                             offset_x + sq_size * col as f32,
                             offset_y + sq_size * row as f32,
                             sq_size,
                             sq_size,
-                            e,
-                        ),
-                        None => draw_rectangle(
-                            offset_x + sq_size * col as f32,
-                            offset_y + sq_size * row as f32,
-                            sq_size,
-                            sq_size,
-                            BLACK,
-                        ),
+                            *e,
+                        );
                     }
                 }
             }
