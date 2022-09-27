@@ -222,22 +222,78 @@ impl <'a> Iterator for ColIter<'a> {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+enum Input {
+    Right,
+    Left,
+    Up,
+    Down,
+    Wait,
+    Undo,
+}
+use Input::*;
+
+fn clip(level: &Level, x: i16, y: i16) -> (usize, usize) {
+    let width = level[0].len() as i16;
+    let height = level.len() as i16;
+
+    (0.max(x).min(width as i16 - 1) as usize,
+     0.max(y).min(height as i16 - 1) as usize)
+}
+
+fn step(l: &Level, input: Input) -> Level {
+    let mut level = l.clone();
+    let rules = scan_rules(&level);
+
+    // Move you.
+    match match input {
+        Left  => Some((-1, 0)),
+        Up    => Some((0, -1)),
+        Right => Some((1, 0)),
+        Down  => Some((0, 1)),
+        Wait  => None,
+        Undo  => None,
+    } {
+        None => (),
+        Some((dx, dy)) => {
+            // Find all nouns that are you.
+            let yous: std::collections::HashSet<&Noun> = rules.iter()
+                 .filter_map(|r| match r {
+                     (subj, IsAdjective(You)) => Some(subj),
+                     _ => None,
+                  })
+                 .collect();
+            // Iterate through all object entities, move the ones that are you.
+            let mut movers: Vec<((usize, usize), Entity)> = vec![];
+            for y in 0..level.len() {
+                for x in 0..level[y].len() {
+                    let (go, stay) = level[y][x].iter().partition(|e| match e {
+                        Entity::Noun(noun) if yous.contains(noun) => true,
+                        _ => false,
+                    });
+                    level[y][x] = stay;
+                    movers.extend(
+                        go.iter()
+                          .map(|e| ((x, y), *e))
+                          .collect::<Vec<((usize, usize), Entity)>>());
+                }
+            }
+            for ((x, y), e) in movers {
+                let (x, y) = clip(&level, x as i16 + dx, y as i16 + dy);
+                level[y][x].push(e);
+            }
+        }
+    }
+
+    level
+}
+
 #[macroquad::main("Baba Is Clone")]
 async fn main() {
-    let mut level = parse_level("0-baba-is-you.txt");
-    let mut rules = scan_rules(&level);
-
-    println!("the rules:");
-    for rule in &rules {
-        println!("\t{:?}", rule);
-    }
+    let level = parse_level("0-baba-is-you.txt");
 
     let width = level[0].len();
     let height = level.len();
-
-    let clip = |x, y| (
-        0.max(x).min(width as i16 - 1) as usize,
-        0.max(y).min(height as i16 - 1) as usize);
 
     let sprites: Texture2D = load_texture("sprites.png").await.unwrap();
 
@@ -296,20 +352,12 @@ async fn main() {
         );
     };
 
-    #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-    enum Input {
-        Right,
-        Left,
-        Up,
-        Down,
-        Wait,
-    }
-    use Input::*;
-
     let mut last_input: (f64, Option<(KeyCode, Input)>) = (0., None);
 
-    loop {
+    let mut history = vec![level.clone()];
+    let mut current_state = &history[0];
 
+    loop {
         // update
         let now = get_time();
         let current_input = match last_input {
@@ -320,8 +368,9 @@ async fn main() {
                     (KeyCode::Up, Up),
                     (KeyCode::Down, Down),
                     (KeyCode::A, Wait),
+                    (KeyCode::X, Undo),
                 ].iter()
-                    .filter(|(k, i)| is_key_down(*k))
+                    .filter(|(k, _)| is_key_down(*k))
                     .map(|(k, i)| {last_input = (now, Some((*k, *i))); *i})
                     .next()
             },
@@ -337,86 +386,16 @@ async fn main() {
                 }
             },
         };
-
         match current_input {
             None => (),
+            Some(Undo) => if history.len() > 1 {
+                history.pop();
+            },
             Some(i) => {
-                // Move you.
-                match (match i {
-                    Left  => Some((-1, 0)),
-                    Up    => Some((0, -1)),
-                    Right => Some((1, 0)),
-                    Down  => Some((0, 1)),
-                    Wait  => None,
-                }) {
-                    None => (),
-                    Some((dx, dy)) => {
-                        // Find all nouns that are you.
-                        let yous: std::collections::HashSet<&Noun> = rules.iter()
-                             .filter_map(|r| match r {
-                                 (subj, IsAdjective(You)) => Some(subj),
-                                 _ => None,
-                              })
-                             .collect();
-
-                        // Iterate through all object entities, move the ones that are you.
-                        let mut movers: Vec<((usize, usize), Entity)> = vec![];
-                        for y in 0..level.len() {
-                            for x in 0..level[y].len() {
-                                let (go, stay) = level[y][x].iter().partition(|e| match e {
-                                    Entity::Noun(noun) if yous.contains(noun) => true,
-                                    _ => false,
-                                });
-                                level[y][x] = stay;
-                                movers.extend(
-                                    go.iter()
-                                      .map(|e| ((x, y), *e))
-                                      .collect::<Vec<((usize, usize), Entity)>>());
-                            }
-                        }
-
-                        for ((x, y), e) in movers {
-                            let (x, y) = clip(x as i16 + dx, y as i16 + dy);
-                            level[y][x].push(e);
-                        }
-                    }
-                }
+                history.push(step(&current_state, i));
             },
         };
-
-//             if is_key_down(KeyCode::Right) && snake.dir != left {
-//                 snake.dir = right;
-//             } else if is_key_down(KeyCode::Left) && snake.dir != right {
-//                 snake.dir = left;
-//             } else if is_key_down(KeyCode::Up) && snake.dir != down {
-//                 snake.dir = up;
-//             } else if is_key_down(KeyCode::Down) && snake.dir != up {
-//                 snake.dir = down;
-//             }
-//             if get_time() - last_update > speed {
-//                 last_update = get_time();
-//                 snake.body.push_front(snake.head);
-//                 snake.head = (snake.head.0 + snake.dir.0, snake.head.1 + snake.dir.1);
-//                 if snake.head == fruit {
-//                     fruit = (rand::gen_range(0, SQUARES), rand::gen_range(0, SQUARES));
-//                     score += 100;
-//                     speed *= 0.9;
-//                 } else {
-//                     snake.body.pop_back();
-//                 }
-//                 if snake.head.0 < 0
-//                     || snake.head.1 < 0
-//                     || snake.head.0 >= SQUARES
-//                     || snake.head.1 >= SQUARES
-//                 {
-//                     game_over = true;
-//                 }
-//                 for (x, y) in &snake.body {
-//                     if *x == snake.head.0 && *y == snake.head.1 {
-//                         game_over = true;
-//                     }
-//                 }
-//             }
+        current_state = &history[history.len() - 1];
 
         // render
         {
@@ -442,7 +421,7 @@ async fn main() {
 
             for row in 0..height {
                 for col in 0..width {
-                    for e in &level[row][col] {
+                    for e in &current_state[row][col] {
                         draw_sprite(
                             offset_x + sq_size * col as f32,
                             offset_y + sq_size * row as f32,
