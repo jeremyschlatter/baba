@@ -94,11 +94,10 @@ use Predicate::*;
 
 type Rule = (Noun, Predicate);
 
-fn scan_rules_line<'a, I>(line: I) -> Vec<Rule>
+fn scan_rules_line<'a, I>(rules: &mut Vec<Rule>, line: I)
 where
     I: Iterator<Item = &'a Cell>,
 {
-    let mut rules = vec![];
     enum ScanState {
         HaveSubject(Noun),
         HaveSubjectIs(Noun),
@@ -132,23 +131,19 @@ where
             None => None,
         }
     }
-    rules
 }
 
 fn scan_rules(l: &Level) -> Vec<Rule> {
-    if l.len() == 0 {
-        return vec![];
-    }
+    let mut rules = vec![];
 
-    let mut rules = l.iter()
-                     .map(|row| scan_rules_line(row.iter()))
-                     .flatten()
-                     .collect::<Vec<Rule>>();
-
-    for col in 0..l[0].len() {
-        let mut row = -1;
-        rules.extend(
+    if l.len() > 0 {
+        for row in l {
+            scan_rules_line(&mut rules, row.iter());
+        }
+        for col in 0..l[0].len() {
+            let mut row = -1;
             scan_rules_line(
+                &mut rules,
                 std::iter::from_fn(|| {
                     row += 1;
                     if row as usize == l.len() {
@@ -157,8 +152,8 @@ fn scan_rules(l: &Level) -> Vec<Rule> {
                         Some(&l[row as usize][col])
                     }
                 })
-            )
-        );
+            );
+        }
     }
 
     rules
