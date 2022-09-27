@@ -1,18 +1,6 @@
 use macroquad::prelude::*;
 
-use std::collections::LinkedList;
-
-const SQUARES: i16 = 10;
-
 const SPRITE_SIZE : i16 = 37;
-
-type Point = (i16, i16);
-
-struct Snake {
-    head: Point,
-    body: LinkedList<Point>,
-    dir: Point,
-}
 
 
 // next steps:
@@ -247,6 +235,10 @@ async fn main() {
     let width = level[0].len();
     let height = level.len();
 
+    let clip = |x, y| (
+        0.max(x).min(width as i16 - 1) as usize,
+        0.max(y).min(height as i16 - 1) as usize);
+
     let sprites: Texture2D = load_texture("sprites.png").await.unwrap();
 
     let sprite_map = |e| match e {
@@ -306,15 +298,30 @@ async fn main() {
 
     let mut last_input: Option<KeyCode> = None;
 
+    // #[derive(PartialEq, Eq)]
+    enum Input {
+        Right,
+        Left,
+        Up,
+        Down,
+        Wait,
+    }
+    use Input::*;
+
     loop {
 
         // update
         let current_input = match last_input {
             None => {
-                use KeyCode::*;
-                [Right, Left, Up, Down, A].iter()
-                    .filter(|k| is_key_down(**k))
-                    .map(|k| {last_input = Some(*k); k})
+                [
+                    (KeyCode::Right, Right),
+                    (KeyCode::Left, Left),
+                    (KeyCode::Up, Up),
+                    (KeyCode::Down, Down),
+                    (KeyCode::A, Wait),
+                ].iter()
+                    .filter(|(k, i)| is_key_down(*k))
+                    .map(|(k, i)| {last_input = Some(*k); i})
                     .next()
             },
             Some(i) => {
@@ -326,23 +333,46 @@ async fn main() {
         };
         match current_input {
             None => (),
-            Some(k) => {
+            Some(i) => {
                 // Move you.
-                if *k != KeyCode::A {
-                    // Find all nouns that are you.
-                    let yous: std::collections::HashSet<&Noun> = rules.iter()
-                         .filter_map(|r| match r {
-                             (subj, IsAdjective(You)) => Some(subj),
-                             _ => None,
-                          })
-                         .collect();
-                    // Iterate through all object entities, move the ones that are you.
+                match (match i {
+                    Left  => Some((-1, 0)),
+                    Up    => Some((0, -1)),
+                    Right => Some((1, 0)),
+                    Down  => Some((0, 1)),
+                    Wait  => None,
+                }) {
+                    None => (),
+                    Some((dx, dy)) => {
+                        // Find all nouns that are you.
+                        let yous: std::collections::HashSet<&Noun> = rules.iter()
+                             .filter_map(|r| match r {
+                                 (subj, IsAdjective(You)) => Some(subj),
+                                 _ => None,
+                              })
+                             .collect();
 
-//                     level.iter()
-//                          .flatten()
-//                          .filter_map(|x| *x)
-//                          .filter
+                        // Iterate through all object entities, move the ones that are you.
+                        let mut movers: Vec<((usize, usize), Entity)> = vec![];
+                        for y in 0..level.len() {
+                            for x in 0..level[y].len() {
+                                let (go, stay) = level[y][x].iter().partition(|e| match e {
+                                    Entity::Noun(noun) if yous.contains(noun) => true,
+                                    _ => false,
+                                });
+                                level[y][x] = stay;
+                                movers.extend(
+                                    go.iter()
+                                      .map(|e| ((x, y), *e))
+                                      .collect::<Vec<((usize, usize), Entity)>>());
+                            }
+                        }
 
+                        for ((x, y), e) in movers {
+                            let (x, y) = clip(x as i16 + dx, y as i16 + dy);
+                            level[y][x].push(e);
+                        }
+                    }
                 }
             },
         };
