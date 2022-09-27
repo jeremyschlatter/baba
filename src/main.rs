@@ -239,14 +239,6 @@ enum Input {
 }
 use Input::*;
 
-fn clip(level: &Level, x: i16, y: i16) -> (usize, usize) {
-    let width = level[0].len() as i16;
-    let height = level.len() as i16;
-
-    (0.max(x).min(width as i16 - 1) as usize,
-     0.max(y).min(height as i16 - 1) as usize)
-}
-
 fn step(l: &Level, input: Input) -> Level {
     let mut level = l.clone();
     let rules = scan_rules(&level);
@@ -258,6 +250,14 @@ fn step(l: &Level, input: Input) -> Level {
                  _ => None,
               })
              .collect::<HashSet<&Noun>>();
+
+    fn clip(level: &Level, x: i16, y: i16) -> (usize, usize) {
+        let width = level[0].len() as i16;
+        let height = level.len() as i16;
+
+        (0.max(x).min(width as i16 - 1) as usize,
+         0.max(y).min(height as i16 - 1) as usize)
+    }
 
     fn contains(level: &Level, x: usize, y: usize, set: &HashSet<&Noun>) -> bool {
         level[y][x].iter().any(|e| match e {
