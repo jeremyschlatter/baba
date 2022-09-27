@@ -84,6 +84,9 @@ fn parse_level(name: &str) -> Level {
                     "t" => Some(Tile),
                     "w" => Some(Wall),
                     "f" => Some(Flag),
+                    "k" => Some(Keke),
+                    "d" => Some(Door),
+                    "x" => Some(Key),
                     _ => None,
                 }, match c {
                     'y' => Some(You),
@@ -100,6 +103,7 @@ fn parse_level(name: &str) -> Level {
                     (_, Some(adj)) => vec![Entity::Text(Text::Adjective(adj))],
                     _ => match c {
                         'i' => vec![Entity::Text(Text::Is)],
+                        'a' => vec![Entity::Text(Text::And)],
                         _ => vec![],
                     }
                 })
