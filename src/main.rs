@@ -191,13 +191,18 @@ fn step(l: &Level, input: Input) -> Level {
     }
 
     fn contains(level: &Level, x: usize, y: usize, set: &HashSet<&Noun>) -> bool {
-        level[y][x].iter().any(|e| match e {
-            Entity::Noun(n) if set.contains(n) => true,
-            _ => false,
-        })
+        select(level, x, y, set).len() > 0
     }
 
-    let stops = adjs(Stop);
+    fn select(level: &Level, x: usize, y: usize, set: &HashSet<&Noun>) -> Vec<(usize, Entity)> {
+        level[y][x].iter().enumerate().filter(|(_, e)| match e {
+            Entity::Noun(n) if set.contains(n) => true,
+            _ => false,
+        }).map(|(i, e)| (i, *e)).collect()
+    }
+
+    let stops  = adjs(Stop);
+    let pushes = adjs(Push);
 
     // Move you.
     match match input {
@@ -213,27 +218,59 @@ fn step(l: &Level, input: Input) -> Level {
             // Find all nouns that are you.
             let yous = adjs(You);
             // Iterate through all object entities, move the ones that are you.
-            let mut movers: Vec<((usize, usize), Entity)> = vec![];
+            let mut movers: Vec<((usize, usize, usize), Entity)> = vec![];
             for y in 0..level.len() {
-                for x in 0..level[y].len() {
-                    // skip if adjacent to stop or edge
-                    let (x_, y_) = clip(&level, x as i16 + dx, y as i16 + dy);
-                    if x == x_ && y == y_ || contains(&level, x_, y_, &stops) {
+                'cell_loop: for x in 0..level[y].len() {
+                    if !contains(&level, x, y, &yous) {
                         continue;
                     }
 
-                    let (go, stay) = level[y][x].iter().partition(|e| match e {
-                        Entity::Noun(noun) if yous.contains(noun) => true,
-                        _ => false,
-                    });
-                    level[y][x] = stay;
-                    movers.extend(
-                        go.iter()
-                          .map(|e| ((x, y), *e))
-                          .collect::<Vec<((usize, usize), Entity)>>());
+//                     // stop if adjacent to stop or edge
+//                     let (x_, y_) = clip(&level, x as i16 + dx, y as i16 + dy);
+//                     if x == x_ && y == y_ || contains(&level, x_, y_, &stops) {
+//                         continue 'cell_loop;
+//                     }
+
+                    // attempt to push
+                    {
+                        let (mut x, mut y) = (x, y);
+                        let mut all_pushed = vec![];
+                        loop {
+                            // stop if adjacent to stop or edge
+                            let (x_, y_) = clip(&level, x as i16 + dx, y as i16 + dy);
+                            if x == x_ && y == y_ || contains(&level, x_, y_, &stops) {
+                                continue 'cell_loop;
+                            }
+                            let pushed = select(&level, x_, y_, &pushes);
+                            if pushed.len() == 0 {
+                                movers.extend(
+                                    all_pushed.iter().map(|(i, e)| ((x, y, *i), *e))
+                                );
+                                break
+                            }
+                            all_pushed.extend(pushed);
+                            x = x_;
+                            y = y_;
+                        }
+                    }
+
+                    for (i, e) in level[y][x].iter().enumerate() {
+                        match e {
+                            Entity::Noun(noun) if yous.contains(&noun) =>
+                                movers.push(((x, y, i), *e)),
+                            _ => (),
+                        }
+                    }
                 }
             }
-            for ((x, y), e) in movers {
+
+            // remove all movers from their current position
+            for ((x, y, i), _) in &movers {
+                level[*y][*x].remove(*i);
+            }
+
+            // add them to their new position
+            for ((x, y, _), e) in movers {
                 let (x, y) = clip(&level, x as i16 + dx, y as i16 + dy);
                 level[y][x].push(e);
             }
