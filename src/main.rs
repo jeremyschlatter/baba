@@ -194,13 +194,16 @@ fn step(l: &Level, input: Input) -> Level {
     }
 
     fn contains(level: &Level, x: usize, y: usize, set: &HashSet<&Noun>) -> bool {
-        select(level, x, y, set).count() > 0
-    }
-
-    fn select<'a>(level: &'a Level, x: usize, y: usize, set: &'a HashSet<&Noun>) -> impl Iterator<Item=(usize, Entity)> + 'a {
-        level[y][x].iter().enumerate().filter(|(_, e)| match e {
+        level[y][x].iter().any(|e| match e {
             Entity::Noun(n) if set.contains(n) => true,
             _ => false,
+        })
+    }
+
+    fn select_pushed<'a>(level: &'a Level, x: usize, y: usize, set: &'a HashSet<&Noun>) -> impl Iterator<Item=(usize, Entity)> + 'a {
+        level[y][x].iter().enumerate().filter(|(_, e)| match e {
+            Entity::Noun(n) => set.contains(n),
+            Entity::Text(_) => true,
         }).map(|(i, e)| (i, *e))
     }
 
@@ -238,7 +241,7 @@ fn step(l: &Level, input: Input) -> Level {
                             if x == x_ && y == y_ || contains(&level, x_, y_, &stops) {
                                 continue 'cell_loop;
                             }
-                            let pushed = select(&level, x_, y_, &pushes)
+                            let pushed = select_pushed(&level, x_, y_, &pushes)
                                 .map(|(i, e)| ((x_, y_, i), e))
                                 .collect::<Vec<((usize, usize, usize), Entity)>>();
                             if pushed.len() == 0 {
