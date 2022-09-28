@@ -204,13 +204,6 @@ fn step(l: &Level, input: Input) -> Level {
         }).map(|(i, e)| (i, *e))
     }
 
-//     fn select(level: &Level, x: usize, y: usize, set: &HashSet<&Noun>) -> Vec<(usize, Entity)> {
-//         level[y][x].iter().enumerate().filter(|(_, e)| match e {
-//             Entity::Noun(n) if set.contains(n) => true,
-//             _ => false,
-//         }).map(|(i, e)| (i, *e)).collect()
-//     }
-
     let stops  = adjs(Stop);
     let pushes = adjs(Push);
 
@@ -234,12 +227,6 @@ fn step(l: &Level, input: Input) -> Level {
                     if !contains(&level, x, y, &yous) {
                         continue;
                     }
-
-//                     // stop if adjacent to stop or edge
-//                     let (x_, y_) = clip(&level, x as i16 + dx, y as i16 + dy);
-//                     if x == x_ && y == y_ || contains(&level, x_, y_, &stops) {
-//                         continue 'cell_loop;
-//                     }
 
                     // attempt to push
                     {
