@@ -174,6 +174,9 @@ fn step(l: &Level, input: Input) -> Level {
     let mut level = l.clone();
     let rules = scan_rules(&level);
 
+    let width = level[0].len();
+    let height = level.len();
+
     let adjs = |adj|
         rules.iter()
              .filter_map(|r| match r {
@@ -191,15 +194,22 @@ fn step(l: &Level, input: Input) -> Level {
     }
 
     fn contains(level: &Level, x: usize, y: usize, set: &HashSet<&Noun>) -> bool {
-        select(level, x, y, set).len() > 0
+        select(level, x, y, set).count() > 0
     }
 
-    fn select(level: &Level, x: usize, y: usize, set: &HashSet<&Noun>) -> Vec<(usize, Entity)> {
+    fn select<'a>(level: &'a Level, x: usize, y: usize, set: &'a HashSet<&Noun>) -> impl Iterator<Item=(usize, Entity)> + 'a {
         level[y][x].iter().enumerate().filter(|(_, e)| match e {
             Entity::Noun(n) if set.contains(n) => true,
             _ => false,
-        }).map(|(i, e)| (i, *e)).collect()
+        }).map(|(i, e)| (i, *e))
     }
+
+//     fn select(level: &Level, x: usize, y: usize, set: &HashSet<&Noun>) -> Vec<(usize, Entity)> {
+//         level[y][x].iter().enumerate().filter(|(_, e)| match e {
+//             Entity::Noun(n) if set.contains(n) => true,
+//             _ => false,
+//         }).map(|(i, e)| (i, *e)).collect()
+//     }
 
     let stops  = adjs(Stop);
     let pushes = adjs(Push);
@@ -241,11 +251,11 @@ fn step(l: &Level, input: Input) -> Level {
                             if x == x_ && y == y_ || contains(&level, x_, y_, &stops) {
                                 continue 'cell_loop;
                             }
-                            let pushed = select(&level, x_, y_, &pushes);
+                            let pushed = select(&level, x_, y_, &pushes)
+                                .map(|(i, e)| ((x_, y_, i), e))
+                                .collect::<Vec<((usize, usize, usize), Entity)>>();
                             if pushed.len() == 0 {
-                                movers.extend(
-                                    all_pushed.iter().map(|(i, e)| ((x, y, *i), *e))
-                                );
+                                movers.extend(all_pushed);
                                 break
                             }
                             all_pushed.extend(pushed);
@@ -265,8 +275,17 @@ fn step(l: &Level, input: Input) -> Level {
             }
 
             // remove all movers from their current position
+            let mut removals = vec![vec![vec![]; width]; height];
             for ((x, y, i), _) in &movers {
-                level[*y][*x].remove(*i);
+                removals[*y][*x].push(*i);
+            }
+            for x in 0..width {
+                for y in 0..height {
+                    removals[y][x].sort();
+                    for (i, r) in removals[y][x].iter().enumerate() {
+                        level[y][x].remove(r - i);
+                    }
+                }
             }
 
             // add them to their new position
