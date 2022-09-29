@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use miniquad::graphics::*;
 
 use std::collections::HashSet;
 
@@ -297,6 +298,7 @@ async fn main() {
     let height = level.len();
 
     let sprites: Texture2D = load_texture("sprites.png").await.unwrap();
+    let congrats: Texture2D = load_texture("congratulations.png").await.unwrap();
 
     let sprite_map = |e| match e {
         Entity::Noun(noun) => match noun {
@@ -345,10 +347,7 @@ async fn main() {
                     w: (SPRITE_SIZE - off.2) as f32,
                     h: (SPRITE_SIZE - off.3) as f32,
                 }),
-                rotation: 0.0,
-                flip_x: false,
-                flip_y: false,
-                pivot: None,
+                ..Default::default()
             },
         );
     };
@@ -357,6 +356,26 @@ async fn main() {
 
     let mut history = vec![level.clone()];
     let mut current_state = &history[0];
+
+    let mask = load_material(
+        VERTEX_SHADER,
+        FRAGMENT_SHADER,
+        MaterialParams {
+            uniforms: vec![("radius".to_string(), UniformType::Float1)],
+            pipeline_params: PipelineParams {
+                color_blend: Some(BlendState::new(
+                    Equation::Add,
+                    BlendFactor::Value(BlendValue::SourceAlpha),
+                    BlendFactor::OneMinusValue(BlendValue::SourceAlpha))
+                ),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    ).unwrap();
+
+    let anim_time = 2.0;
+    let anim_start = get_time();
 
     loop {
         // update
@@ -424,8 +443,63 @@ async fn main() {
                 }
             }
 
+            gl_use_material(mask);
+
+            mask.set_uniform(
+                "radius",
+                (((get_time() - anim_start) / anim_time) as f32).min(0.5_f32.sqrt()),
+            );
+
+            // draw congratulations
+            let scale = (game_width * 0.65) / congrats.width();
+            draw_texture_ex(
+                congrats,
+                offset_x + (game_width - congrats.width() * scale) / 2.,
+                offset_y + (game_height - congrats.height() * scale) / 2.,
+                WHITE,
+                DrawTextureParams {
+                    dest_size: Some(Vec2{
+                        x: congrats.width() * scale,
+                        y: congrats.height() * scale,
+                    }),
+                    ..Default::default()
+                },
+            );
+
+            gl_use_default_material();
         }
 
         next_frame().await
     }
 }
+
+const FRAGMENT_SHADER: &'static str = "#version 100
+precision lowp float;
+
+varying vec2 uv;
+
+uniform sampler2D Texture;
+uniform float radius;
+
+void main() {
+    float mask = distance(uv, vec2(0.5, 0.5)) > radius ? -1.0 : 0.0;
+    gl_FragColor = texture2D(Texture, uv) + vec4(0, 0, 0, mask);
+}
+";
+
+const VERTEX_SHADER: &'static str = "#version 100
+precision lowp float;
+
+attribute vec3 position;
+attribute vec2 texcoord;
+
+varying vec2 uv;
+
+uniform mat4 Model;
+uniform mat4 Projection;
+
+void main() {
+    gl_Position = Projection * Model * vec4(position, 1);
+    uv = texcoord;
+}
+";
