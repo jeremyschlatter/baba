@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 use miniquad::graphics::*;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 const SPRITE_SIZE : i16 = 37;
 
@@ -173,18 +173,19 @@ use Input::*;
 
 fn step(l: &Level, input: Input) -> (Level, bool) {
     let mut level = l.clone();
-    let rules = scan_rules(&level);
+    let mut rules = scan_rules(&level); // TODO: sus that it's mut
 
     let width = level[0].len();
     let height = level.len();
 
-    let adjs = |adj|
+    fn adjs(rules: &Vec<Rule>, adj: Adjective) -> HashSet<&Noun> {
         rules.iter()
              .filter_map(|r| match r {
                  (subj, IsAdjective(a)) if *a == adj => Some(subj),
                  _ => None,
               })
-             .collect::<HashSet<&Noun>>();
+             .collect::<HashSet<&Noun>>()
+    }
 
     fn clip(level: &Level, x: i16, y: i16) -> (usize, usize) {
         let width = level[0].len() as i16;
@@ -208,11 +209,6 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
         }).map(|(i, e)| (i, *e))
     }
 
-    let stops  = adjs(Stop);
-    let pushes = adjs(Push);
-    let wins   = adjs(Win);
-    let yous   = adjs(You);
-
     // Move you.
     match match input {
         Left  => Some((-1, 0)),
@@ -224,6 +220,9 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
     } {
         None => (),
         Some((dx, dy)) => {
+            let yous   = adjs(&rules, You);
+            let stops  = adjs(&rules, Stop);
+            let pushes = adjs(&rules, Push);
             // Iterate through all object entities, move the ones that are you.
             let mut movers: Vec<((usize, usize, usize), Entity)> = vec![];
             for y in 0..level.len() {
@@ -287,7 +286,34 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
         }
     }
 
+    // change things into other things
+    rules = scan_rules(&level); // TODO: sus to rescan here
+    {
+        let changers =
+            rules.iter()
+                 .filter_map(|r| match r {
+                     (from, IsNoun(to)) => Some((*from, *to)),
+                     _ => None,
+                 })
+                 .collect::<HashMap<Noun, Noun>>();
+        for x in 0..width {
+            for y in 0..height {
+                for i in 0..level[y][x].len() {
+                    match level[y][x][i] {
+                        Entity::Noun(old) => match changers.get(&old) {
+                            Some(new) => level[y][x][i] = Entity::Noun(*new),
+                            None => (),
+                        },
+                        Entity::Text(_) => (),
+                    }
+                }
+            }
+        }
+    }
+
     // check for win
+    let wins = adjs(&rules, Win);
+    let yous = adjs(&rules, You);
     for x in 0..width {
         for y in 0..height {
             if contains(&level, x, y, &wins) && contains(&level, x, y, &yous) {
