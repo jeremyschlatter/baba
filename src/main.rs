@@ -121,7 +121,7 @@ where
                 (Some(HaveSubject(_)), _) => None,
                 (Some(HaveSubjectIs(noun)), Text::Object(obj)) => {
                     rules.push((noun, IsNoun(*obj)));
-                    Some(HaveSubject(noun))
+                    Some(HaveSubject(*obj))
                 },
                 (Some(HaveSubjectIs(noun)), Text::Adjective(adj)) => {
                     rules.push((noun, IsAdjective(*adj)));
