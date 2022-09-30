@@ -171,7 +171,7 @@ enum Input {
 }
 use Input::*;
 
-fn step(l: &Level, input: Input) -> Level {
+fn step(l: &Level, input: Input) -> (Level, bool) {
     let mut level = l.clone();
     let rules = scan_rules(&level);
 
@@ -210,6 +210,8 @@ fn step(l: &Level, input: Input) -> Level {
 
     let stops  = adjs(Stop);
     let pushes = adjs(Push);
+    let wins   = adjs(Win);
+    let yous   = adjs(You);
 
     // Move you.
     match match input {
@@ -222,8 +224,6 @@ fn step(l: &Level, input: Input) -> Level {
     } {
         None => (),
         Some((dx, dy)) => {
-            // Find all nouns that are you.
-            let yous = adjs(You);
             // Iterate through all object entities, move the ones that are you.
             let mut movers: Vec<((usize, usize, usize), Entity)> = vec![];
             for y in 0..level.len() {
@@ -287,7 +287,17 @@ fn step(l: &Level, input: Input) -> Level {
         }
     }
 
-    level
+    // check for win
+    for x in 0..width {
+        for y in 0..height {
+            if contains(&level, x, y, &wins) && contains(&level, x, y, &yous) {
+                return (level, true);
+            }
+        }
+    }
+
+
+    (level, false)
 }
 
 #[macroquad::main("Baba Is Clone")]
@@ -375,7 +385,8 @@ async fn main() {
     ).unwrap();
 
     let anim_time = 2.0;
-    let anim_start = get_time();
+    let mut win_time = None;
+    // let anim_start = get_time();
 
     loop {
         // update
@@ -412,7 +423,11 @@ async fn main() {
                 history.pop();
             },
             Some(i) => {
-                history.push(step(&current_state, i));
+                let (next, win) = step(&current_state, i);
+                if win && win_time.is_none() {
+                    win_time = Some(get_time());
+                }
+                history.push(next);
             },
         };
         current_state = &history[history.len() - 1];
@@ -443,30 +458,32 @@ async fn main() {
                 }
             }
 
-            gl_use_material(mask);
-
-            mask.set_uniform(
-                "radius",
-                (((get_time() - anim_start) / anim_time) as f32).min(0.5_f32.sqrt()),
-            );
-
-            // draw congratulations
-            let scale = (game_width * 0.65) / congrats.width();
-            draw_texture_ex(
-                congrats,
-                offset_x + (game_width - congrats.width() * scale) / 2.,
-                offset_y + (game_height - congrats.height() * scale) / 2.,
-                WHITE,
-                DrawTextureParams {
-                    dest_size: Some(Vec2{
-                        x: congrats.width() * scale,
-                        y: congrats.height() * scale,
-                    }),
-                    ..Default::default()
+            // draw congratulations when you win
+            match win_time {
+                None => (),
+                Some(anim_start) => {
+                    gl_use_material(mask);
+                    mask.set_uniform(
+                        "radius",
+                        (((get_time() - anim_start) / anim_time) as f32).min(0.5_f32.sqrt()),
+                    );
+                    let scale = (game_width * 0.65) / congrats.width();
+                    draw_texture_ex(
+                        congrats,
+                        offset_x + (game_width - congrats.width() * scale) / 2.,
+                        offset_y + (game_height - congrats.height() * scale) / 2.,
+                        WHITE,
+                        DrawTextureParams {
+                            dest_size: Some(Vec2{
+                                x: congrats.width() * scale,
+                                y: congrats.height() * scale,
+                            }),
+                            ..Default::default()
+                        },
+                    );
+                    gl_use_default_material();
                 },
-            );
-
-            gl_use_default_material();
+            }
         }
 
         next_frame().await
