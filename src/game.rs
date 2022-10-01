@@ -20,6 +20,8 @@ enum Noun {
     Water,
     Skull,
     Lava,
+    Brick,
+    Flower,
 }
 use Noun::*;
 
@@ -73,6 +75,8 @@ fn parse_level(name: &str) -> Level {
                     "a" => Some(Water),
                     "s" => Some(Skull),
                     "l" => Some(Lava),
+                    "p" => Some(Flower),
+                    "c" => Some(Brick),
                     _ => None,
                 }, match c {
                     '✥' => Some(You),
@@ -398,7 +402,8 @@ pub async fn main(_mode: Mode) {
     // let level = parse_level("2-now-what-is-this.txt");
     // let level = parse_level("3-out-of-reach.txt");
     // let level = parse_level("4-still-out-of-reach.txt");
-    let level = parse_level("5-volcano.txt");
+    // let level = parse_level("5-volcano.txt");
+    let level = parse_level("6-off-limits.txt");
 
     // println!("{}", ron::to_string(&level).unwrap());
 
@@ -423,6 +428,10 @@ pub async fn main(_mode: Mode) {
             Grass => (3, 4, Some((1, 1, 0, 0))),
             Tile => (3, 7, Some((2, 2, 0, 0))),
 
+            Flower => (5, 4, Some((0, 1, 0, 0))),
+
+            Brick => (7, 10, Some((0, 2, 0, 0))),
+
             Lava => (9, 9, None),
         }
         Entity::Text(text) => match text {
@@ -441,6 +450,10 @@ pub async fn main(_mode: Mode) {
                 Door => (4, 2, None),
                 Grass => (4, 4, None),
                 Tile => (4, 7, None),
+
+                Flower => (6, 4, None),
+
+                Brick => (8, 10, None),
 
                 Lava => (10, 9, Some((2, 1, 0, 0))),
             },
