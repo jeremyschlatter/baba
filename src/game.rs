@@ -53,6 +53,63 @@ enum Entity {
     Text(Text),
 }
 
+fn default_color(e: Entity) -> Color {
+    let c: u32 = match e {
+        Entity::Noun(n) => match n {
+            Baba => 0xFFFFFF,
+            Keke => 0xE5533B,
+            Wall => 0x293141,
+            Door => 0xE5533B,
+            Key => 0xEDE285,
+            Flag => 0xEDE285,
+            Rock => 0xC29E46,
+            Tile => 0x242424,
+            Grass => 0x303824,
+            Water => 0x5F9DD1,
+            Skull => 0x82261C,
+            Lava => 0x82261C,
+            Brick => 0x362E22,
+            Flower => 0x557AE0,
+        },
+        Entity::Text(t) => match t {
+            Text::Object(n) => match n {
+                Baba => 0xD9396A,
+                Keke => 0xE5533B,
+                Wall => 0x737373,
+                Door => 0xE5533B,
+                Key => 0xEDE285,
+                Flag => 0xEDE285,
+                Rock => 0x90673E,
+                Tile => 0x737373,
+                Grass => 0xA5B13F,
+                Water => 0x5F9DD1,
+                Skull => 0x82261C,
+                Lava => 0xE49950,
+                Brick => 0x90673E,
+                Flower => 0x557AE0,
+            },
+            Text::Adjective(a) => match a {
+                You => 0xD9396A,
+                Stop => 0x4B5C1C,
+                Push => 0x90673E,
+                Win => 0xEDE285,
+                Sink => 0xEDE285,
+                Defeat => 0x82261C,
+                Hot => 0xE49950,
+                Melt => 0x5F9DD1,
+            },
+            Text::Is => 0xFFFFFF,
+            Text::And => 0xFFFFFF,
+        }
+    };
+    Color::from_rgba(
+        ((c & 0xFF0000) >> 16) as u8,
+        ((c & 0x00FF00) >> 8) as u8,
+        ((c & 0x0000FF) >> 0) as u8,
+        255,
+    )
+}
+
 fn all_entities() -> impl Iterator<Item=Entity> {
     Noun::iter().map(Entity::Noun)
         .chain(iter::once(Entity::Text(Text::Is)))
@@ -441,8 +498,49 @@ pub async fn main(_mode: Mode) {
 
     let congrats: Texture2D = load_texture("congratulations.png").await.unwrap();
 
+    let mut last_input: (f64, Option<(KeyCode, Input)>) = (0., None);
+
+    let mut history = vec![level.clone()];
+    let mut current_state = &history[0];
+
+    let blend_alpha = Some(
+        BlendState::new(
+            Equation::Add,
+            BlendFactor::Value(BlendValue::SourceAlpha),
+            BlendFactor::OneMinusValue(BlendValue::SourceAlpha),
+        )
+    );
+
+    let mask = load_material(
+        DEFAULT_VERTEX_SHADER,
+        MASK_FRAGMENT_SHADER,
+        MaterialParams {
+            uniforms: vec![("radius".to_string(), UniformType::Float1)],
+            pipeline_params: PipelineParams {
+                color_blend: blend_alpha,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    ).unwrap();
+
+    let sprites_material = load_material(
+        DEFAULT_VERTEX_SHADER,
+        SPRITE_FRAGMENT_SHADER,
+        MaterialParams {
+            uniforms: vec![("color".to_string(), UniformType::Float3)],
+            pipeline_params: PipelineParams {
+                color_blend: blend_alpha,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    ).unwrap();
+
     let draw_sprite = |x, y, w, h, entity| {
         let sprite = sprites[&entity];
+        let c = default_color(entity);
+        sprites_material.set_uniform("color", [c.r, c.g, c.b]);
         draw_texture_ex(
             sprite, x, y, WHITE, DrawTextureParams {
                 dest_size: Some(Vec2{x: w, y: h}),
@@ -450,28 +548,6 @@ pub async fn main(_mode: Mode) {
             },
         );
     };
-
-    let mut last_input: (f64, Option<(KeyCode, Input)>) = (0., None);
-
-    let mut history = vec![level.clone()];
-    let mut current_state = &history[0];
-
-    let mask = load_material(
-        VERTEX_SHADER,
-        FRAGMENT_SHADER,
-        MaterialParams {
-            uniforms: vec![("radius".to_string(), UniformType::Float1)],
-            pipeline_params: PipelineParams {
-                color_blend: Some(BlendState::new(
-                    Equation::Add,
-                    BlendFactor::Value(BlendValue::SourceAlpha),
-                    BlendFactor::OneMinusValue(BlendValue::SourceAlpha))
-                ),
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-    ).unwrap();
 
     let anim_time = 2.0;
     let mut win_time = None;
@@ -533,6 +609,7 @@ pub async fn main(_mode: Mode) {
 
             draw_rectangle(offset_x, offset_y, game_width, game_height, BLACK);
 
+            gl_use_material(sprites_material);
             for row in 0..height {
                 for col in 0..width {
                     for e in &current_state[row][col] {
@@ -546,6 +623,7 @@ pub async fn main(_mode: Mode) {
                     }
                 }
             }
+            gl_use_default_material();
 
             // draw congratulations when you win
             match win_time {
@@ -579,7 +657,21 @@ pub async fn main(_mode: Mode) {
     }
 }
 
-const FRAGMENT_SHADER: &'static str = "#version 100
+const SPRITE_FRAGMENT_SHADER: &'static str = "#version 100
+precision lowp float;
+
+varying vec2 uv;
+
+uniform sampler2D Texture;
+uniform vec3 color;
+
+void main() {
+    vec4 color_ = vec4(color.x, color.y, color.z, 1.0);
+    gl_FragColor = color_ + texture2D(Texture, uv) - vec4(1.0);
+}
+";
+
+const MASK_FRAGMENT_SHADER: &'static str = "#version 100
 precision lowp float;
 
 varying vec2 uv;
@@ -593,7 +685,7 @@ void main() {
 }
 ";
 
-const VERTEX_SHADER: &'static str = "#version 100
+const DEFAULT_VERTEX_SHADER: &'static str = "#version 100
 precision lowp float;
 
 attribute vec3 position;
