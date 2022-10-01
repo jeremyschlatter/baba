@@ -1,12 +1,11 @@
 use macroquad::prelude::*;
 use miniquad::graphics::*;
 use serde::{Serialize, Deserialize};
+use strum::{EnumIter, IntoEnumIterator};
 
-use std::collections::{HashMap, HashSet};
+use std::{iter, collections::{HashMap, HashSet}};
 
-const SPRITE_SIZE : i16 = 37;
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumIter)]
 enum Noun {
     Baba,
     Keke,
@@ -22,10 +21,12 @@ enum Noun {
     Lava,
     Brick,
     Flower,
+    // Ice,
+    // Jelly,
 }
 use Noun::*;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumIter)]
 enum Adjective {
     You,
     Stop,
@@ -50,6 +51,14 @@ enum Text {
 enum Entity {
     Noun(Noun),
     Text(Text),
+}
+
+fn all_entities() -> impl Iterator<Item=Entity> {
+    Noun::iter().map(Entity::Noun)
+        .chain(iter::once(Entity::Text(Text::Is)))
+        .chain(iter::once(Entity::Text(Text::And)))
+        .chain(Noun::iter().map(|n| Entity::Text(Text::Object(n))))
+        .chain(Adjective::iter().map(|a| Entity::Text(Text::Adjective(a))))
 }
 
 type Cell = Vec<Entity>;
@@ -77,6 +86,8 @@ fn parse_level(name: &str) -> Level {
                     "l" => Some(Lava),
                     "p" => Some(Flower),
                     "c" => Some(Brick),
+                    // "i" => Some(Ice),
+                    // "j" => Some(Jelly),
                     _ => None,
                 }, match c {
                     '✥' => Some(You),
@@ -101,7 +112,7 @@ fn parse_level(name: &str) -> Level {
                         _ => vec![],
                     }
                 })
-                .chain(std::iter::repeat(vec![]))
+                .chain(iter::repeat(vec![]))
                 .take(max)
                 .collect::<Vec<Vec<Entity>>>())
         .collect()
@@ -166,7 +177,7 @@ fn scan_rules(l: &Level) -> Vec<Rule> {
             let mut row = -1;
             scan_rules_line(
                 &mut rules,
-                std::iter::from_fn(|| {
+                iter::from_fn(|| {
                     row += 1;
                     if row as usize == l.len() {
                         None
@@ -411,78 +422,30 @@ pub async fn main(_mode: Mode) {
     let width = level[0].len();
     let height = level.len();
 
-    let sprites: Texture2D = load_texture("sprites.png").await.unwrap();
-    let congrats: Texture2D = load_texture("congratulations.png").await.unwrap();
-
-    let sprite_map = |e| match e {
-        Entity::Noun(noun) => match noun {
-            Baba => (0, 1, Some((0, 1, 0, 0))),
-            Keke => (0, 2, None),
-            Flag => (0, 3, None),
-            Rock => (0, 4, None),
-            Wall => (0, 5, Some((9, 10, 18, 18))),
-            Water => (0, 6, Some((0, 0, 1, 0))),
-            Skull => (0, 7, Some((0, 2, 0, 0))),
-
-            Key  => (3, 1, None),
-            Door => (3, 2, None),
-            Grass => (3, 4, Some((1, 1, 0, 0))),
-            Tile => (3, 7, Some((2, 2, 0, 0))),
-
-            Flower => (5, 4, Some((0, 1, 0, 0))),
-
-            Brick => (7, 10, Some((0, 2, 0, 0))),
-
-            Lava => (9, 9, None),
+    let sprites: HashMap<Entity, Texture2D> = {
+        async fn load(e: Entity) -> (Entity, Texture2D) {
+            let name = match e {
+                Entity::Noun(Lava) => "water".to_string(),
+                Entity::Noun(n) => format!("{:?}", n),
+                Entity::Text(t) => match t {
+                    Text::Adjective(a) => format!("text_{:?}", a),
+                    Text::Object(o) => format!("text_{:?}", o),
+                    Text::Is => "text_is".to_string(),
+                    Text::And => "text_and".to_string(),
+                },
+            }.to_lowercase();
+            (e, load_texture(&format!("resources/Data/Sprites/{name}_0_1.png")).await.unwrap())
         }
-        Entity::Text(text) => match text {
-            Text::Is => (1, 0, Some((1, 0, 1, 1))),
-            Text::And => (2, 0, None),
-            Text::Object(noun) => match noun {
-                Baba => (1, 1, None),
-                Keke => (1, 2, None),
-                Flag => (1, 3, None),
-                Rock => (1, 4, None),
-                Wall => (1, 5, None),
-                Water => (1, 6, None),
-                Skull => (1, 7, Some((0, 1, 0, 0))),
-
-                Key  => (4, 1, None),
-                Door => (4, 2, None),
-                Grass => (4, 4, None),
-                Tile => (4, 7, None),
-
-                Flower => (6, 4, None),
-
-                Brick => (8, 10, None),
-
-                Lava => (10, 9, Some((2, 1, 0, 0))),
-            },
-            Text::Adjective(adj) => match adj {
-                You => (2, 1, None),
-                Win => (2, 3, None),
-                Push => (2, 4, Some((0, 1, 0, 0))),
-                Stop => (2, 5, Some((0, 1, 0, 0))),
-                Sink => (2, 6, Some((0, 1, 0, 0))),
-                Defeat => (2, 7, Some((0, 1, 0, 0))),
-                Melt => (5, 3, None),
-                Hot => (6, 3, None),
-            },
-        }
+        futures::future::join_all(all_entities().map(load)).await.into_iter().collect()
     };
 
-    let draw_sprite = |x, y, w, h, noun| {
-        let sprite = sprite_map(noun);
-        let off = sprite.2.unwrap_or_default();
+    let congrats: Texture2D = load_texture("congratulations.png").await.unwrap();
+
+    let draw_sprite = |x, y, w, h, entity| {
+        let sprite = sprites[&entity];
         draw_texture_ex(
-            sprites, x, y, WHITE, DrawTextureParams {
+            sprite, x, y, WHITE, DrawTextureParams {
                 dest_size: Some(Vec2{x: w, y: h}),
-                source: Some(Rect{
-                    x: (sprite.0 * SPRITE_SIZE + off.0) as f32,
-                    y: (sprite.1 * SPRITE_SIZE + off.1) as f32,
-                    w: (SPRITE_SIZE - off.2) as f32,
-                    h: (SPRITE_SIZE - off.3) as f32,
-                }),
                 ..Default::default()
             },
         );
