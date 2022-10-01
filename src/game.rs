@@ -419,7 +419,7 @@ pub async fn main(mode: Mode) {
 
     let anim_time = 2.0;
     let mut win_time = None;
-    // let anim_start = get_time();
+    let border_color = Color::from_rgba(0x15, 0x18, 0x1F, 0xFF);
 
     loop {
         // update
@@ -467,7 +467,7 @@ pub async fn main(mode: Mode) {
 
         // render
         {
-            clear_background(LIGHTGRAY);
+            clear_background(border_color);
 
             let sq_size = ((screen_width() - 20.) / width as f32).min((screen_height() - 20.) / height as f32);
             let game_width = sq_size * width as f32;
