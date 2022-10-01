@@ -336,7 +336,8 @@ pub enum Mode {
 
 pub async fn main(_mode: Mode) {
     // let level = parse_level("0-baba-is-you.txt");
-    let level = parse_level("1-where-do-i-go.txt");
+    // let level = parse_level("1-where-do-i-go.txt");
+    let level = parse_level("2-now-what-is-this.txt");
 
     // println!("{}", ron::to_string(&level).unwrap());
 
