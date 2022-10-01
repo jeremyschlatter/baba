@@ -21,8 +21,8 @@ enum Noun {
     Lava,
     Brick,
     Flower,
-    // Ice,
-    // Jelly,
+    Ice,
+    Jelly,
 }
 use Noun::*;
 
@@ -70,6 +70,8 @@ fn default_color(e: Entity) -> Color {
             Lava => 0x82261C,
             Brick => 0x362E22,
             Flower => 0x557AE0,
+            Ice => 0x293C7F,
+            Jelly => 0x6193D1,
         },
         Entity::Text(t) => match t {
             Text::Object(n) => match n {
@@ -87,6 +89,8 @@ fn default_color(e: Entity) -> Color {
                 Lava => 0xE49950,
                 Brick => 0x90673E,
                 Flower => 0x557AE0,
+                Ice => panic!("need text_ice color"),
+                Jelly => 0x6193D1,
             },
             Text::Adjective(a) => match a {
                 You => 0xD9396A,
@@ -143,8 +147,8 @@ fn parse_level(name: &str) -> Level {
                     "l" => Some(Lava),
                     "p" => Some(Flower),
                     "c" => Some(Brick),
-                    // "i" => Some(Ice),
-                    // "j" => Some(Jelly),
+                    "i" => Some(Ice),
+                    "j" => Some(Jelly),
                     _ => None,
                 }, match c {
                     '✥' => Some(You),
@@ -472,7 +476,8 @@ pub async fn main(_mode: Mode) {
     // let level = parse_level("4-still-out-of-reach.txt");
     // let level = parse_level("5-volcano.txt");
     // let level = parse_level("6-off-limits.txt");
-    let level = parse_level("7-grass-yard.txt");
+    // let level = parse_level("7-grass-yard.txt");
+    let level = parse_level("1-the-lake/1-icy-waters.txt");
 
     // println!("{}", ron::to_string(&level).unwrap());
 
