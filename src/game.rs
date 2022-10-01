@@ -58,7 +58,7 @@ type Level = Vec<Vec<Cell>>;
 fn parse_level(name: &str) -> Level {
     let s = std::fs::read_to_string("./levels/".to_owned() + name).unwrap();
     let lines: Vec<&str> = s.lines().skip_while(|l| l.starts_with("#")).collect();
-    let max = lines.iter().map(|l| l.len()).max().unwrap_or_default();
+    let max = lines.iter().map(|l| l.chars().count()).max().unwrap_or_default();
     lines.iter()
         .map(
             |l| l.chars()
@@ -403,7 +403,8 @@ pub async fn main(_mode: Mode) {
     // let level = parse_level("3-out-of-reach.txt");
     // let level = parse_level("4-still-out-of-reach.txt");
     // let level = parse_level("5-volcano.txt");
-    let level = parse_level("6-off-limits.txt");
+    // let level = parse_level("6-off-limits.txt");
+    let level = parse_level("7-grass-yard.txt");
 
     // println!("{}", ron::to_string(&level).unwrap());
 
