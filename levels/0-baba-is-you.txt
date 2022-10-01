@@ -1,31 +1,18 @@
-# uppercase = text
-# lowercase = object
-#
-# b = baba
-# r = rock
-# t = tile
-# w = wall
-# f = flag
-# i = is
-# y = you
-# s = stop
-# p = push
-# v = win (Victory)
                                  
 
 
 
 
 
-           BIY     FIV  
+           B=✥     F=✓
 
-           wwwwwwwwwww  
-           tttttrttttt  
-           tbtttrtttft  
-           tttttrttttt  
-           wwwwwwwwwww  
+           wwwwwwwwwww
+           tttttrttttt
+           tbtttrtttft
+           tttttrttttt
+           wwwwwwwwwww
 
-           WIS     RIP  
+           W=⊘     R=↦
 
 
 

@@ -16,7 +16,8 @@ enum Noun {
     Flag,
     Rock,
     Tile,
-    Grass
+    Grass,
+    Water,
 }
 use Noun::*;
 
@@ -26,6 +27,7 @@ enum Adjective {
     Stop,
     Push,
     Win,
+    Sink,
 }
 use Adjective::*;
 
@@ -63,12 +65,14 @@ fn parse_level(name: &str) -> Level {
                     "d" => Some(Door),
                     "x" => Some(Key),
                     "g" => Some(Grass),
+                    "a" => Some(Water),
                     _ => None,
                 }, match c {
-                    'Y' => Some(You),
-                    'S' => Some(Stop),
-                    'P' => Some(Push),
-                    'V' => Some(Win),
+                    '✥' => Some(You),
+                    '⊘' => Some(Stop),
+                    '↦' => Some(Push),
+                    '✓' => Some(Win),
+                    '≉' => Some(Sink),
                     _ => None
                 }) {
                     (Some(noun), _) => if c.is_uppercase() {
@@ -78,8 +82,8 @@ fn parse_level(name: &str) -> Level {
                     }
                     (_, Some(adj)) => vec![Entity::Text(Text::Adjective(adj))],
                     _ => match c {
-                        'I' => vec![Entity::Text(Text::Is)],
-                        'A' => vec![Entity::Text(Text::And)],
+                        '=' => vec![Entity::Text(Text::Is)],
+                        '&' => vec![Entity::Text(Text::And)],
                         _ => vec![],
                     }
                 })
@@ -314,6 +318,18 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
         }
     }
 
+    // sink things
+    {
+        let sinks = adjs(&rules, Sink);
+        for x in 0..width {
+            for y in 0..height {
+                if level[y][x].len() > 1 && contains(&level, x, y, &sinks) {
+                    level[y][x] = vec![];
+                }
+            }
+        }
+    }
+
     // check for win
     let wins = adjs(&rules, Win);
     let yous = adjs(&rules, You);
@@ -337,7 +353,8 @@ pub enum Mode {
 pub async fn main(_mode: Mode) {
     // let level = parse_level("0-baba-is-you.txt");
     // let level = parse_level("1-where-do-i-go.txt");
-    let level = parse_level("2-now-what-is-this.txt");
+    // let level = parse_level("2-now-what-is-this.txt");
+    let level = parse_level("3-out-of-reach.txt");
 
     // println!("{}", ron::to_string(&level).unwrap());
 
@@ -354,6 +371,7 @@ pub async fn main(_mode: Mode) {
             Flag => (0, 3, None),
             Rock => (0, 4, None),
             Wall => (0, 5, Some((9, 10, 18, 18))),
+            Water => (0, 6, Some((0, 0, 1, 0))),
 
             Key  => (3, 1, None),
             Door => (3, 2, None),
@@ -369,6 +387,7 @@ pub async fn main(_mode: Mode) {
                 Flag => (1, 3, None),
                 Rock => (1, 4, None),
                 Wall => (1, 5, None),
+                Water => (1, 6, None),
 
                 Key  => (4, 1, None),
                 Door => (4, 2, None),
@@ -380,6 +399,7 @@ pub async fn main(_mode: Mode) {
                 Win => (2, 3, None),
                 Push => (2, 4, Some((0, 1, 0, 0))),
                 Stop => (2, 5, Some((0, 1, 0, 0))),
+                Sink => (2, 6, Some((0, 1, 0, 0))),
             },
         }
     };

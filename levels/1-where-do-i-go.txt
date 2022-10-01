@@ -2,17 +2,17 @@
        g
          wwwwwwww     g
          w      wg
-         w I    w g
+         w =    w g
          w      w
-     wwwww    V w
+     wwwww    ✓ w
      wtttt      w   g
  g   wtFtt f    w
   g  wtttt      w
      wwwwwwwwwwww
          w      w
       B  w W    w    g
-      I  w I  b w   gg
-      Y  w S    w
+      =  w =  b w   gg
+      ✥  w ⊘    w
   g      w      w
          wwwwwwww  g
 
