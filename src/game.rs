@@ -19,6 +19,7 @@ enum Noun {
     Grass,
     Water,
     Skull,
+    Lava,
 }
 use Noun::*;
 
@@ -30,6 +31,8 @@ enum Adjective {
     Win,
     Sink,
     Defeat,
+    Hot,
+    Melt,
 }
 use Adjective::*;
 
@@ -69,6 +72,7 @@ fn parse_level(name: &str) -> Level {
                     "g" => Some(Grass),
                     "a" => Some(Water),
                     "s" => Some(Skull),
+                    "l" => Some(Lava),
                     _ => None,
                 }, match c {
                     '✥' => Some(You),
@@ -77,6 +81,8 @@ fn parse_level(name: &str) -> Level {
                     '✓' => Some(Win),
                     '≉' => Some(Sink),
                     '⩍' => Some(Defeat),
+                    '⌇' => Some(Hot),
+                    '⌢' => Some(Melt),
                     _ => None
                 }) {
                     (Some(noun), _) => if c.is_uppercase() {
@@ -350,6 +356,22 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
         }
     }
 
+    // melt things
+    {
+        let hots = adjs(&rules, Hot);
+        let melts = adjs(&rules, Melt);
+        for x in 0..width {
+            for y in 0..height {
+                if contains(&level, x, y, &hots) {
+                    level[y][x] = level[y][x].iter().filter_map(|e| match e {
+                        Entity::Noun(n) if melts.contains(n) => None,
+                        _ => Some(*e),
+                    }).collect();
+                }
+            }
+        }
+    }
+
     // check for win
     let wins = adjs(&rules, Win);
     let yous = adjs(&rules, You);
@@ -375,7 +397,8 @@ pub async fn main(_mode: Mode) {
     // let level = parse_level("1-where-do-i-go.txt");
     // let level = parse_level("2-now-what-is-this.txt");
     // let level = parse_level("3-out-of-reach.txt");
-    let level = parse_level("4-still-out-of-reach.txt");
+    // let level = parse_level("4-still-out-of-reach.txt");
+    let level = parse_level("5-volcano.txt");
 
     // println!("{}", ron::to_string(&level).unwrap());
 
@@ -399,6 +422,8 @@ pub async fn main(_mode: Mode) {
             Door => (3, 2, None),
             Grass => (3, 4, Some((1, 1, 0, 0))),
             Tile => (3, 7, Some((2, 2, 0, 0))),
+
+            Lava => (9, 9, None),
         }
         Entity::Text(text) => match text {
             Text::Is => (1, 0, Some((1, 0, 1, 1))),
@@ -416,6 +441,8 @@ pub async fn main(_mode: Mode) {
                 Door => (4, 2, None),
                 Grass => (4, 4, None),
                 Tile => (4, 7, None),
+
+                Lava => (10, 9, Some((2, 1, 0, 0))),
             },
             Text::Adjective(adj) => match adj {
                 You => (2, 1, None),
@@ -424,6 +451,8 @@ pub async fn main(_mode: Mode) {
                 Stop => (2, 5, Some((0, 1, 0, 0))),
                 Sink => (2, 6, Some((0, 1, 0, 0))),
                 Defeat => (2, 7, Some((0, 1, 0, 0))),
+                Melt => (5, 3, None),
+                Hot => (6, 3, None),
             },
         }
     };
