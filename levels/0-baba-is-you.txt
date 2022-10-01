@@ -1,5 +1,5 @@
-# uppercase = noun
-# lowercase = text
+# uppercase = text
+# lowercase = object
 #
 # b = baba
 # r = rock
@@ -13,14 +13,14 @@
 # v = win (Victory)
 
 
-  biy     fiv  
+  BIY     FIV  
 
-  WWWWWWWWWWW  
-  TTTTTRTTTTT  
-  TBTTTRTTTFT  
-  TTTTTRTTTTT  
-  WWWWWWWWWWW  
+  wwwwwwwwwww  
+  tttttrttttt  
+  tbtttrtttft  
+  tttttrttttt  
+  wwwwwwwwwww  
 
-  wis     rip  
+  WIS     RIP  
 
 

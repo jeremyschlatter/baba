@@ -63,21 +63,21 @@ fn parse_level(name: &str) -> Level {
                     "x" => Some(Key),
                     _ => None,
                 }, match c {
-                    'y' => Some(You),
-                    's' => Some(Stop),
-                    'p' => Some(Push),
-                    'v' => Some(Win),
+                    'Y' => Some(You),
+                    'S' => Some(Stop),
+                    'P' => Some(Push),
+                    'V' => Some(Win),
                     _ => None
                 }) {
-                    (Some(noun), _) => if c.is_lowercase() {
+                    (Some(noun), _) => if c.is_uppercase() {
                         vec![Entity::Text(Text::Object(noun))]
                     } else {
                         vec![Entity::Noun(noun)]
                     }
                     (_, Some(adj)) => vec![Entity::Text(Text::Adjective(adj))],
                     _ => match c {
-                        'i' => vec![Entity::Text(Text::Is)],
-                        'a' => vec![Entity::Text(Text::And)],
+                        'I' => vec![Entity::Text(Text::Is)],
+                        'A' => vec![Entity::Text(Text::And)],
                         _ => vec![],
                     }
                 })
