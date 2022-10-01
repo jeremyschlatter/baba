@@ -11,16 +11,21 @@
 # s = stop
 # p = push
 # v = win (Victory)
+                                 
 
 
-  BIY     FIV  
 
-  wwwwwwwwwww  
-  tttttrttttt  
-  tbtttrtttft  
-  tttttrttttt  
-  wwwwwwwwwww  
 
-  WIS     RIP  
+
+           BIY     FIV  
+
+           wwwwwwwwwww  
+           tttttrttttt  
+           tbtttrtttft  
+           tttttrttttt  
+           wwwwwwwwwww  
+
+           WIS     RIP  
+
 
 
