@@ -18,6 +18,7 @@ enum Noun {
     Tile,
     Grass,
     Water,
+    Skull,
 }
 use Noun::*;
 
@@ -28,6 +29,7 @@ enum Adjective {
     Push,
     Win,
     Sink,
+    Defeat,
 }
 use Adjective::*;
 
@@ -66,6 +68,7 @@ fn parse_level(name: &str) -> Level {
                     "x" => Some(Key),
                     "g" => Some(Grass),
                     "a" => Some(Water),
+                    "s" => Some(Skull),
                     _ => None,
                 }, match c {
                     '✥' => Some(You),
@@ -73,6 +76,7 @@ fn parse_level(name: &str) -> Level {
                     '↦' => Some(Push),
                     '✓' => Some(Win),
                     '≉' => Some(Sink),
+                    '⩍' => Some(Defeat),
                     _ => None
                 }) {
                     (Some(noun), _) => if c.is_uppercase() {
@@ -330,6 +334,22 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
         }
     }
 
+    // defeat things
+    {
+        let defeats = adjs(&rules, Defeat);
+        let yous = adjs(&rules, You);
+        for x in 0..width {
+            for y in 0..height {
+                if contains(&level, x, y, &defeats) {
+                    level[y][x] = level[y][x].iter().filter_map(|e| match e {
+                        Entity::Noun(n) if yous.contains(n) => None,
+                        _ => Some(*e),
+                    }).collect();
+                }
+            }
+        }
+    }
+
     // check for win
     let wins = adjs(&rules, Win);
     let yous = adjs(&rules, You);
@@ -354,7 +374,8 @@ pub async fn main(_mode: Mode) {
     // let level = parse_level("0-baba-is-you.txt");
     // let level = parse_level("1-where-do-i-go.txt");
     // let level = parse_level("2-now-what-is-this.txt");
-    let level = parse_level("3-out-of-reach.txt");
+    // let level = parse_level("3-out-of-reach.txt");
+    let level = parse_level("4-still-out-of-reach.txt");
 
     // println!("{}", ron::to_string(&level).unwrap());
 
@@ -372,6 +393,7 @@ pub async fn main(_mode: Mode) {
             Rock => (0, 4, None),
             Wall => (0, 5, Some((9, 10, 18, 18))),
             Water => (0, 6, Some((0, 0, 1, 0))),
+            Skull => (0, 7, Some((0, 2, 0, 0))),
 
             Key  => (3, 1, None),
             Door => (3, 2, None),
@@ -388,6 +410,7 @@ pub async fn main(_mode: Mode) {
                 Rock => (1, 4, None),
                 Wall => (1, 5, None),
                 Water => (1, 6, None),
+                Skull => (1, 7, Some((0, 1, 0, 0))),
 
                 Key  => (4, 1, None),
                 Door => (4, 2, None),
@@ -400,6 +423,7 @@ pub async fn main(_mode: Mode) {
                 Push => (2, 4, Some((0, 1, 0, 0))),
                 Stop => (2, 5, Some((0, 1, 0, 0))),
                 Sink => (2, 6, Some((0, 1, 0, 0))),
+                Defeat => (2, 7, Some((0, 1, 0, 0))),
             },
         }
     };
