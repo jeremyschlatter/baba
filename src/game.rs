@@ -16,6 +16,7 @@ enum Noun {
     Flag,
     Rock,
     Tile,
+    Grass
 }
 use Noun::*;
 
@@ -61,6 +62,7 @@ fn parse_level(name: &str) -> Level {
                     "k" => Some(Keke),
                     "d" => Some(Door),
                     "x" => Some(Key),
+                    "g" => Some(Grass),
                     _ => None,
                 }, match c {
                     'Y' => Some(You),
@@ -332,10 +334,11 @@ pub enum Mode {
     Golden,
 }
 
-pub async fn main(mode: Mode) {
-    let level = parse_level("0-baba-is-you.txt");
+pub async fn main(_mode: Mode) {
+    // let level = parse_level("0-baba-is-you.txt");
+    let level = parse_level("1-where-do-i-go.txt");
 
-    println!("{}", ron::to_string(&level).unwrap());
+    // println!("{}", ron::to_string(&level).unwrap());
 
     let width = level[0].len();
     let height = level.len();
@@ -353,6 +356,7 @@ pub async fn main(mode: Mode) {
 
             Key  => (3, 1, None),
             Door => (3, 2, None),
+            Grass => (3, 4, Some((1, 1, 0, 0))),
             Tile => (3, 7, Some((2, 2, 0, 0))),
         }
         Entity::Text(text) => match text {
@@ -367,6 +371,7 @@ pub async fn main(mode: Mode) {
 
                 Key  => (4, 1, None),
                 Door => (4, 2, None),
+                Grass => (4, 4, None),
                 Tile => (4, 7, None),
             },
             Text::Adjective(adj) => match adj {
