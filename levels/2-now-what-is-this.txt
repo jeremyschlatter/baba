@@ -1,4 +1,11 @@
-                        
+g = grass
+w = wall
+t = tile
+f = flag
+b = baba
+right pad 1
+---
+
        t
   t      ffffffff     t
      t   f      ft

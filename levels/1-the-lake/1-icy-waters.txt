@@ -1,3 +1,9 @@
+f = flag
+i = ice
+j = jelly
+w = wall
+b = baba
+---
 F=✓iii     iii  ii       J=≉
 iiii        iiiii i
 ii           iiii  i   jjj
@@ -11,6 +17,6 @@ i    wwwww   iiiiiiii jj jj
         wwww    iiiiiii i
      w  B=✥&≉w   iiiiii ii
      wwwwwww      iiiiii
-                   iiiiiii
-                    iiiiiii
-                     iiiiW=⊘
+i                  iiiiiii
+ii                  iiiiiii
+iiiii i    i         iiiiW=⊘

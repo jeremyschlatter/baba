@@ -1,3 +1,13 @@
+r = rock
+s = skull
+f = flag
+g = grass
+p = flower
+b = baba
+c = brick
+w = wall
+t = tile
+---
 R=⊘ rggggg  s        ggg
     r ggp wwswwwwwww  gg
 S=⩍ r    cw s  wtttw   g

@@ -1,11 +1,12 @@
 use macroquad::prelude::*;
 use miniquad::graphics::*;
 use serde::{Serialize, Deserialize};
-use strum::{EnumIter, IntoEnumIterator};
+use strum::{EnumIter, EnumString, IntoEnumIterator};
 
-use std::{iter, collections::{HashMap, HashSet}};
+use std::{iter, collections::{HashMap, HashSet}, str::FromStr};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumIter)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString)]
+#[strum(serialize_all = "snake_case")]
 enum Noun {
     Baba,
     Keke,
@@ -23,10 +24,14 @@ enum Noun {
     Flower,
     Ice,
     Jelly,
+    Crab,
+    Seastar,
+    Algae,
 }
 use Noun::*;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumIter)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString)]
+#[strum(serialize_all = "snake_case")]
 enum Adjective {
     You,
     Stop,
@@ -45,6 +50,16 @@ enum Text {
     And,
     Object(Noun),
     Adjective(Adjective),
+}
+impl FromStr for Text {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "is" => Ok(Text::Is),
+            "and" => Ok(Text::And),
+            _ => Err(format!("can't parse this as Text: '{s}'")),
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
@@ -72,6 +87,9 @@ fn default_color(e: Entity) -> Color {
             Flower => 0x557AE0,
             Ice => 0x293C7F,
             Jelly => 0x6193D1,
+            Crab => 0xC45A75,
+            Seastar => 0xE38E59,
+            Algae => 0x549640,
         },
         Entity::Text(t) => match t {
             Text::Object(n) => match n {
@@ -91,6 +109,9 @@ fn default_color(e: Entity) -> Color {
                 Flower => 0x557AE0,
                 Ice => panic!("need text_ice color"),
                 Jelly => 0x6193D1,
+                Crab => 0x893D5E,
+                Seastar => 0xE38E59,
+                Algae => 0x40743C,
             },
             Text::Adjective(a) => match a {
                 You => 0xD9396A,
@@ -127,30 +148,33 @@ type Level = Vec<Vec<Cell>>;
 
 fn parse_level(name: &str) -> Level {
     let s = std::fs::read_to_string("./levels/".to_owned() + name).unwrap();
-    let lines: Vec<&str> = s.lines().skip_while(|l| l.starts_with("#")).collect();
-    let max = lines.iter().map(|l| l.chars().count()).max().unwrap_or_default();
-    lines.iter()
+    let lines: Vec<&str> = s.lines().collect();
+    let meta: Vec<&str> = lines.iter().map(|s| *s).take_while(|s| *s != "---").collect();
+    let map: Vec<&str> = lines.iter().map(|s| *s).skip_while(|s| *s != "---").skip(1).collect();
+    let legend: HashMap<String, Noun> =
+        meta.iter()
+             .filter(|s| !s.starts_with("right pad"))
+             .map(|s| {
+                 let mut x = s.split(" = ");
+                 let c = x.next().unwrap();
+                 let noun = x.next().unwrap();
+                 (c.to_string(), Noun::from_str(noun).unwrap())
+             })
+             .collect();
+    let right_pad =
+        meta.iter()
+             .filter_map(|s|
+                 s.strip_prefix("right pad ")
+                  .map(|n| n.parse::<usize>().ok())
+                  .flatten())
+             .next()
+             .unwrap_or_default();
+    let max = map.iter().map(|l| l.chars().count()).max().unwrap_or_default() + right_pad;
+    map.iter()
         .map(
             |l| l.chars()
-                .map(|c| match (match c.to_string().to_lowercase().as_str() {
-                    "b" => Some(Baba),
-                    "r" => Some(Rock),
-                    "t" => Some(Tile),
-                    "w" => Some(Wall),
-                    "f" => Some(Flag),
-                    "k" => Some(Keke),
-                    "d" => Some(Door),
-                    "x" => Some(Key),
-                    "g" => Some(Grass),
-                    "a" => Some(Water),
-                    "s" => Some(Skull),
-                    "l" => Some(Lava),
-                    "p" => Some(Flower),
-                    "c" => Some(Brick),
-                    "i" => Some(Ice),
-                    "j" => Some(Jelly),
-                    _ => None,
-                }, match c {
+                .map(|c| match (legend.get(c.to_string().to_lowercase().as_str())
+                , match c {
                     '✥' => Some(You),
                     '⊘' => Some(Stop),
                     '↦' => Some(Push),
@@ -162,9 +186,9 @@ fn parse_level(name: &str) -> Level {
                     _ => None
                 }) {
                     (Some(noun), _) => if c.is_uppercase() {
-                        vec![Entity::Text(Text::Object(noun))]
+                        vec![Entity::Text(Text::Object(*noun))]
                     } else {
-                        vec![Entity::Noun(noun)]
+                        vec![Entity::Noun(*noun)]
                     }
                     (_, Some(adj)) => vec![Entity::Text(Text::Adjective(adj))],
                     _ => match c {
@@ -188,43 +212,366 @@ use Predicate::*;
 
 type Rule = (Noun, Predicate);
 
+// baba and keke is rock and wall is ghost
+
+// baba is rock on wall and keke is ghost
+
+#[cfg(test)]
+mod tests {
+    use crate::game::*;
+    #[test]
+    fn scan_rules() {
+        let is_a = IsAdjective;
+        let is = IsNoun;
+        let tests = [
+            (vec!["baba", "is", "you"], vec![(Baba, is_a(You))]),
+            (
+                vec!["baba", "is", "wall", "is", "push"],
+                vec![
+                    (Baba, is(Wall)),
+                    (Wall, is_a(Push)),
+                ]
+            ),
+            (vec!["baba", "and"], vec![]),
+            (vec!["wall", "and", "keke", "is", "push"], vec![(Wall, is_a(Push)), (Keke, is_a(Push))]),
+            (vec!["wall", "is", "push", "and", "stop"], vec![(Wall, is_a(Push)), (Wall, is_a(Stop))]),
+            (vec!["crab", "and", "", "baba", "is", "you"], vec![(Baba, is_a(You))]),
+            (
+                vec!["baba", "and", "keke", "is", "rock", "and", "wall", "is", "door"],
+                vec![
+                    (Baba, is(Rock)),
+                    (Baba, is(Wall)),
+                    (Keke, is(Rock)),
+                    (Keke, is(Wall)),
+                    // notably absent: (Rock, is(Door))
+                    (Wall, is(Door)),
+                ]
+            ),
+
+            // TODO
+            // (
+            //     vec!["baba", "is", "not", "wall", "is", "push"],
+            //     vec![
+            //         (Baba is not wall),
+            //         (not wall is push),
+            //     ]
+            // ),
+
+        ];
+        for (input, output) in tests {
+            let mut result = vec![];
+            let input_ =
+                input.iter()
+                     .map(|s| match (s, Text::from_str(s), Noun::from_str(s), Adjective::from_str(s)) {
+                         (&"", _, _, _)    => vec![],
+                         (_, Ok(t), _, _) => vec![t],
+                         (_, _, Ok(n), _) => vec![Text::Object(n)],
+                         (_, _, _, Ok(a)) => vec![Text::Adjective(a)],
+                         _ => panic!("unrecognized word: '{}'", s),
+                     })
+                     .map(|t| t.iter().map(|t| Entity::Text(*t)).collect::<Vec<Entity>>())
+                     .collect::<Vec<Vec<Entity>>>();
+            scan_rules_line(&mut result, input_.iter());
+            assert_eq!(
+                output.into_iter().collect::<HashSet<Rule>>(),
+                result.into_iter().collect::<HashSet<Rule>>(),
+                "input: {:?}", input,
+            );
+        }
+    }
+}
+
+// fn scan_rules_text(_rules: &mut Vec<Rule>, _text: &[Text]) {
+//     use nom::{multi::*, sequence::*};
+//     use Text::*;
+//     type Out<'a, A> = nom::IResult<&'a [Text], A, ()>;
+//     fn err<'a, A>() -> Out<'a, A> {
+//         Err(nom::Err::Error(()))
+//     }
+//     fn token<F, A>(f: F) -> impl Fn(&[Text]) -> Out<A>
+//     where
+//         F: Fn(Text) -> Option<A>
+//     {
+//         move |i: &[Text]|
+//             match i.iter().cloned().next().and_then(&f) {
+//                 Some(a) => Ok((&i[..], a)),
+//                 None => err(),
+//             }
+//     }
+//     fn one(t: Text) -> impl Fn(&[Text]) -> Out<Text> {
+//         token(move |x| if x == t { Some(t) } else { None })
+//     }
+//     fn noun(i: &[Text]) -> Out<Noun> {
+//         token(move |x| match x { Object(o) => Some(o), _ => None })(i)
+//     }
+//     fn subjects(i: &[Text]) -> Out<Vec<Noun>> {
+//         separated_list1(one(And), noun)(i)
+//     }
+//     fn predicates(i: &[Text]) -> Out<Vec<Predicate>> {
+//         separated_list1(one(And), token(|t| match t {
+//             Text::Object(noun) => Some(IsNoun(noun)),
+//             Text::Adjective(adj) => Some(IsAdjective(adj)),
+//             _ => None,
+//         }))(i)
+//     }
+//     fn phrase(i: &[Text]) -> Out<Vec<Rule>> {
+//         separated_pair(subjects, one(Is), predicates)(i).map(|(i, (ss, ps))| {
+//             let mut result = Vec::with_capacity(ss.len() * ps.len());
+//             for s in &ss {
+//                 for p in &ps {
+//                     result.push((*s, *p));
+//                 }
+//             }
+//             (i, result)
+//         })
+//     }
+// //     let mut i = text;
+// //     while i.len() > 0 {
+// //         match phrase(i) {
+// //             Ok(
+// //         }
+// //     }
+// }
+
+fn scan_rules_text(rules: &mut Vec<Rule>, text: &[Text]) {
+    #[derive(Debug)]
+    enum ListState {
+        Complete,
+        Incomplete,
+    }
+    use ListState::*;
+    #[derive(Debug)]
+    enum ScanState {
+        Subjects(ListState, Vec<Noun>),
+        Predicates(ListState, Vec<Noun>, Option<Predicate>),
+    }
+    use ScanState::*;
+    use Text::*;
+    let zero = |mut v: Vec<Noun>| { v.clear(); Subjects(Incomplete, v) };
+    let mut state = zero(vec![]);
+    let mut i = 0;
+    while i < text.len() {
+        let t = text[i];
+        i += 1;
+        state = match state {
+            Subjects(s, mut subjs) => match s {
+                Incomplete => match t {
+                    Object(noun) => { subjs.push(noun); Subjects(Complete, subjs) },
+                    _ => zero(subjs),
+                },
+                Complete => match t {
+                    Is => Predicates(Incomplete, subjs, None),
+                    And => Subjects(Incomplete, subjs),
+                    _ => zero(subjs),
+                },
+            },
+            Predicates(s, subjs, preds) => match s {
+                Incomplete => match match t {
+                    Object(noun) => Some(IsNoun(noun)),
+                    Adjective(adj) => Some(IsAdjective(adj)),
+                    _ => None,
+                } {
+                    Some(pred) => {
+                        for s in &subjs {
+                            rules.push((*s, pred));
+                        }
+                        Predicates(Complete, subjs, Some(pred))
+                    },
+                    None => zero(subjs),
+                },
+                Complete => match t {
+                    And => Predicates(Incomplete, subjs, preds),
+                    _ => {
+                        i -= 2; // to pick up the last subject word, if present
+                        zero(subjs)
+                    },
+                },
+            },
+        };
+    }
+}
+
 fn scan_rules_line<'a, I>(rules: &mut Vec<Rule>, line: I)
 where
     I: Iterator<Item = &'a Cell>,
 {
-    enum ScanState {
-        HaveSubject(Noun),
-        HaveSubjectIs(Noun),
+    fn chunks(i: Vec<Vec<Text>>) -> Vec<Vec<Vec<Text>>> {
+        i.iter().fold(vec![vec![]], |mut acc: Vec<Vec<Vec<Text>>>, v: &Vec<Text>| {
+            if v.len() == 0 {
+                acc.push(vec![]);
+            } else {
+                let l = acc.len();
+                acc[l - 1].push(v.clone());
+            }
+            acc
+        })
     }
-    use ScanState::*;
-    let mut state = None;
-    for cell in line {
-        let text = cell.iter()
-            .filter_map(|e| match e {
-                Entity::Text(text) => Some(text),
-                _ => None,
-             })
-            .next();
-        state = match text {
-            Some(text) => match (state, text) {
-                (None, Text::Object(noun)) => Some(HaveSubject(*noun)),
-                (None, _) => None,
-                (Some(HaveSubject(noun)), Text::Is) => Some(HaveSubjectIs(noun)),
-                (Some(HaveSubject(_)), Text::Object(noun)) => Some(HaveSubject(*noun)),
-                (Some(HaveSubject(_)), _) => None,
-                (Some(HaveSubjectIs(noun)), Text::Object(obj)) => {
-                    rules.push((noun, IsNoun(*obj)));
-                    Some(HaveSubject(*obj))
-                },
-                (Some(HaveSubjectIs(noun)), Text::Adjective(adj)) => {
-                    rules.push((noun, IsAdjective(*adj)));
-                    None
-                },
-                (Some(HaveSubjectIs(_)), _) => None,
-            },
-            None => None,
+
+    fn branches(input: Vec<Vec<Text>>) -> Vec<Vec<Text>> {
+        input.iter()
+         .fold(vec![vec![]], |acc: Vec<Vec<usize>>, v: &Vec<Text>| {
+             (0..v.len()).flat_map(|j| {
+                 let mut x = acc.clone();
+                 for xx in &mut x {
+                     xx.push(j);
+                 }
+                 x
+             }).collect()
+         })
+         .iter()
+         .map(|ixs| ixs.iter()
+                       .enumerate()
+                       .map(|(i, &j)| input[i][j])
+                       .collect::<Vec<Text>>())
+         .collect()
+    }
+
+    let x: Vec<Vec<Text>> =
+       line.map(|c| c.iter()
+                     .filter_map(|&e| match e {
+                         Entity::Text(t) => Some(t),
+                         _ => None,
+                     }).collect()
+           ).collect();
+
+    for chunk in chunks(x) {
+        for branch in branches(chunk) {
+            scan_rules_text(rules, branch.as_slice());
         }
     }
+
+//     // TODO: I think this is just Peekable::next_if_eq
+//     fn consume<I>(it: &mut iter::Peekable<I>, t: Text) -> Option<()>
+//     where
+//         I: Iterator<Item = Option<Text>>
+//     {
+//         if *it.peek()? == Some(t) {
+//             it.next();
+//             Some(())
+//         } else {
+//             None
+//         }
+//     }
+//     fn list<I, A, F>(it: &mut iter::Peekable<I>, f: F) -> Option<Vec<A>>
+//     where
+//         I: Iterator<Item = Option<Text>>,
+//         F: Fn(&mut iter::Peekable<I>) -> Option<A>
+//     {
+//         let mut result = vec![f(it)?];
+//         while let Some(_) = consume(it, Text::And) {
+//             result.push(f(it)?);
+//         }
+//         Some(result)
+//     }
+//     fn many<I, A, F>(it: &mut iter::Peekable<I>, f: F) -> Option<Vec<A>>
+//     where
+//         I: Iterator<Item = Option<Text>>,
+//         F: Fn(Option<Text>) -> Option<A>
+//     {
+//         let mut result = vec![];
+//         while let Some(x) = it.peek().and_then(|o| f(*o)) {
+//             result.push(x);
+//             it.next();
+//         }
+//         Some(result)
+//     }
+//     fn subjects<I>(it: &mut iter::Peekable<I>) -> Option<Vec<Noun>>
+//     where
+//         I: Iterator<Item = Option<Text>>
+//     {
+//         many(it, |x| match x { Some(_) => None, None => Some(()) });
+//         list(it, |it| match it.next() {
+//             Some(Some(Text::Object(noun))) => Some(noun),
+//             _ => None
+//         })
+//         // list(it, |it| it.filter_map(|t| t.map(get_noun).flatten()).next())
+//     }
+//     fn predicates<I>(it: &mut iter::Peekable<I>) -> Option<Vec<Predicate>>
+//     where
+//         I: Iterator<Item = Option<Text>>
+//     {
+//         list(it, |it| match it.peek().map(|x| *x) {
+//             Some(Some(Text::Object(noun))) => { it.next(); Some(IsNoun(noun)) },
+//             Some(Some(Text::Adjective(adj))) => { it.next(); Some(IsAdjective(adj)) },
+//             _ => None,
+//         })
+//     }
+//     fn phrase<I>(it: &mut iter::Peekable<I>, rules: &mut Vec<Rule>) -> Option<Noun>
+//     where
+//         I: Iterator<Item = Option<Text>>
+//     {
+//         let subjs = subjects(it)?;
+//         consume(it, Text::Is)?;
+//         let preds = predicates(it)?;
+//         for pred in &preds {
+//             for subj in &subjs {
+//                 rules.push((*subj, *pred));
+//             }
+//         }
+//         match preds.last() {
+//             Some(IsNoun(noun)) => Some(*noun),
+//             _ => None,
+//         }
+//     }
+//     let mut it = (Box::new(line.map(|c| {
+//         c.iter()
+//          .filter_map(|e| match e {
+//              Entity::Text(text) => Some(*text),
+//              _ => None,
+//          })
+//         .next()
+//     })) as Box<dyn Iterator<Item = Option<Text>>>).peekable();
+//     loop {
+//         let obj = phrase(&mut it, rules);
+//         if it.peek().is_none() {
+//             return;
+//         }
+//         if let Some(obj) = obj {
+//             it = (Box::new(iter::once(Some(Text::Object(obj))).chain(it)) as Box<dyn Iterator<Item = Option<Text>>>).peekable();
+//         }
+//     }
+
+//     enum ScanState {
+//         HaveSubjects(Vec<Noun>),
+//         HaveSubjectsAnd(Vec<Noun>),
+//         HaveSubjectsIs(Vec<Noun>),
+//         Completed(Vec<Noun>, Option<Noun>),
+//     }
+//     use ScanState::*;
+//     let mut state = None;
+//     for cell in line {
+//         let text = cell.iter()
+//             .filter_map(|e| match e {
+//                 Entity::Text(text) => Some(text),
+//                 _ => None,
+//              })
+//             .next();
+//         state = match (state, text) {
+//             (None, Some(Text::Object(noun))) => Some(HaveSubjects(vec![*noun])),
+//             (Some(state), Some(text)) => match (state, text) {
+//                 (HaveSubjects(subjs), Text::Is) => Some(HaveSubjectsIs(subjs)),
+//                 (HaveSubjects(subjs), Text::And) =>
+//                 (HaveSubjects(_), Text::Object(noun)) => Some(HaveSubjects(vec![*noun])),
+//                 (HaveSubjectsIs(subjs), Text::Object(obj)) => {
+//                     for subj in &subjs {
+//                         rules.push((*subj, IsNoun(*obj)));
+//                     }
+//                     Some(Completed(subjs, Some(*obj)))
+//                 },
+//                 (HaveSubjectsIs(subjs), Text::Adjective(adj)) => {
+//                     for subj in &subjs {
+//                         rules.push((*subj, IsAdjective(*adj)));
+//                     }
+//                     Some(Completed(subjs, None))
+//                 },
+//                 (Completed(_, Some(obj)), Text::Is) => Some(HaveSubjectsIs(vec![obj])),
+//                 (Completed(subjs, _), Text::And) => Some(HaveSubjectsIs(subjs)),
+//                 _ => None,
+//             },
+//             _ => None,
+//         }
+//     }
+
 }
 
 fn scan_rules(l: &Level) -> Vec<Rule> {
@@ -240,7 +587,7 @@ fn scan_rules(l: &Level) -> Vec<Rule> {
                 &mut rules,
                 iter::from_fn(|| {
                     row += 1;
-                    if row as usize == l.len() {
+                    if row as usize >= l.len() {
                         None
                     } else {
                         Some(&l[row as usize][col])
@@ -477,7 +824,8 @@ pub async fn main(_mode: Mode) {
     // let level = parse_level("5-volcano.txt");
     // let level = parse_level("6-off-limits.txt");
     // let level = parse_level("7-grass-yard.txt");
-    let level = parse_level("1-the-lake/1-icy-waters.txt");
+    // let level = parse_level("1-the-lake/1-icy-waters.txt");
+    let level = parse_level("1-the-lake/2-turns.txt");
 
     // println!("{}", ron::to_string(&level).unwrap());
 
@@ -489,12 +837,13 @@ pub async fn main(_mode: Mode) {
             let name = match e {
                 Entity::Noun(Lava) => "water".to_string(),
                 Entity::Noun(n) => format!("{:?}", n),
-                Entity::Text(t) => match t {
-                    Text::Adjective(a) => format!("text_{:?}", a),
-                    Text::Object(o) => format!("text_{:?}", o),
-                    Text::Is => "text_is".to_string(),
-                    Text::And => "text_and".to_string(),
-                },
+                Entity::Text(t) => "text_".to_string() + &(match t {
+                    Text::Adjective(a) => format!("{:?}", a),
+                    Text::Object(Seastar) => "star".to_string(),
+                    Text::Object(o) => format!("{:?}", o),
+                    Text::Is => "is".to_string(),
+                    Text::And => "and".to_string(),
+                }),
             }.to_lowercase();
             (e, load_texture(&format!("resources/Data/Sprites/{name}_0_1.png")).await.unwrap())
         }

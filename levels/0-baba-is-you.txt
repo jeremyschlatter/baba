@@ -1,4 +1,11 @@
-                                 
+b = baba
+t = tile
+f = flag
+w = wall
+r = rock
+right pad 11
+---
+
 
 
 

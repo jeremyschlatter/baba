@@ -1,4 +1,12 @@
-BWw             g     
+b = baba
+w = wall
+g = grass
+t = tile
+a = water
+f = flag
+r = rock
+---
+BWw             g
 ==w g  wwwwwwww g
 ✥⊘w    wttttttw
 www  g wtbttrtw

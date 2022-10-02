@@ -1,4 +1,10 @@
-F=✓                     
+f = flag
+b = baba
+s = skull
+r = rock
+right pad 2
+---
+F=✓
 B=✥
 
              sssssssss
