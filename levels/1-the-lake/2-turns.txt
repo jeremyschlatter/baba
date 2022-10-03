@@ -8,7 +8,8 @@ f = flag
 t = tile
 w = wall
 r = rock
-right pad 1
+right pad = 1
+palette = Ocean
 ---
  a                   aa
 a                        a

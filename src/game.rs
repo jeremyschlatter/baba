@@ -1,52 +1,81 @@
 use macroquad::prelude::*;
 use miniquad::graphics::*;
 use serde::{Serialize, Deserialize};
-use strum::{EnumIter, EnumString, IntoEnumIterator};
+use strum::{EnumIter, EnumProperty, EnumString, IntoEnumIterator};
 
 use std::{iter, collections::{HashMap, HashSet}, str::FromStr};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString, EnumProperty)]
 #[strum(serialize_all = "snake_case")]
-enum Noun {
+pub enum Noun {
+    #[strum(props(color = "0 3", text_color = "4 0", text_color_active = "4 1"))]
     Baba,
+    #[strum(props(color = "2 2", text_color = "2 1", text_color_active = "2 2"))]
     Keke,
+    #[strum(props(color = "1 1", text_color = "1 1", text_color_active = "0 1"))]
     Wall,
+    #[strum(props(color = "2 2", text_color = "2 1", text_color_active = "2 2"))]
     Door,
+    #[strum(props(color = "2 4", text_color = "6 1", text_color_active = "2 4"))]
     Key,
+    #[strum(props(color = "2 4", text_color = "6 1", text_color_active = "2 4"))]
     Flag,
+    #[strum(props(color = "6 2", text_color = "6 0", text_color_active = "6 1"))]
     Rock,
+    #[strum(props(color = "0 0", text_color = "1 1", text_color_active = "0 1"))]
     Tile,
+    #[strum(props(color = "5 0", text_color = "5 1", text_color_active = "5 3"))]
     Grass,
+    #[strum(props(color = "1 3", text_color = "1 2", text_color_active = "1 3"))]
     Water,
+    #[strum(props(color = "2 1", text_color = "2 0", text_color_active = "2 1"))]
     Skull,
+    #[strum(props(color = "2 3", text_color = "2 2", text_color_active = "2 3"))]
     Lava,
+    #[strum(props(color = "6 3", text_color = "6 0", text_color_active = "6 1"))]
     Brick,
+    #[strum(props(color = "3 3", text_color = "3 2", text_color_active = "3 3"))]
     Flower,
+    #[strum(props(color = "1 2", text_color = "1 2", text_color_active = "1 3"))]
     Ice,
+    #[strum(props(color = "1 4", text_color = "1 3", text_color_active = "1 4"))]
     Jelly,
+    #[strum(props(color = "2 2", text_color = "2 1", text_color_active = "2 2"))]
     Crab,
+    #[strum(props(color = "2 3", text_color = "2 2", text_color_active = "2 3"))]
     Seastar,
+    #[strum(props(color = "5 2", text_color = "5 0", text_color_active = "5 1"))]
     Algae,
 }
 use Noun::*;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString, EnumProperty)]
 #[strum(serialize_all = "snake_case")]
-enum Adjective {
+pub enum Adjective {
+    #[strum(props(text_color = "4 0", text_color_active = "4 1"))]
     You,
+    #[strum(props(text_color = "5 0", text_color_active = "5 1"))]
     Stop,
+    #[strum(props(text_color = "6 0", text_color_active = "6 1"))]
     Push,
+    #[strum(props(text_color = "6 1", text_color_active = "2 4"))]
     Win,
+    #[strum(props(text_color = "1 2", text_color_active = "1 3"))]
     Sink,
+    #[strum(props(text_color = "2 0", text_color_active = "2 1"))]
     Defeat,
+    #[strum(props(text_color = "2 2", text_color_active = "2 3"))]
     Hot,
+    #[strum(props(text_color = "1 2", text_color_active = "1 3"))]
     Melt,
 }
 use Adjective::*;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
-enum Text {
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumProperty)]
+pub enum Text {
+    #[strum(props(text_color = "0 1", text_color_active = "0 3"))]
     Is,
+    #[strum(props(text_color = "0 1", text_color_active = "0 3"))]
     And,
     Object(Noun),
     Adjective(Adjective),
@@ -63,76 +92,25 @@ impl FromStr for Text {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
-enum Entity {
+pub enum Entity {
     Noun(Noun),
     Text(Text),
 }
 
-fn default_color(e: Entity) -> Color {
-    let c: u32 = match e {
-        Entity::Noun(n) => match n {
-            Baba => 0xFFFFFF,
-            Keke => 0xE5533B,
-            Wall => 0x293141,
-            Door => 0xE5533B,
-            Key => 0xEDE285,
-            Flag => 0xEDE285,
-            Rock => 0xC29E46,
-            Tile => 0x242424,
-            Grass => 0x303824,
-            Water => 0x5F9DD1,
-            Skull => 0x82261C,
-            Lava => 0x82261C,
-            Brick => 0x362E22,
-            Flower => 0x557AE0,
-            Ice => 0x293C7F,
-            Jelly => 0x6193D1,
-            Crab => 0xC45A75,
-            Seastar => 0xE38E59,
-            Algae => 0x549640,
-        },
+fn default_color(e: Entity, palette: &Image) -> Color {
+    let ixs = match e {
+        Entity::Noun(n) => n.get_str("color"),
         Entity::Text(t) => match t {
-            Text::Object(n) => match n {
-                Baba => 0xD9396A,
-                Keke => 0xE5533B,
-                Wall => 0x737373,
-                Door => 0xE5533B,
-                Key => 0xEDE285,
-                Flag => 0xEDE285,
-                Rock => 0x90673E,
-                Tile => 0x737373,
-                Grass => 0xA5B13F,
-                Water => 0x5F9DD1,
-                Skull => 0x82261C,
-                Lava => 0xE49950,
-                Brick => 0x90673E,
-                Flower => 0x557AE0,
-                Ice => panic!("need text_ice color"),
-                Jelly => 0x6193D1,
-                Crab => 0x893D5E,
-                Seastar => 0xE38E59,
-                Algae => 0x40743C,
-            },
-            Text::Adjective(a) => match a {
-                You => 0xD9396A,
-                Stop => 0x4B5C1C,
-                Push => 0x90673E,
-                Win => 0xEDE285,
-                Sink => 0xEDE285,
-                Defeat => 0x82261C,
-                Hot => 0xE49950,
-                Melt => 0x5F9DD1,
-            },
-            Text::Is => 0xFFFFFF,
-            Text::And => 0xFFFFFF,
-        }
-    };
-    Color::from_rgba(
-        ((c & 0xFF0000) >> 16) as u8,
-        ((c & 0x00FF00) >> 8) as u8,
-        ((c & 0x0000FF) >> 0) as u8,
-        255,
-    )
+            Text::Object(n) => n.get_str("text_color_active"),
+            Text::Adjective(a) => a.get_str("text_color_active"),
+            Text::Is => t.get_str("text_color_active"),
+            Text::And => t.get_str("text_color_active"),
+        },
+    }.unwrap();
+
+    let x = ixs[0..1].parse().unwrap();
+    let y = ixs[2..3].parse().unwrap();
+    palette.get_pixel(x, y)
 }
 
 fn all_entities() -> impl Iterator<Item=Entity> {
@@ -146,31 +124,27 @@ fn all_entities() -> impl Iterator<Item=Entity> {
 type Cell = Vec<Entity>;
 type Level = Vec<Vec<Cell>>;
 
-fn parse_level(name: &str) -> Level {
+fn parse_level(name: &str) -> (Level, String) {
     let s = std::fs::read_to_string("./levels/".to_owned() + name).unwrap();
-    let lines: Vec<&str> = s.lines().collect();
-    let meta: Vec<&str> = lines.iter().map(|s| *s).take_while(|s| *s != "---").collect();
-    let map: Vec<&str> = lines.iter().map(|s| *s).skip_while(|s| *s != "---").skip(1).collect();
-    let legend: HashMap<String, Noun> =
-        meta.iter()
-             .filter(|s| !s.starts_with("right pad"))
+    let metas: HashMap<&str, &str> =
+        s.lines()
+             .take_while(|&s| s != "---")
              .map(|s| {
                  let mut x = s.split(" = ");
-                 let c = x.next().unwrap();
-                 let noun = x.next().unwrap();
-                 (c.to_string(), Noun::from_str(noun).unwrap())
+                 (x.next().unwrap(), x.next().unwrap())
              })
              .collect();
-    let right_pad =
-        meta.iter()
-             .filter_map(|s|
-                 s.strip_prefix("right pad ")
-                  .map(|n| n.parse::<usize>().ok())
-                  .flatten())
-             .next()
-             .unwrap_or_default();
+    let right_pad: usize =
+        metas.get("right pad").and_then(|s| s.parse().ok()).unwrap_or_default();
+    let legend: HashMap<String, Noun> =
+        metas.iter()
+             .filter(|(&k, _)| k.len() == 1)
+             .map(|(&k, &v)| (k.to_string(), Noun::from_str(v).unwrap()))
+             .collect();
+    let map: Vec<&str> = s.lines().skip_while(|s| *s != "---").skip(1).collect();
+
     let max = map.iter().map(|l| l.chars().count()).max().unwrap_or_default() + right_pad;
-    map.iter()
+    let level = map.iter()
         .map(
             |l| l.chars()
                 .map(|c| match (legend.get(c.to_string().to_lowercase().as_str())
@@ -200,7 +174,9 @@ fn parse_level(name: &str) -> Level {
                 .chain(iter::repeat(vec![]))
                 .take(max)
                 .collect::<Vec<Vec<Entity>>>())
-        .collect()
+        .collect();
+
+    (level, metas.get("palette").unwrap_or(&"default").to_string())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -621,22 +597,17 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
     (level, false)
 }
 
-pub enum Mode {
-    Normal,
-    Golden,
-}
-
-pub async fn main(_mode: Mode) {
-    // let level = parse_level("0-baba-is-you.txt");
-    // let level = parse_level("1-where-do-i-go.txt");
-    // let level = parse_level("2-now-what-is-this.txt");
-    // let level = parse_level("3-out-of-reach.txt");
-    // let level = parse_level("4-still-out-of-reach.txt");
-    // let level = parse_level("5-volcano.txt");
-    // let level = parse_level("6-off-limits.txt");
-    // let level = parse_level("7-grass-yard.txt");
-    // let level = parse_level("1-the-lake/1-icy-waters.txt");
-    let level = parse_level("1-the-lake/2-turns.txt");
+pub async fn main() -> Vec<Level> {
+    let (level, palette_name) = parse_level("0-baba-is-you.txt");
+    // let (level, palette_name) = parse_level("1-where-do-i-go.txt");
+    // let (level, palette_name) = parse_level("2-now-what-is-this.txt");
+    // let (level, palette_name) = parse_level("3-out-of-reach.txt");
+    // let (level, palette_name) = parse_level("4-still-out-of-reach.txt");
+    // let (level, palette_name) = parse_level("5-volcano.txt");
+    // let (level, palette_name) = parse_level("6-off-limits.txt");
+    // let (level, palette_name) = parse_level("7-grass-yard.txt");
+    // let (level, palette_name) = parse_level("1-the-lake/1-icy-waters.txt");
+    // let (level, palette_name) = parse_level("1-the-lake/2-turns.txt");
 
     // println!("{}", ron::to_string(&level).unwrap());
 
@@ -702,9 +673,11 @@ pub async fn main(_mode: Mode) {
         },
     ).unwrap();
 
+    let palette = load_image(&format!("resources/Data/Palettes/{palette_name}.png")).await.unwrap();
+
     let draw_sprite = |x, y, w, h, entity| {
         let sprite = sprites[&entity];
-        let c = default_color(entity);
+        let c = default_color(entity, &palette);
         sprites_material.set_uniform("color", [c.r, c.g, c.b]);
         draw_texture_ex(
             sprite, x, y, WHITE, DrawTextureParams {
@@ -772,7 +745,7 @@ pub async fn main(_mode: Mode) {
             let offset_x = (screen_width() - game_width) / 2.;
             let offset_y = (screen_height() - game_height) / 2.;
 
-            draw_rectangle(offset_x, offset_y, game_width, game_height, BLACK);
+            draw_rectangle(offset_x, offset_y, game_width, game_height, palette.get_pixel(0, 4));
 
             gl_use_material(sprites_material);
             for row in 0..height {

@@ -3,7 +3,7 @@ w = wall
 t = tile
 f = flag
 b = baba
-right pad 1
+right pad = 1
 ---
 
        t

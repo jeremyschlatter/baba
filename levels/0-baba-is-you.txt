@@ -3,7 +3,7 @@ t = tile
 f = flag
 w = wall
 r = rock
-right pad 11
+right pad = 11
 ---
 
 
