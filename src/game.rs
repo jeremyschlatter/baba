@@ -108,9 +108,10 @@ fn default_color(e: Entity, palette: &Image) -> Color {
         },
     }.unwrap();
 
-    let x = ixs[0..1].parse().unwrap();
-    let y = ixs[2..3].parse().unwrap();
-    palette.get_pixel(x, y)
+    palette.get_pixel(
+        ixs[0..1].parse().unwrap(),
+        ixs[2..3].parse().unwrap(),
+    )
 }
 
 fn all_entities() -> impl Iterator<Item=Entity> {
