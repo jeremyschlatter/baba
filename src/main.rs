@@ -15,6 +15,10 @@ enum Commands {
     Golden {
         level: String,
     },
+    #[command(about = "Play a specific level")]
+    Level {
+        level: String,
+    },
 }
 
 #[macroquad::main("Baba Is Clone")]
@@ -22,7 +26,8 @@ async fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        None => { game::main().await; },
-        Some(Commands::Golden{ level }) => test::record_golden(&level),
+        None => { game::main(None).await; },
+        Some(Commands::Level { level }) => { game::main(Some(&level)).await; },
+        Some(Commands::Golden{ level }) => test::record_golden(&level).await,
     }
 }

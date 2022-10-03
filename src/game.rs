@@ -126,7 +126,7 @@ type Cell = Vec<Entity>;
 type Level = Vec<Vec<Cell>>;
 
 fn parse_level(name: &str) -> (Level, String) {
-    let s = std::fs::read_to_string("./levels/".to_owned() + name).unwrap();
+    let s = std::fs::read_to_string(name).unwrap();
     let metas: HashMap<&str, &str> =
         s.lines()
              .take_while(|&s| s != "---")
@@ -598,17 +598,19 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
     (level, false)
 }
 
-pub async fn main() -> Vec<Level> {
-    let (level, palette_name) = parse_level("0-baba-is-you.txt");
-    // let (level, palette_name) = parse_level("1-where-do-i-go.txt");
-    // let (level, palette_name) = parse_level("2-now-what-is-this.txt");
-    // let (level, palette_name) = parse_level("3-out-of-reach.txt");
-    // let (level, palette_name) = parse_level("4-still-out-of-reach.txt");
-    // let (level, palette_name) = parse_level("5-volcano.txt");
-    // let (level, palette_name) = parse_level("6-off-limits.txt");
-    // let (level, palette_name) = parse_level("7-grass-yard.txt");
-    // let (level, palette_name) = parse_level("1-the-lake/1-icy-waters.txt");
-    // let (level, palette_name) = parse_level("1-the-lake/2-turns.txt");
+pub async fn main(level: Option<&str>) -> Vec<Level> {
+    let (level, palette_name) = parse_level(level.unwrap_or(
+        // "levels/0-baba-is-you.txt"
+        // "levels/1-where-do-i-go.txt"
+        // "levels/2-now-what-is-this.txt"
+        // "levels/3-out-of-reach.txt"
+        // "levels/4-still-out-of-reach.txt"
+        // "levels/5-volcano.txt"
+        // "levels/6-off-limits.txt"
+        // "levels/7-grass-yard.txt"
+        // "levels/1-the-lake/1-icy-waters.txt"
+        "levels/1-the-lake/2-turns.txt"
+    ));
 
     // println!("{}", ron::to_string(&level).unwrap());
 
@@ -698,8 +700,8 @@ pub async fn main() -> Vec<Level> {
     let anim_time = 2.0;
     let border_color = palette.get_pixel(1, 0);
     let pause_color = Color::new(border_color.r, border_color.g, border_color.b, 0.5);
-    let button_color = Color::from_rgba(0x1B, 0x36, 0x44, 0xFF);
-    let button_hilight_color = Color::from_rgba(0x3B, 0x77, 0x97, 0xFF);
+    // let button_color = Color::from_rgba(0x1B, 0x36, 0x44, 0xFF);
+    // let button_hilight_color = Color::from_rgba(0x3B, 0x77, 0x97, 0xFF);
 
     let mut win_time = None;
     let mut paused = false;
