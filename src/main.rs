@@ -1,4 +1,5 @@
 mod game;
+mod test;
 
 use clap::{Parser, Subcommand};
 
@@ -11,17 +12,17 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     #[command(about = "Record a golden session")]
-    Golden,
+    Golden {
+        level: String,
+    },
 }
 
 #[macroquad::main("Baba Is Clone")]
 async fn main() {
     let cli = Cli::parse();
 
-    game::main(
-        match cli.command {
-            Some(Commands::Golden) => game::Mode::Golden,
-            None => game::Mode::Normal,
-        }
-    ).await
+    match cli.command {
+        None => { game::main().await; },
+        Some(Commands::Golden{ level }) => test::record_golden(&level),
+    }
 }

@@ -634,7 +634,14 @@ pub async fn main() -> Vec<Level> {
 
     let congrats: Texture2D = load_texture("congratulations.png").await.unwrap();
 
-    let mut last_input: (f64, Option<(KeyCode, Input)>) = (0., None);
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    enum UIInput {
+        Control(Input),
+        Pause,
+    }
+    use UIInput::*;
+
+    let mut last_input: (f64, Option<(KeyCode, UIInput)>) = (0., None);
 
     let mut history = vec![level.clone()];
     let mut current_state = &history[0];
@@ -688,8 +695,13 @@ pub async fn main() -> Vec<Level> {
     };
 
     let anim_time = 2.0;
+    let border_color = palette.get_pixel(1, 0);
+    let pause_color = Color::new(border_color.r, border_color.g, border_color.b, 0.5);
+    let button_color = Color::from_rgba(0x1B, 0x36, 0x44, 0xFF);
+    let button_hilight_color = Color::from_rgba(0x3B, 0x77, 0x97, 0xFF);
+
     let mut win_time = None;
-    let border_color = Color::from_rgba(0x15, 0x18, 0x1F, 0xFF);
+    let mut paused = false;
 
     loop {
         // update
@@ -697,19 +709,20 @@ pub async fn main() -> Vec<Level> {
         let current_input = match last_input {
             (_, None) => {
                 [
-                    (KeyCode::Right, Right),
-                    (KeyCode::Left, Left),
-                    (KeyCode::Up, Up),
-                    (KeyCode::Down, Down),
-                    (KeyCode::A, Wait),
-                    (KeyCode::Z, Undo),
+                    (KeyCode::Right, Control(Right)),
+                    (KeyCode::Left, Control(Left)),
+                    (KeyCode::Up, Control(Up)),
+                    (KeyCode::Down, Control(Down)),
+                    (KeyCode::A, Control(Wait)),
+                    (KeyCode::Z, Control(Undo)),
+                    (KeyCode::Escape, Pause),
                 ].iter()
                     .filter(|(k, _)| is_key_down(*k))
                     .map(|(k, i)| {last_input = (now, Some((*k, *i))); *i})
                     .next()
             },
             (t, Some(x)) => {
-                if now - t > 0.15 || x.1 == Undo && now - t > 0.075 {
+                if (now - t > 0.15 || x.1 == Control(Undo) && now - t > 0.075) && x.1 != Pause {
                     last_input = (now, Some(x));
                     Some(x.1)
                 } else {
@@ -720,20 +733,27 @@ pub async fn main() -> Vec<Level> {
                 }
             },
         };
-        match current_input {
-            None => (),
-            Some(Undo) => if history.len() > 1 {
-                history.pop();
-            },
-            Some(i) => {
-                let (next, win) = step(&current_state, i);
-                if win && win_time.is_none() {
-                    win_time = Some(get_time());
-                }
-                history.push(next);
-            },
-        };
-        current_state = &history[history.len() - 1];
+        if paused {
+            if let Some(Pause) = current_input {
+                paused = !paused;
+            }
+        } else if win_time.is_none() {
+            match current_input {
+                None => (),
+                Some(Control(Undo)) => if history.len() > 1 {
+                    history.pop();
+                },
+                Some(Control(i)) => {
+                    let (next, win) = step(&current_state, i);
+                    if win && win_time.is_none() {
+                        win_time = Some(get_time());
+                    }
+                    history.push(next);
+                },
+                Some(Pause) => paused = !paused,
+            };
+            current_state = &history[history.len() - 1];
+        }
 
         // render
         {
@@ -763,10 +783,24 @@ pub async fn main() -> Vec<Level> {
             }
             gl_use_default_material();
 
+            // draw pause menu
+            if paused {
+                draw_rectangle(
+                    offset_x,
+                    offset_y,
+                    game_width,
+                    game_height,
+                    pause_color,
+                );
+            }
+
             // draw congratulations when you win
             match win_time {
                 None => (),
                 Some(anim_start) => {
+                    if (get_time() - anim_start) > anim_time + 0.5 {
+                        return history;
+                    }
                     gl_use_material(mask);
                     mask.set_uniform(
                         "radius",
