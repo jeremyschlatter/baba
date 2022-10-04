@@ -553,6 +553,24 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
         }
     }
 
+    // change your direction
+    if let Go(d) = input {
+        let yous   = adjs(&rules, You);
+        for x in 0..width {
+            for y in 0..height {
+                for i in 0..level[y][x].len() {
+                    match level[y][x][i] {
+                        // TODO: incorrect when Text Is You
+                        Entity::Noun(_, n) => if yous.contains(&n) {
+                            level[y][x][i] = Entity::Noun(d, n);
+                        },
+                        _ => (),
+                    }
+                }
+            }
+        }
+    }
+
     // change things into other things
     rules = scan_rules(&level); // TODO: sus to rescan here
     {
