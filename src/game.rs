@@ -95,16 +95,26 @@ impl FromStr for Text {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumString, EnumIter)]
+#[strum(serialize_all = "snake_case")]
+pub enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+use Direction::*;
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub enum Entity {
-    Noun(Noun),
-    Text(Text),
+    Noun(Direction, Noun),
+    Text(Direction, Text),
 }
 
 fn default_color(e: Entity, palette: &Image) -> Color {
     let ixs = match e {
-        Entity::Noun(n) => n.get_str("color"),
-        Entity::Text(t) => match t {
+        Entity::Noun(_, n) => n.get_str("color"),
+        Entity::Text(_, t) => match t {
             Text::Object(n) => n.get_str("text_color_active"),
             Text::Adjective(a) => a.get_str("text_color_active"),
             Text::Is => t.get_str("text_color_active"),
@@ -119,11 +129,12 @@ fn default_color(e: Entity, palette: &Image) -> Color {
 }
 
 fn all_entities() -> impl Iterator<Item=Entity> {
-    Noun::iter().map(Entity::Noun)
-        .chain(iter::once(Entity::Text(Text::Is)))
-        .chain(iter::once(Entity::Text(Text::And)))
-        .chain(Noun::iter().map(|n| Entity::Text(Text::Object(n))))
-        .chain(Adjective::iter().map(|a| Entity::Text(Text::Adjective(a))))
+    Direction::iter().flat_map(|d|
+        Noun::iter().map(move |n| Entity::Noun(d, n))
+            .chain(iter::once(Entity::Text(d, Text::Is)))
+            .chain(iter::once(Entity::Text(d, Text::And)))
+            .chain(Noun::iter().map(move |n| Entity::Text(d, Text::Object(n))))
+            .chain(Adjective::iter().map(move |a| Entity::Text(d, Text::Adjective(a)))))
 }
 
 type Cell = Vec<Entity>;
@@ -162,7 +173,8 @@ fn parse_level(name: &str) -> (Level, String) {
                              .map(|s| {
                                  let mut x = s.split(" ");
                                  let n = x.next().unwrap();
-                                 Entity::Noun(Noun::from_str(n).unwrap())
+                                 let d = x.next().and_then(|s| Direction::from_str(s).ok()).unwrap_or(Right);
+                                 Entity::Noun(d, Noun::from_str(n).unwrap())
                              })
                              .collect()
                         )
@@ -191,14 +203,14 @@ fn parse_level(name: &str) -> (Level, String) {
                 }) {
                     (Some(FullCell(cell)), _) => cell.clone(),
                     (Some(Abbreviation(noun)), _) => if c.is_uppercase() {
-                        vec![Entity::Text(Text::Object(*noun))]
+                        vec![Entity::Text(Right, Text::Object(*noun))]
                     } else {
-                        vec![Entity::Noun(*noun)]
+                        vec![Entity::Noun(Right, *noun)]
                     }
-                    (_, Some(adj)) => vec![Entity::Text(Text::Adjective(adj))],
+                    (_, Some(adj)) => vec![Entity::Text(Right, Text::Adjective(adj))],
                     _ => match c {
-                        '=' => vec![Entity::Text(Text::Is)],
-                        '&' => vec![Entity::Text(Text::And)],
+                        '=' => vec![Entity::Text(Right, Text::Is)],
+                        '&' => vec![Entity::Text(Right, Text::And)],
                         _ => vec![],
                     }
                 })
@@ -380,7 +392,7 @@ where
     let x: Vec<Vec<Text>> =
        line.map(|c| c.iter()
                      .filter_map(|&e| match e {
-                         Entity::Text(t) => Some(t),
+                         Entity::Text(_, t) => Some(t),
                          _ => None,
                      }).collect()
            ).collect();
@@ -420,10 +432,7 @@ fn scan_rules(l: &Level) -> Vec<Rule> {
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Input {
-    Right,
-    Left,
-    Up,
-    Down,
+    Go(Direction),
     Wait,
     Undo,
 }
@@ -455,26 +464,26 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
 
     fn contains(level: &Level, x: usize, y: usize, set: &HashSet<&Noun>) -> bool {
         level[y][x].iter().any(|e| match e {
-            Entity::Noun(n) if set.contains(n) => true,
+            Entity::Noun(_, n) if set.contains(n) => true,
             _ => false,
         })
     }
 
     fn select_pushed<'a>(level: &'a Level, x: usize, y: usize, set: &'a HashSet<&Noun>) -> impl Iterator<Item=(usize, Entity)> + 'a {
         level[y][x].iter().enumerate().filter(|(_, e)| match e {
-            Entity::Noun(n) => set.contains(n),
-            Entity::Text(_) => true,
+            Entity::Noun(_, n) => set.contains(n),
+            Entity::Text(_, _) => true,
         }).map(|(i, e)| (i, *e))
     }
 
     // Move you.
     match match input {
-        Left  => Some((-1, 0)),
-        Up    => Some((0, -1)),
-        Right => Some((1, 0)),
-        Down  => Some((0, 1)),
-        Wait  => None,
-        Undo  => None,
+        Go(Left)  => Some((-1, 0)),
+        Go(Up)    => Some((0, -1)),
+        Go(Right) => Some((1, 0)),
+        Go(Down)  => Some((0, 1)),
+        Wait => None,
+        Undo => None,
     } {
         None => (),
         Some((dx, dy)) => {
@@ -514,7 +523,7 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
 
                     for (i, e) in level[y][x].iter().enumerate() {
                         match e {
-                            Entity::Noun(noun) if yous.contains(&noun) =>
+                            Entity::Noun(_, noun) if yous.contains(&noun) =>
                                 movers.push(((x, y, i), *e)),
                             _ => (),
                         }
@@ -558,11 +567,11 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
             for y in 0..height {
                 for i in 0..level[y][x].len() {
                     match level[y][x][i] {
-                        Entity::Noun(old) => match changers.get(&old) {
-                            Some(new) => level[y][x][i] = Entity::Noun(*new),
+                        Entity::Noun(d, old) => match changers.get(&old) {
+                            Some(new) => level[y][x][i] = Entity::Noun(d, *new),
                             None => (),
                         },
-                        Entity::Text(_) => (),
+                        Entity::Text(_, _) => (),
                     }
                 }
             }
@@ -589,7 +598,7 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
             for y in 0..height {
                 if contains(&level, x, y, &defeats) {
                     level[y][x] = level[y][x].iter().filter_map(|e| match e {
-                        Entity::Noun(n) if yous.contains(n) => None,
+                        Entity::Noun(_, n) if yous.contains(n) => None,
                         _ => Some(*e),
                     }).collect();
                 }
@@ -605,7 +614,7 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
             for y in 0..height {
                 if contains(&level, x, y, &hots) {
                     level[y][x] = level[y][x].iter().filter_map(|e| match e {
-                        Entity::Noun(n) if melts.contains(n) => None,
+                        Entity::Noun(_, n) if melts.contains(n) => None,
                         _ => Some(*e),
                     }).collect();
                 }
@@ -650,9 +659,9 @@ pub async fn main(level: Option<&str>) -> Vec<Level> {
     let sprites: HashMap<Entity, Texture2D> = {
         async fn load(e: Entity) -> (Entity, Texture2D) {
             let name = match e {
-                Entity::Noun(Lava) => "water".to_string(),
-                Entity::Noun(n) => format!("{:?}", n),
-                Entity::Text(t) => "text_".to_string() + &(match t {
+                Entity::Noun(_, Lava) => "water".to_string(),
+                Entity::Noun(_, n) => format!("{:?}", n),
+                Entity::Text(_, t) => "text_".to_string() + &(match t {
                     Text::Adjective(a) => format!("{:?}", a),
                     Text::Object(Seastar) => "star".to_string(),
                     Text::Object(o) => format!("{:?}", o),
@@ -660,7 +669,23 @@ pub async fn main(level: Option<&str>) -> Vec<Level> {
                     Text::And => "and".to_string(),
                 }),
             }.to_lowercase();
-            (e, load_texture(&format!("resources/Data/Sprites/{name}_0_1.png")).await.unwrap())
+            let filename = &format!(
+                "resources/Data/Sprites/{name}_{}_1.png",
+                match match e { Entity::Noun(d, _) => d, Entity::Text(d, _) => d } {
+                    Right => "0",
+                    Up => "8",
+                    Left => "16",
+                    Down => "24",
+                }
+            );
+            let fallback = &format!("resources/Data/Sprites/{name}_0_1.png");
+            (e, load_texture(
+                    if std::path::Path::new(filename).exists() {
+                        filename
+                    } else {
+                        fallback
+                    }
+            ).await.unwrap())
         }
         futures::future::join_all(all_entities().map(load)).await.into_iter().collect()
     };
@@ -742,10 +767,10 @@ pub async fn main(level: Option<&str>) -> Vec<Level> {
         let current_input = match last_input {
             (_, None) => {
                 [
-                    (KeyCode::Right, Control(Right)),
-                    (KeyCode::Left, Control(Left)),
-                    (KeyCode::Up, Control(Up)),
-                    (KeyCode::Down, Control(Down)),
+                    (KeyCode::Right, Control(Go(Right))),
+                    (KeyCode::Left, Control(Go(Left))),
+                    (KeyCode::Up, Control(Go(Up))),
+                    (KeyCode::Down, Control(Go(Down))),
                     (KeyCode::A, Control(Wait)),
                     (KeyCode::Z, Control(Undo)),
                     (KeyCode::Escape, Pause),
