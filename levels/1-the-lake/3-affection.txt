@@ -1,0 +1,24 @@
+a = algae
+k = keke
+r = keke right
+u = keke up
+d = keke down
+c = brick
+l = love
+b = baba
+palette = ocean
+---
+A=⩍
+
+
+      r
+              c
+         K=→  aaaaa
+    c         a   a
+   cc  u      acl a
+             caccca
+   b     L=↦ccaaaaac
+      cc    dccc
+L    ccc
+=
+✓                    B=✥

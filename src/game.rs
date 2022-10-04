@@ -46,6 +46,8 @@ pub enum Noun {
     Seastar,
     #[strum(props(color = "5 2", text_color = "5 0", text_color_active = "5 1"))]
     Algae,
+    #[strum(props(color = "4 2", text_color = "4 1", text_color_active = "4 2"))]
+    Love,
 }
 use Noun::*;
 
@@ -68,6 +70,8 @@ pub enum Adjective {
     Hot,
     #[strum(props(text_color = "1 2", text_color_active = "1 3"))]
     Melt,
+    #[strum(props(text_color = "5 1", text_color_active = "5 3"))]
+    Move,
 }
 use Adjective::*;
 
@@ -137,10 +141,34 @@ fn parse_level(name: &str) -> (Level, String) {
              .collect();
     let right_pad: usize =
         metas.get("right pad").and_then(|s| s.parse().ok()).unwrap_or_default();
-    let legend: HashMap<String, Noun> =
+    enum LegendValue {
+        Abbreviation(Noun),
+        FullCell(Cell),
+    }
+    use LegendValue::*;
+    let legend: HashMap<String, LegendValue> =
         metas.iter()
              .filter(|(&k, _)| k.len() == 1)
-             .map(|(&k, &v)| (k.to_string(), Noun::from_str(v).unwrap()))
+             .map(|(&k, &c)| (
+                k.to_string(), {
+                    if let Ok(n) = Noun::from_str(c) {
+                        Abbreviation(n)
+                    } else {
+                        FullCell(
+                            c.split(" on ")
+                             .collect::<Vec<&str>>()
+                             .iter()
+                             .rev()
+                             .map(|s| {
+                                 let mut x = s.split(" ");
+                                 let n = x.next().unwrap();
+                                 Entity::Noun(Noun::from_str(n).unwrap())
+                             })
+                             .collect()
+                        )
+                    }
+                }
+             ))
              .collect();
     let map: Vec<&str> = s.lines().skip_while(|s| *s != "---").skip(1).collect();
 
@@ -158,9 +186,11 @@ fn parse_level(name: &str) -> (Level, String) {
                     '⩍' => Some(Defeat),
                     '⌇' => Some(Hot),
                     '⌢' => Some(Melt),
+                    '→' => Some(Move),
                     _ => None
                 }) {
-                    (Some(noun), _) => if c.is_uppercase() {
+                    (Some(FullCell(cell)), _) => cell.clone(),
+                    (Some(Abbreviation(noun)), _) => if c.is_uppercase() {
                         vec![Entity::Text(Text::Object(*noun))]
                     } else {
                         vec![Entity::Noun(*noun)]
