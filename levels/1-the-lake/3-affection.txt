@@ -1,6 +1,5 @@
 a = algae
 k = keke
-r = keke right
 u = keke up
 d = keke down
 c = brick
@@ -11,7 +10,7 @@ palette = ocean
 A=⩍
 
 
-      r
+      k
               c
          K=→  aaaaa
     c         a   a
