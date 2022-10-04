@@ -48,6 +48,8 @@ pub enum Noun {
     Algae,
     #[strum(props(color = "4 2", text_color = "4 1", text_color_active = "4 2"))]
     Love,
+    #[strum(props(color = "0 1", text_color = "1 1", text_color_active = "0 1"))]
+    Pillar,
 }
 use Noun::*;
 
