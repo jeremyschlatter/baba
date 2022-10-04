@@ -9,7 +9,7 @@ t = tile
 w = wall
 r = rock
 right pad = 1
-palette = Ocean
+palette = ocean
 ---
  a                   aa
 a                        a

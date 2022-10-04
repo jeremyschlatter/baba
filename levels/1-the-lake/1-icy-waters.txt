@@ -3,7 +3,7 @@ i = ice
 j = jelly
 w = wall
 b = baba
-palette = Ocean
+palette = ocean
 ---
 F=✓iii     iii  ii       J=≉
 iiii        iiiii i
