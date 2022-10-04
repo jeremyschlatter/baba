@@ -1,0 +1,16 @@
+a = algae
+t = tile
+b = baba
+w = wall
+f = flag
+c = brick
+palette = ocean
+---
+ a           a
+a  ttttt
+   tB=✥t wwwwww
+   ttttt wcccwW
+ b ttttt wcfcw=
+   tF=✓t wcccw⊘
+   ttttt wwwwww
+  a         a
