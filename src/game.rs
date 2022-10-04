@@ -50,6 +50,8 @@ pub enum Noun {
     Love,
     #[strum(props(color = "0 1", text_color = "1 1", text_color_active = "0 1"))]
     Pillar,
+    #[strum(props(color = "1 4", text_color = "1 3", text_color_active = "1 4"))]
+    Bubble,
 }
 use Noun::*;
 
@@ -74,6 +76,10 @@ pub enum Adjective {
     Melt,
     #[strum(props(text_color = "5 1", text_color_active = "5 3"))]
     Move,
+    #[strum(props(text_color = "2 1", text_color_active = "2 2"))]
+    Shut,
+    #[strum(props(text_color = "6 1", text_color_active = "2 4"))]
+    Open,
 }
 use Adjective::*;
 
@@ -201,6 +207,8 @@ fn parse_level(name: &str) -> (Level, String) {
                     '⌇' => Some(Hot),
                     '⌢' => Some(Melt),
                     '→' => Some(Move),
+                    '⨶' => Some(Shut),
+                    '⧜' => Some(Open),
                     _ => None
                 }) {
                     (Some(FullCell(cell)), _) => cell.clone(),
