@@ -266,29 +266,30 @@ mod tests {
     #[test]
     fn scan_rules() {
         let is_a = IsAdjective;
-        let is = IsNoun;
+        let is = |n| IsNoun(TextOrNoun::Noun(n));
+        let n = |n| TextOrNoun::Noun(n);
         let tests = [
-            (vec!["baba", "is", "you"], vec![(Baba, is_a(You))]),
+            (vec!["baba", "is", "you"], vec![(n(Baba), is_a(You))]),
             (
                 vec!["baba", "is", "wall", "is", "push"],
                 vec![
-                    (Baba, is(Wall)),
-                    (Wall, is_a(Push)),
+                    (n(Baba), is(Wall)),
+                    (n(Wall), is_a(Push)),
                 ]
             ),
             (vec!["baba", "and"], vec![]),
-            (vec!["wall", "and", "keke", "is", "push"], vec![(Wall, is_a(Push)), (Keke, is_a(Push))]),
-            (vec!["wall", "is", "push", "and", "stop"], vec![(Wall, is_a(Push)), (Wall, is_a(Stop))]),
-            (vec!["crab", "and", "", "baba", "is", "you"], vec![(Baba, is_a(You))]),
+            (vec!["wall", "and", "keke", "is", "push"], vec![(n(Wall), is_a(Push)), (n(Keke), is_a(Push))]),
+            (vec!["wall", "is", "push", "and", "stop"], vec![(n(Wall), is_a(Push)), (n(Wall), is_a(Stop))]),
+            (vec!["crab", "and", "", "baba", "is", "you"], vec![(n(Baba), is_a(You))]),
             (
                 vec!["baba", "and", "keke", "is", "rock", "and", "wall", "is", "door"],
                 vec![
-                    (Baba, is(Rock)),
-                    (Baba, is(Wall)),
-                    (Keke, is(Rock)),
-                    (Keke, is(Wall)),
+                    (n(Baba), is(Rock)),
+                    (n(Baba), is(Wall)),
+                    (n(Keke), is(Rock)),
+                    (n(Keke), is(Wall)),
                     // notably absent: (Rock, is(Door))
-                    (Wall, is(Door)),
+                    (n(Wall), is(Door)),
                 ]
             ),
 
@@ -313,7 +314,7 @@ mod tests {
                          (_, _, _, Ok(a)) => vec![Text::Adjective(a)],
                          _ => panic!("unrecognized word: '{}'", s),
                      })
-                     .map(|t| t.iter().map(|t| Entity::Text(*t)).collect::<Vec<Entity>>())
+                     .map(|t| t.iter().map(|t| Entity::Text(Right, *t)).collect::<Vec<Entity>>())
                      .collect::<Vec<Vec<Entity>>>();
             scan_rules_line(&mut result, input_.iter());
             assert_eq!(
