@@ -292,6 +292,7 @@ mod tests {
                     (n(Wall), is(Door)),
                 ]
             ),
+            (vec!["baba", "flag", "is", "win"], vec![(n(Flag), is_a(Win))]),
 
             // TODO
             // (
@@ -351,12 +352,12 @@ fn scan_rules_text(rules: &mut Vec<Rule>, text: &[Text]) {
                 Incomplete => match t {
                     Object(noun) => { subjs.push(Subject::Noun(noun)); Subjects(Complete, subjs) },
                     Text::Text => { subjs.push(Subject::Text); Subjects(Complete, subjs) },
-                    _ => zero(subjs),
+                    _ => { i -= 1; zero(subjs) },
                 },
                 Complete => match t {
                     Is => Predicates(Incomplete, subjs, None),
                     And => Subjects(Incomplete, subjs),
-                    _ => zero(subjs),
+                    _ => { i -= 1; zero(subjs) },
                 },
             },
             Predicates(s, subjs, preds) => match s {
@@ -372,7 +373,7 @@ fn scan_rules_text(rules: &mut Vec<Rule>, text: &[Text]) {
                         }
                         Predicates(Complete, subjs, Some(pred))
                     },
-                    None => zero(subjs),
+                    None => { i -= 1; zero(subjs) },
                 },
                 Complete => match t {
                     And => Predicates(Incomplete, subjs, preds),
