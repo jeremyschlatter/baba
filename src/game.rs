@@ -959,7 +959,7 @@ pub async fn main(level: Option<&str>) -> Vec<Level> {
                     (KeyCode::Left, Control(Go(Left))),
                     (KeyCode::Up, Control(Go(Up))),
                     (KeyCode::Down, Control(Go(Down))),
-                    (KeyCode::A, Control(Wait)),
+                    (KeyCode::Space, Control(Wait)),
                     (KeyCode::Z, Control(Undo)),
                     (KeyCode::Escape, Pause),
                 ].iter()
