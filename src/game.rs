@@ -3,7 +3,7 @@ use miniquad::graphics::*;
 use serde::{Serialize, Deserialize};
 use strum::{EnumIter, EnumProperty, EnumString, IntoEnumIterator};
 
-use std::{iter, collections::{HashMap, HashSet}, str::FromStr};
+use std::{iter, collections::{HashMap, HashSet, VecDeque}, str::FromStr};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString, EnumProperty)]
 #[strum(serialize_all = "snake_case")]
@@ -89,6 +89,8 @@ pub enum Text {
     Is,
     #[strum(props(text_color = "0 1", text_color_active = "0 3"))]
     And,
+    #[strum(props(text_color = "4 0", text_color_active = "4 1"))]
+    Text,
     Object(Noun),
     Adjective(Adjective),
 }
@@ -119,6 +121,15 @@ pub enum Entity {
     Text(Direction, Text),
 }
 
+impl Entity {
+    fn direction(&self) -> Direction {
+        match self {
+            Entity::Noun(d, _) => *d,
+            Entity::Text(d, _) => *d,
+        }
+    }
+}
+
 fn default_color(e: Entity, palette: &Image) -> Color {
     let ixs = match e {
         Entity::Noun(_, n) => n.get_str("color"),
@@ -127,6 +138,7 @@ fn default_color(e: Entity, palette: &Image) -> Color {
             Text::Adjective(a) => a.get_str("text_color_active"),
             Text::Is => t.get_str("text_color_active"),
             Text::And => t.get_str("text_color_active"),
+            Text::Text => t.get_str("text_color_active"),
         },
     }.unwrap();
 
@@ -234,12 +246,19 @@ fn parse_level(name: &str) -> (Level, String) {
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Predicate {
-    IsNoun(Noun),
+    IsNoun(TextOrNoun),
     IsAdjective(Adjective),
 }
 use Predicate::*;
 
-type Rule = (Noun, Predicate);
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+enum TextOrNoun {
+    Text,
+    Noun(Noun),
+}
+
+type Subject = TextOrNoun;
+type Rule = (Subject, Predicate);
 
 #[cfg(test)]
 mod tests {
@@ -315,12 +334,12 @@ fn scan_rules_text(rules: &mut Vec<Rule>, text: &[Text]) {
     use ListState::*;
     #[derive(Debug)]
     enum ScanState {
-        Subjects(ListState, Vec<Noun>),
-        Predicates(ListState, Vec<Noun>, Option<Predicate>),
+        Subjects(ListState, Vec<Subject>),
+        Predicates(ListState, Vec<TextOrNoun>, Option<Predicate>),
     }
     use ScanState::*;
-    use Text::*;
-    let zero = |mut v: Vec<Noun>| { v.clear(); Subjects(Incomplete, v) };
+    use Text::{Is, And, Object, Adjective};
+    let zero = |mut v: Vec<Subject>| { v.clear(); Subjects(Incomplete, v) };
     let mut state = zero(vec![]);
     let mut i = 0;
     while i < text.len() {
@@ -329,7 +348,8 @@ fn scan_rules_text(rules: &mut Vec<Rule>, text: &[Text]) {
         state = match state {
             Subjects(s, mut subjs) => match s {
                 Incomplete => match t {
-                    Object(noun) => { subjs.push(noun); Subjects(Complete, subjs) },
+                    Object(noun) => { subjs.push(Subject::Noun(noun)); Subjects(Complete, subjs) },
+                    Text::Text => { subjs.push(Subject::Text); Subjects(Complete, subjs) },
                     _ => zero(subjs),
                 },
                 Complete => match t {
@@ -340,8 +360,9 @@ fn scan_rules_text(rules: &mut Vec<Rule>, text: &[Text]) {
             },
             Predicates(s, subjs, preds) => match s {
                 Incomplete => match match t {
-                    Object(noun) => Some(IsNoun(noun)),
+                    Object(noun) => Some(IsNoun(TextOrNoun::Noun(noun))),
                     Adjective(adj) => Some(IsAdjective(adj)),
+                    Text::Text => Some(IsNoun(TextOrNoun::Text)),
                     _ => None,
                 } {
                     Some(pred) => {
@@ -455,13 +476,13 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
     let width = level[0].len();
     let height = level.len();
 
-    fn adjs(rules: &Vec<Rule>, adj: Adjective) -> HashSet<&Noun> {
+    fn adjs(rules: &Vec<Rule>, adj: Adjective) -> HashSet<&Subject> {
         rules.iter()
              .filter_map(|r| match r {
                  (subj, IsAdjective(a)) if *a == adj => Some(subj),
                  _ => None,
               })
-             .collect::<HashSet<&Noun>>()
+             .collect::<HashSet<&Subject>>()
     }
 
     fn clip(level: &Level, x: i16, y: i16) -> (usize, usize) {
@@ -472,110 +493,225 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
          0.max(y).min(height as i16 - 1) as usize)
     }
 
-    fn contains(level: &Level, x: usize, y: usize, set: &HashSet<&Noun>) -> bool {
+    fn contains(level: &Level, x: usize, y: usize, set: &HashSet<&Subject>) -> bool {
         level[y][x].iter().any(|e| match e {
-            Entity::Noun(_, n) if set.contains(n) => true,
-            _ => false,
+            Entity::Noun(_, n) => set.contains(&Subject::Noun(*n)),
+            Entity::Text(_, _) => set.contains(&Subject::Text),
         })
     }
 
-    fn select_pushed<'a>(level: &'a Level, x: usize, y: usize, set: &'a HashSet<&Noun>) -> impl Iterator<Item=(usize, Entity)> + 'a {
-        level[y][x].iter().enumerate().filter(|(_, e)| match e {
-            Entity::Noun(_, n) => set.contains(n),
-            Entity::Text(_, _) => true,
-        }).map(|(i, e)| (i, *e))
+    fn entities(level: &Level) -> impl Iterator<Item=((usize, usize, usize), Entity)> + '_ {
+        level.iter()
+             .enumerate()
+             .flat_map(move |(y, row)|
+                 row.iter()
+                    .enumerate()
+                    .flat_map(move |(x, cell)|
+                        cell.iter()
+                            .enumerate()
+                            .map(move |(i, e)| ((x, y, i), *e))))
     }
 
-    // Move you.
-    match match input {
-        Go(Left)  => Some((-1, 0)),
-        Go(Up)    => Some((0, -1)),
-        Go(Right) => Some((1, 0)),
-        Go(Down)  => Some((0, 1)),
-        Wait => None,
-        Undo => None,
-    } {
-        None => (),
-        Some((dx, dy)) => {
-            let yous   = adjs(&rules, You);
-            let stops  = adjs(&rules, Stop);
-            let pushes = adjs(&rules, Push);
-            // Iterate through all object entities, move the ones that are you.
-            let mut movers: Vec<((usize, usize, usize), Entity)> = vec![];
-            for y in 0..level.len() {
-                'cell_loop: for x in 0..level[y].len() {
-                    if !contains(&level, x, y, &yous) {
-                        continue;
-                    }
+    type RulesCache = HashMap<Adjective, HashSet<Subject>>;
 
-                    // attempt to push
-                    {
-                        let (mut x, mut y) = (x, y);
-                        let mut all_pushed = vec![];
-                        loop {
-                            // stop if adjacent to stop or edge
-                            let (x_, y_) = clip(&level, x as i16 + dx, y as i16 + dy);
-                            if x == x_ && y == y_ || contains(&level, x_, y_, &stops) {
-                                continue 'cell_loop;
-                            }
-                            let pushed = select_pushed(&level, x_, y_, &pushes)
-                                .map(|(i, e)| ((x_, y_, i), e))
-                                .collect::<Vec<((usize, usize, usize), Entity)>>();
-                            if pushed.len() == 0 {
-                                movers.extend(all_pushed);
-                                break
-                            }
-                            all_pushed.extend(pushed);
-                            x = x_;
-                            y = y_;
-                        }
-                    }
+    fn cache_rules(rules: &Vec<Rule>) -> RulesCache {
+        let mut cache: RulesCache = HashMap::from([
+            (Push, HashSet::from([Subject::Text])),
+        ]);
+        for (s, p) in rules {
+            if let IsAdjective(adj) = p {
+                match cache.get_mut(adj) {
+                    Some(set) => { set.insert(*s); },
+                    None => { cache.insert(*adj, HashSet::from([*s])); },
+                };
+            }
+        }
+        cache
+    }
 
-                    for (i, e) in level[y][x].iter().enumerate() {
-                        match e {
-                            Entity::Noun(_, noun) if yous.contains(&noun) =>
-                                movers.push(((x, y, i), *e)),
-                            _ => (),
-                        }
-                    }
-                }
-            }
-
-            // remove all movers from their current position
-            let mut removals = vec![vec![vec![]; width]; height];
-            for ((x, y, i), _) in &movers {
-                removals[*y][*x].push(*i);
-            }
-            for x in 0..width {
-                for y in 0..height {
-                    removals[y][x].sort();
-                    for (i, r) in removals[y][x].iter().enumerate() {
-                        level[y][x].remove(r - i);
-                    }
-                }
-            }
-
-            // add them to their new position
-            for ((x, y, _), e) in movers {
-                let (x, y) = clip(&level, x as i16 + dx, y as i16 + dy);
-                level[y][x].push(e);
-            }
+    fn is(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache, quality: Adjective) -> bool {
+        match rules.get(&quality) {
+            None => false,
+            Some(set) => set.contains(&match level[y][x][i] {
+                Entity::Text(_, _) => Subject::Text,
+                Entity::Noun(_, n) => Subject::Noun(n),
+            }),
         }
     }
 
-    // change your direction
-    if let Go(d) = input {
-        let yous   = adjs(&rules, You);
+    // move things
+    {
+        let rules_cache = cache_rules(&rules);
+
+        #[derive(PartialEq, Eq, Hash)]
+        enum Status {
+            Pending { flipped: bool },
+            Resolved { moving: bool },
+        }
+        #[derive(PartialEq, Eq, Hash)]
+        struct Arrow {
+            dir: Direction,
+            status: Status,
+            is_move: bool,
+        }
+
+        let try_move = |queue: &mut VecDeque<(usize, usize, usize)>, movements: &mut HashMap<(usize, usize, usize), Arrow>, x, y, i, d, m| {
+            let arrow = Arrow {
+                dir: d,
+                status: Status::Pending { flipped: false },
+                is_move: m,
+            };
+            queue.push_back((x, y, i));
+            movements.insert((x, y, i), arrow);
+        };
+        let mut queue = VecDeque::new();
+        let mut movements = HashMap::new();
+        let is = |x, y, i, q| is(&level, x, y, i, &rules_cache, q);
+
+        // you
+        if let Go(d) = input {
+            for ((x, y, i), _) in entities(&level) {
+                if is(x, y, i, You) {
+                    try_move(&mut queue, &mut movements, x, y, i, d, false);
+                }
+            }
+        }
+
+        // move
+        for ((x, y, i), e) in entities(&level) {
+            if is(x, y, i, Move) {
+                try_move(&mut queue, &mut movements, x, y, i, e.direction(), true);
+            }
+        }
+
+        // until the queue is empty:
+        //   pull arrow from queue
+        //   match (can move to adjacent cell):
+        //     Yes => mark resolved yes
+        //     No => mark resolved no (or delete it?)
+        //     Depends On arrows => throw it to the back of the queue
+        //                    // proof of termination:
+        //                    // arrows must be in queue since they are unresolved
+        //                    // so will process them before we return to this one
+        //                    // they cannot depend on this one because can only
+        //                    // depend on arrows in front moving same direction.
+        let delta = |d| match d {
+            Left  => (-1, 0),
+            Up    => (0, -1),
+            Right => (1, 0),
+            Down  => (0, 1),
+        };
+        while let Some((x, y, i)) = queue.pop_front() {
+            let a = &movements[&(x, y, i)];
+
+            let (x_, y_) = {
+                let (dx, dy) = delta(a.dir);
+                clip(&level, x as i16 + dx, y as i16 + dy)
+            };
+
+            let at_unmoving_stop = {
+                let mut result = Some(false);
+                if x == x_ && y == y_ {
+                    // at edge
+                    result = Some(true);
+                }
+                for i in 0..level[y_][x_].len() {
+                    let stop = is(x_, y_, i, Stop);
+                    let push = is(x_, y_, i, Push);
+                    if result == Some(true) || !push && !stop {
+                        continue;
+                    }
+                    result = match movements.get(&(x_, y_, i)) {
+                        Some(b) if a.dir == b.dir => match b.status {
+                            Status::Resolved { moving } =>
+                                if moving { result } else { Some(true) },
+                            _ => None,
+                        },
+                        _ => if stop { Some(true) } else { result },
+                    }
+                }
+                result
+            };
+
+            let flipped =
+                if let Status::Pending { flipped } = a.status {
+                    flipped
+                } else {
+                    continue; // should be impossible
+                };
+
+            match at_unmoving_stop {
+                Some(true) => {
+                    let a = movements.get_mut(&(x, y, i)).unwrap();
+                    if a.is_move && !flipped {
+                        a.dir = match a.dir {
+                            Left  => Right,
+                            Right => Left,
+                            Up    => Down,
+                            Down  => Up,
+                        };
+                        a.status = Status::Pending { flipped: true };
+                        queue.push_back((x, y, i));
+                    } else {
+                        a.status = Status::Resolved { moving: false };
+                    }
+                    continue;
+                },
+                None => {
+                    queue.push_back((x, y, i));
+                    continue;
+                },
+                Some(false) => (),
+            }
+
+            // check for push
+            {
+                let d = a.dir;
+                let mut pushed = false;
+                for i in 0..level[y_][x_].len() {
+                    if is(x_, y_, i, Push) {
+                        if !movements.contains_key(&(x_, y_, i)) {
+                            try_move(&mut queue, &mut movements, x_, y_, i, d, false);
+                            pushed = true;
+                        }
+                    }
+                }
+                if pushed {
+                    queue.push_back((x, y, i));
+                    continue;
+                }
+            }
+
+            let a = movements.get_mut(&(x, y, i)).unwrap();
+            a.status = Status::Resolved { moving: true };
+        }
+
+        // remove all movers from their current position
+        let mut removals = vec![vec![vec![]; width]; height];
+        for (&(x, y, i), a) in movements.iter() {
+            if a.status == (Status::Resolved { moving: true }) {
+                removals[y][x].push((i, level[y][x][i], a.dir));
+            }
+        }
         for x in 0..width {
             for y in 0..height {
-                for i in 0..level[y][x].len() {
-                    match level[y][x][i] {
-                        // TODO: incorrect when Text Is You
-                        Entity::Noun(_, n) => if yous.contains(&n) {
-                            level[y][x][i] = Entity::Noun(d, n);
-                        },
-                        _ => (),
-                    }
+                removals[y][x].sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
+                for (i, (r, _, _)) in removals[y][x].iter().enumerate() {
+                    level[y][x].remove(r - i);
+                }
+            }
+        }
+
+        // add them to their new position
+        for (y, row) in removals.iter().enumerate() {
+            for (x, cell) in row.iter().enumerate() {
+                for &(_, e, d) in cell {
+                    let (dx, dy) = delta(d);
+                    let (x, y) = clip(&level, x as i16 + dx, y as i16 + dy);
+                    level[y][x].push(match e {
+                        Entity::Text(_, t) => Entity::Text(d, t),
+                        Entity::Noun(_, n) => Entity::Noun(d, n),
+                    });
                 }
             }
         }
@@ -590,16 +726,26 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
                      (from, IsNoun(to)) => Some((*from, *to)),
                      _ => None,
                  })
-                 .collect::<HashMap<Noun, Noun>>();
+                 .collect::<HashMap<Subject, TextOrNoun>>();
         for x in 0..width {
             for y in 0..height {
                 for i in 0..level[y][x].len() {
-                    match level[y][x][i] {
-                        Entity::Noun(d, old) => match changers.get(&old) {
-                            Some(new) => level[y][x][i] = Entity::Noun(d, *new),
-                            None => (),
-                        },
-                        Entity::Text(_, _) => (),
+                    // TODO: handle eg Baba Is Wall And Door
+                    let old = level[y][x][i];
+                    let (d, subject) = match old {
+                        Entity::Text(d, _) => (d, Subject::Text),
+                        Entity::Noun(d, n) => (d, Subject::Noun(n)),
+                    };
+                    if let Some(new) = changers.get(&subject) {
+                        match new {
+                            TextOrNoun::Text => match old {
+                                Entity::Text(_, _) => (), // Text Is Text, no-op
+                                Entity::Noun(_, n) =>
+                                    level[y][x][i] = Entity::Text(d, Text::Object(n)),
+                            },
+                            TextOrNoun::Noun(n) =>
+                                level[y][x][i] = Entity::Noun(d, *n),
+                        };
                     }
                 }
             }
@@ -626,7 +772,8 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
             for y in 0..height {
                 if contains(&level, x, y, &defeats) {
                     level[y][x] = level[y][x].iter().filter_map(|e| match e {
-                        Entity::Noun(_, n) if yous.contains(n) => None,
+                        Entity::Noun(_, n) if yous.contains(&Subject::Noun(*n)) => None,
+                        Entity::Text(_, _) if yous.contains(&Subject::Text) => None,
                         _ => Some(*e),
                     }).collect();
                 }
@@ -642,7 +789,8 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
             for y in 0..height {
                 if contains(&level, x, y, &hots) {
                     level[y][x] = level[y][x].iter().filter_map(|e| match e {
-                        Entity::Noun(_, n) if melts.contains(n) => None,
+                        Entity::Noun(_, n) if melts.contains(&Subject::Noun(*n)) => None,
+                        Entity::Text(_, _) if melts.contains(&Subject::Text) => None,
                         _ => Some(*e),
                     }).collect();
                 }
@@ -686,34 +834,44 @@ pub async fn main(level: Option<&str>) -> Vec<Level> {
 
     let sprites: HashMap<Entity, Texture2D> = {
         async fn load(e: Entity) -> (Entity, Texture2D) {
-            let name = match e {
-                Entity::Noun(_, Lava) => "water".to_string(),
-                Entity::Noun(_, n) => format!("{:?}", n),
-                Entity::Text(_, t) => "text_".to_string() + &(match t {
-                    Text::Adjective(a) => format!("{:?}", a),
-                    Text::Object(Seastar) => "star".to_string(),
-                    Text::Object(o) => format!("{:?}", o),
-                    Text::Is => "is".to_string(),
-                    Text::And => "and".to_string(),
-                }),
-            }.to_lowercase();
-            let filename = &format!(
-                "resources/Data/Sprites/{name}_{}_1.png",
-                match match e { Entity::Noun(d, _) => d, Entity::Text(d, _) => d } {
-                    Right => "0",
-                    Up => "8",
-                    Left => "16",
-                    Down => "24",
-                }
-            );
-            let fallback = &format!("resources/Data/Sprites/{name}_0_1.png");
-            (e, load_texture(
-                    if std::path::Path::new(filename).exists() {
+            let filename = &match match e {
+                Entity::Noun(_, n) => match n {
+                    Wall => Some(n),
+                    _ => None,
+                },
+                _ => None,
+            } {
+                Some(n) => format!("resources/Data/Sprites/{:?}_0_1.png", n).to_lowercase(),
+                None => {
+                    let name = match e {
+                        Entity::Noun(_, Lava) => "water".to_string(),
+                        Entity::Noun(_, n) => format!("{:?}", n),
+                        Entity::Text(_, t) => "text_".to_string() + &(match t {
+                            Text::Adjective(a) => format!("{:?}", a),
+                            Text::Object(Seastar) => "star".to_string(),
+                            Text::Object(o) => format!("{:?}", o),
+                            Text::Is => "is".to_string(),
+                            Text::And => "and".to_string(),
+                            Text::Text => "text".to_string(),
+                        }),
+                    }.to_lowercase();
+                    let filename = format!(
+                        "resources/Data/Sprites/{name}_{}_1.png",
+                        match match e { Entity::Noun(d, _) => d, Entity::Text(d, _) => d } {
+                            Right => "0",
+                            Up => "8",
+                            Left => "16",
+                            Down => "24",
+                        }
+                    );
+                    if std::path::Path::new(&filename).exists() {
                         filename
                     } else {
-                        fallback
+                        format!("resources/Data/Sprites/{name}_0_1.png")
                     }
-            ).await.unwrap())
+                },
+            };
+            (e, load_texture(filename).await.unwrap())
         }
         futures::future::join_all(all_entities().map(load)).await.into_iter().collect()
     };
