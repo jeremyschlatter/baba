@@ -352,7 +352,7 @@ fn scan_rules_text(rules: &mut Vec<Rule>, text: &[Text]) {
                 Incomplete => match t {
                     Object(noun) => { subjs.push(Subject::Noun(noun)); Subjects(Complete, subjs) },
                     Text::Text => { subjs.push(Subject::Text); Subjects(Complete, subjs) },
-                    _ => { i -= 1; zero(subjs) },
+                    _ => zero(subjs),
                 },
                 Complete => match t {
                     Is => Predicates(Incomplete, subjs, None),
