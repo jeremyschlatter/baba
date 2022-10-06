@@ -1,9 +1,10 @@
+use anyhow::Result;
 use macroquad::prelude::*;
 use miniquad::graphics::*;
 use serde::{Serialize, Deserialize};
 use strum::{EnumIter, EnumProperty, EnumString, IntoEnumIterator};
 
-use std::{iter, collections::{HashMap, HashSet, VecDeque}, str::FromStr};
+use std::{io::{Read, Write}, iter, collections::{HashMap, HashSet, VecDeque}, str::FromStr};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString, EnumProperty)]
 #[strum(serialize_all = "snake_case")]
@@ -815,7 +816,74 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
     (level, false)
 }
 
-pub async fn main(level: Option<&str>) -> (Vec<Level>, Vec<Input>) {
+pub async fn replay(path: &str) {
+    let (screens, inputs, palette_name) = load_replay(path).unwrap();
+
+    let mut last_input: (f64, Option<KeyCode>) = (0., None);
+    let palette = load_image(&format!("resources/Data/Palettes/{palette_name}.png")).await.unwrap();
+
+    loop {
+        // update
+        {
+            let current_input = debounce(
+                &mut last_input,
+                &[
+                    (KeyCode::Right, Right),
+                    (KeyCode::Left, Left),
+                ],
+                |_, t| t > 0.15,
+            );
+        }
+
+        // render
+        {
+        }
+
+        next_frame().await
+    }
+}
+
+pub type Replay = (Vec<Level>, Vec<Input>, String);
+
+pub fn load_replay(path: &str) -> Result<Replay> {
+    let mut scratch = String::new();
+    brotli::Decompressor::new(
+        std::fs::File::open(path)?, 4096,
+    ).read_to_string(&mut scratch)?;
+    Ok(ron::from_str(&scratch)?)
+}
+
+pub fn save_replay(r: &Replay, path: &str) -> Result<()> {
+    Ok(
+        brotli::CompressorWriter::new(
+            std::fs::File::create(path)?, 4096, 9, 20,
+        ).write_all(ron::to_string(r)?.as_bytes())?
+    )
+}
+
+fn debounce<A, R>(prev: &mut (f64, Option<KeyCode>), keymap: &[(KeyCode, A)], repeat: R) -> Option<A>
+where
+    A: Copy,
+    R: Fn(A, f64) -> bool
+{
+    let now = get_time();
+    if let (_, Some(k)) = prev {
+        if !is_key_down(*k) {
+            *prev = (now, None);
+        }
+    }
+    let can_repeat = |prev: &(f64, Option<KeyCode>), k: KeyCode, a: A|
+        match prev {
+            (t, Some(x)) => *x != k || repeat(a, now - *t),
+            (_, None) => true,
+        };
+    keymap.iter()
+          .filter(|(k, a)| is_key_down(*k) && can_repeat(prev, *k, *a))
+          .next()
+          .map(|&(k, a)| { *prev = (now, Some(k)); a })
+}
+
+pub async fn main(level: Option<&str>) -> Replay {
     let (level, palette_name) = parse_level(level.unwrap_or(
         // "levels/0-baba-is-you.txt"
         // "levels/1-where-do-i-go.txt"
@@ -885,15 +953,6 @@ pub async fn main(level: Option<&str>) -> (Vec<Level>, Vec<Input>) {
 
     let congrats: Texture2D = load_texture("congratulations.png").await.unwrap();
 
-    #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-    enum UIInput {
-        Control(Input),
-        Pause,
-    }
-    use UIInput::*;
-
-    let mut last_input: (f64, Option<(KeyCode, UIInput)>) = (0., None);
-
     let mut history = vec![level.clone()];
     let mut current_state = &history[0];
 
@@ -954,36 +1013,34 @@ pub async fn main(level: Option<&str>) -> (Vec<Level>, Vec<Input>) {
     let mut win_time = None;
     let mut paused = false;
 
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    enum UIInput {
+        Control(Input),
+        Pause,
+    }
+    use UIInput::*;
+
+    let mut last_input: (f64, Option<KeyCode>) = (0., None);
+
     loop {
         // update
-        let now = get_time();
-        let current_input = match last_input {
-            (_, None) => {
-                [
-                    (KeyCode::Right, Control(Go(Right))),
-                    (KeyCode::Left, Control(Go(Left))),
-                    (KeyCode::Up, Control(Go(Up))),
-                    (KeyCode::Down, Control(Go(Down))),
-                    (KeyCode::Space, Control(Wait)),
-                    (KeyCode::Z, Control(Undo)),
-                    (KeyCode::Escape, Pause),
-                ].iter()
-                    .filter(|(k, _)| is_key_down(*k))
-                    .map(|(k, i)| {last_input = (now, Some((*k, *i))); *i})
-                    .next()
+        let current_input = debounce(
+            &mut last_input,
+            &[
+                (KeyCode::Right, Control(Go(Right))),
+                (KeyCode::Left, Control(Go(Left))),
+                (KeyCode::Up, Control(Go(Up))),
+                (KeyCode::Down, Control(Go(Down))),
+                (KeyCode::Space, Control(Wait)),
+                (KeyCode::Z, Control(Undo)),
+                (KeyCode::Escape, Pause),
+            ],
+            |i, t| match i {
+                Control(Undo) => t > 0.075,
+                Pause => false,
+                _ => t > 0.15,
             },
-            (t, Some(x)) => {
-                if (now - t > 0.15 || x.1 == Control(Undo) && now - t > 0.075) && x.1 != Pause {
-                    last_input = (now, Some(x));
-                    Some(x.1)
-                } else {
-                    if !is_key_down(x.0) {
-                        last_input = (now, None);
-                    }
-                    None
-                }
-            },
-        };
+        );
         if paused {
             if let Some(Pause) = current_input {
                 paused = !paused;
@@ -1054,7 +1111,7 @@ pub async fn main(level: Option<&str>) -> (Vec<Level>, Vec<Input>) {
                 None => (),
                 Some(anim_start) => {
                     if (get_time() - anim_start) > anim_time + 0.5 {
-                        return (views, inputs);
+                        return (views, inputs, palette_name.to_string());
                     }
                     gl_use_material(mask);
                     mask.set_uniform(
@@ -1082,6 +1139,9 @@ pub async fn main(level: Option<&str>) -> (Vec<Level>, Vec<Input>) {
 
         next_frame().await
     }
+}
+
+fn render_level(level: &Level, palette: &Image, sprites: &HashMap<Entity, Texture2D>) {
 }
 
 const SPRITE_FRAGMENT_SHADER: &'static str = "#version 100
