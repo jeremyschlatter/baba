@@ -817,27 +817,30 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
 }
 
 pub async fn replay(path: &str) {
-    let (screens, inputs, palette_name) = load_replay(path).unwrap();
+    let (screens, _, palette_name) = load_replay(path).unwrap();
+    let palette = load_image(&format!("resources/Data/Palettes/{palette_name}.png")).await.unwrap();
+    let sprites = load_sprite_map().await;
 
     let mut last_input: (f64, Option<KeyCode>) = (0., None);
-    let palette = load_image(&format!("resources/Data/Palettes/{palette_name}.png")).await.unwrap();
+    let mut i = 0;
 
     loop {
         // update
-        {
-            let current_input = debounce(
-                &mut last_input,
-                &[
-                    (KeyCode::Right, Right),
-                    (KeyCode::Left, Left),
-                ],
-                |_, t| t > 0.15,
-            );
+        match debounce(
+            &mut last_input,
+            &[
+                (KeyCode::Right, Right),
+                (KeyCode::Left, Left),
+            ],
+            |_, t| t > 0.15,
+        ) {
+            Some(Right) => if i + 1 < screens.len() { i += 1 },
+            Some(Left) => if i > 0 { i -= 1 },
+            _ => (),
         }
 
         // render
-        {
-        }
+        render_level(&screens[i], &palette, &sprites);
 
         next_frame().await
     }
@@ -907,102 +910,14 @@ pub async fn main(level: Option<&str>) -> Replay {
     // pops from history and pushes onto views.
     let mut views: Vec<Level> = vec![level.clone()];
 
-    let sprites: HashMap<Entity, Texture2D> = {
-        async fn load(e: Entity) -> (Entity, Texture2D) {
-            let filename = &match match e {
-                Entity::Noun(_, n) => match n {
-                    Wall => Some(n),
-                    _ => None,
-                },
-                _ => None,
-            } {
-                Some(n) => format!("resources/Data/Sprites/{:?}_0_1.png", n).to_lowercase(),
-                None => {
-                    let name = match e {
-                        Entity::Noun(_, Lava) => "water".to_string(),
-                        Entity::Noun(_, n) => format!("{:?}", n),
-                        Entity::Text(_, t) => "text_".to_string() + &(match t {
-                            Text::Adjective(a) => format!("{:?}", a),
-                            Text::Object(Seastar) => "star".to_string(),
-                            Text::Object(o) => format!("{:?}", o),
-                            Text::Is => "is".to_string(),
-                            Text::And => "and".to_string(),
-                            Text::Text => "text".to_string(),
-                        }),
-                    }.to_lowercase();
-                    let filename = format!(
-                        "resources/Data/Sprites/{name}_{}_1.png",
-                        match match e { Entity::Noun(d, _) => d, Entity::Text(d, _) => d } {
-                            Right => "0",
-                            Up => "8",
-                            Left => "16",
-                            Down => "24",
-                        }
-                    );
-                    if std::path::Path::new(&filename).exists() {
-                        filename
-                    } else {
-                        format!("resources/Data/Sprites/{name}_0_1.png")
-                    }
-                },
-            };
-            (e, load_texture(filename).await.unwrap())
-        }
-        futures::future::join_all(all_entities().map(load)).await.into_iter().collect()
-    };
+    let sprites = load_sprite_map().await;
 
     let congrats: Texture2D = load_texture("congratulations.png").await.unwrap();
 
     let mut history = vec![level.clone()];
     let mut current_state = &history[0];
 
-    let blend_alpha = Some(
-        BlendState::new(
-            Equation::Add,
-            BlendFactor::Value(BlendValue::SourceAlpha),
-            BlendFactor::OneMinusValue(BlendValue::SourceAlpha),
-        )
-    );
-
-    let mask = load_material(
-        DEFAULT_VERTEX_SHADER,
-        MASK_FRAGMENT_SHADER,
-        MaterialParams {
-            uniforms: vec![("radius".to_string(), UniformType::Float1)],
-            pipeline_params: PipelineParams {
-                color_blend: blend_alpha,
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-    ).unwrap();
-
-    let sprites_material = load_material(
-        DEFAULT_VERTEX_SHADER,
-        SPRITE_FRAGMENT_SHADER,
-        MaterialParams {
-            uniforms: vec![("color".to_string(), UniformType::Float3)],
-            pipeline_params: PipelineParams {
-                color_blend: blend_alpha,
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-    ).unwrap();
-
     let palette = load_image(&format!("resources/Data/Palettes/{palette_name}.png")).await.unwrap();
-
-    let draw_sprite = |x, y, w, h, entity| {
-        let sprite = sprites[&entity];
-        let c = default_color(entity, &palette);
-        sprites_material.set_uniform("color", [c.r, c.g, c.b]);
-        draw_texture_ex(
-            sprite, x, y, WHITE, DrawTextureParams {
-                dest_size: Some(Vec2{x: w, y: h}),
-                ..Default::default()
-            },
-        );
-    };
 
     let anim_time = 2.0;
     let border_color = palette.get_pixel(1, 0);
@@ -1021,6 +936,12 @@ pub async fn main(level: Option<&str>) -> Replay {
     use UIInput::*;
 
     let mut last_input: (f64, Option<KeyCode>) = (0., None);
+
+    let sq_size = ((screen_width() - 20.) / width as f32).min((screen_height() - 20.) / height as f32);
+    let game_width = sq_size * width as f32;
+    let game_height = sq_size * height as f32;
+    let offset_x = (screen_width() - game_width) / 2.;
+    let offset_y = (screen_height() - game_height) / 2.;
 
     loop {
         // update
@@ -1069,31 +990,7 @@ pub async fn main(level: Option<&str>) -> Replay {
 
         // render
         {
-            clear_background(border_color);
-
-            let sq_size = ((screen_width() - 20.) / width as f32).min((screen_height() - 20.) / height as f32);
-            let game_width = sq_size * width as f32;
-            let game_height = sq_size * height as f32;
-            let offset_x = (screen_width() - game_width) / 2.;
-            let offset_y = (screen_height() - game_height) / 2.;
-
-            draw_rectangle(offset_x, offset_y, game_width, game_height, palette.get_pixel(0, 4));
-
-            gl_use_material(sprites_material);
-            for row in 0..height {
-                for col in 0..width {
-                    for e in &current_state[row][col] {
-                        draw_sprite(
-                            offset_x + sq_size * col as f32,
-                            offset_y + sq_size * row as f32,
-                            sq_size,
-                            sq_size,
-                            *e,
-                        );
-                    }
-                }
-            }
-            gl_use_default_material();
+            render_level(&current_state, &palette, &sprites);
 
             // draw pause menu
             if paused {
@@ -1113,8 +1010,8 @@ pub async fn main(level: Option<&str>) -> Replay {
                     if (get_time() - anim_start) > anim_time + 0.5 {
                         return (views, inputs, palette_name.to_string());
                     }
-                    gl_use_material(mask);
-                    mask.set_uniform(
+                    gl_use_material(*MASK_MATERIAL);
+                    MASK_MATERIAL.set_uniform(
                         "radius",
                         (((get_time() - anim_start) / anim_time) as f32).min(0.5_f32.sqrt()),
                     );
@@ -1141,7 +1038,131 @@ pub async fn main(level: Option<&str>) -> Replay {
     }
 }
 
-fn render_level(level: &Level, palette: &Image, sprites: &HashMap<Entity, Texture2D>) {
+fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap) {
+    let width = level[0].len();
+    let height = level.len();
+    let sq_size = ((screen_width() - 20.) / width as f32).min((screen_height() - 20.) / height as f32);
+    let game_width = sq_size * width as f32;
+    let game_height = sq_size * height as f32;
+    let offset_x = (screen_width() - game_width) / 2.;
+    let offset_y = (screen_height() - game_height) / 2.;
+    let border_color = palette.get_pixel(1, 0);
+
+    let draw_sprite = |x, y, w, h, entity| {
+        let sprite = sprites[&entity];
+        let c = default_color(entity, &palette);
+        SPRITES_MATERIAL.set_uniform("color", [c.r, c.g, c.b]);
+        draw_texture_ex(
+            sprite, x, y, WHITE, DrawTextureParams {
+                dest_size: Some(Vec2{x: w, y: h}),
+                ..Default::default()
+            },
+        );
+    };
+
+    clear_background(border_color);
+
+    draw_rectangle(offset_x, offset_y, game_width, game_height, palette.get_pixel(0, 4));
+
+    gl_use_material(*SPRITES_MATERIAL);
+    for row in 0..height {
+        for col in 0..width {
+            for e in &level[row][col] {
+                draw_sprite(
+                    offset_x + sq_size * col as f32,
+                    offset_y + sq_size * row as f32,
+                    sq_size,
+                    sq_size,
+                    *e,
+                );
+            }
+        }
+    }
+    gl_use_default_material();
+}
+
+type SpriteMap = HashMap<Entity, Texture2D>;
+
+async fn load_sprite_map() -> SpriteMap {
+    async fn load(e: Entity) -> (Entity, Texture2D) {
+        let filename = &match match e {
+            Entity::Noun(_, n) => match n {
+                Wall => Some(n),
+                _ => None,
+            },
+            _ => None,
+        } {
+            Some(n) => format!("resources/Data/Sprites/{:?}_0_1.png", n).to_lowercase(),
+            None => {
+                let name = match e {
+                    Entity::Noun(_, Lava) => "water".to_string(),
+                    Entity::Noun(_, n) => format!("{:?}", n),
+                    Entity::Text(_, t) => "text_".to_string() + &(match t {
+                        Text::Adjective(a) => format!("{:?}", a),
+                        Text::Object(Seastar) => "star".to_string(),
+                        Text::Object(o) => format!("{:?}", o),
+                        Text::Is => "is".to_string(),
+                        Text::And => "and".to_string(),
+                        Text::Text => "text".to_string(),
+                    }),
+                }.to_lowercase();
+                let filename = format!(
+                    "resources/Data/Sprites/{name}_{}_1.png",
+                    match match e { Entity::Noun(d, _) => d, Entity::Text(d, _) => d } {
+                        Right => "0",
+                        Up => "8",
+                        Left => "16",
+                        Down => "24",
+                    }
+                );
+                if std::path::Path::new(&filename).exists() {
+                    filename
+                } else {
+                    format!("resources/Data/Sprites/{name}_0_1.png")
+                }
+            },
+        };
+        (e, load_texture(filename).await.unwrap())
+    }
+    futures::future::join_all(all_entities().map(load)).await.into_iter().collect()
+}
+
+lazy_static! {
+
+    static ref BLEND_ALPHA: Option<BlendState> = Some(
+        BlendState::new(
+            Equation::Add,
+            BlendFactor::Value(BlendValue::SourceAlpha),
+            BlendFactor::OneMinusValue(BlendValue::SourceAlpha),
+        )
+    );
+
+    static ref SPRITES_MATERIAL: Material = load_material(
+        DEFAULT_VERTEX_SHADER,
+        SPRITE_FRAGMENT_SHADER,
+        MaterialParams {
+            uniforms: vec![("color".to_string(), UniformType::Float3)],
+            pipeline_params: PipelineParams {
+                color_blend: *BLEND_ALPHA,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    ).unwrap();
+
+    static ref MASK_MATERIAL: Material = load_material(
+        DEFAULT_VERTEX_SHADER,
+        MASK_FRAGMENT_SHADER,
+        MaterialParams {
+            uniforms: vec![("radius".to_string(), UniformType::Float1)],
+            pipeline_params: PipelineParams {
+                color_blend: *BLEND_ALPHA,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    ).unwrap();
+
 }
 
 const SPRITE_FRAGMENT_SHADER: &'static str = "#version 100

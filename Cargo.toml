@@ -8,6 +8,7 @@ anyhow = "1.0"
 brotli = "3.3.4"
 clap = { version = "4.0.4", features = ["derive"] }
 futures = "0.3.24"
+lazy_static = "1.4.0"
 macroquad = "0.3.24"
 ron = "0.8.0"
 serde = { version = "1.0.145", features = ["derive"] }
