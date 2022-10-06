@@ -1,14 +1,15 @@
 a = algae
-b = baba
+b = baba on tile
 o = bubble
 w = wall
 d = door
-k = key
+k = key on tile
+ḱ = key on brick
 f = flag
 p = pillar
 c = brick
 t = tile
-r = rock
+r = rock on brick
 palette = ocean
 ---
                          a
@@ -18,7 +19,7 @@ palette = ocean
      wW=⊘w       wD=⨶w
      wwwwwww    wwwwwww
    o wtttttw    w     w
-     wtktbtdcrkcd  R  w   o
+     wtktbtdcrḱcd  R  w   o
      wtttttw  c w     w
      wwwwwww  c wwwdwww
               c w    w
