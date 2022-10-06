@@ -463,8 +463,8 @@ fn scan_rules(l: &Level) -> Vec<Rule> {
     rules
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-enum Input {
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+pub enum Input {
     Go(Direction),
     Wait,
     Undo,
@@ -815,7 +815,7 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
     (level, false)
 }
 
-pub async fn main(level: Option<&str>) -> Vec<Level> {
+pub async fn main(level: Option<&str>) -> (Vec<Level>, Vec<Input>) {
     let (level, palette_name) = parse_level(level.unwrap_or(
         // "levels/0-baba-is-you.txt"
         // "levels/1-where-do-i-go.txt"
@@ -833,6 +833,11 @@ pub async fn main(level: Option<&str>) -> Vec<Level> {
 
     let width = level[0].len();
     let height = level.len();
+
+    let mut inputs: Vec<Input> = vec![];
+    // views is different from history, below, in that the Undo action
+    // pops from history and pushes onto views.
+    let mut views: Vec<Level> = vec![level.clone()];
 
     let sprites: HashMap<Entity, Texture2D> = {
         async fn load(e: Entity) -> (Entity, Texture2D) {
@@ -999,6 +1004,10 @@ pub async fn main(level: Option<&str>) -> Vec<Level> {
                 Some(Pause) => paused = !paused,
             };
             current_state = &history[history.len() - 1];
+            if let Some(Control(i)) = current_input {
+                views.push(current_state.clone());
+                inputs.push(i);
+            }
         }
 
         // render
@@ -1045,7 +1054,7 @@ pub async fn main(level: Option<&str>) -> Vec<Level> {
                 None => (),
                 Some(anim_start) => {
                     if (get_time() - anim_start) > anim_time + 0.5 {
-                        return history;
+                        return (views, inputs);
                     }
                     gl_use_material(mask);
                     mask.set_uniform(

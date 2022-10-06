@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+brotli = "3.3.4"
 clap = { version = "4.0.4", features = ["derive"] }
 futures = "0.3.24"
 macroquad = "0.3.24"
