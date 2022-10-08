@@ -1,4 +1,5 @@
 use anyhow::Result;
+use itertools::Itertools;
 use macroquad::prelude::*;
 use miniquad::graphics::*;
 use serde::{Serialize, Deserialize};
@@ -206,9 +207,9 @@ fn parse_level(name: &str) -> (Level, String) {
     let map: Vec<&str> = s.lines().skip_while(|s| *s != "---").skip(1).collect();
 
     let max = map.iter().map(|l| l.chars().count()).max().unwrap_or_default() + right_pad;
-    let level = map.iter()
-        .map(
-            |l| l.chars()
+    let level = map.split(|s| *s == "---")
+        .map(|layer| layer.iter().map(
+            |line| line.chars()
                 .map(|c| match (legend.get(c.to_string().to_lowercase().as_str())
                 , match c {
                     '✥' => Some(You),
@@ -247,8 +248,22 @@ fn parse_level(name: &str) -> (Level, String) {
                 })
                 .chain(iter::repeat(vec![]))
                 .take(max)
-                .collect::<Vec<Vec<Entity>>>())
-        .collect();
+                .collect::<Vec<Vec<Entity>>>()).collect::<Vec<Vec<Vec<Entity>>>>())
+        .fold(vec![], |level: Vec<Vec<Vec<Entity>>>, layer: Vec<Vec<Vec<Entity>>>|
+            level.into_iter()
+                 .zip_longest(layer.into_iter())
+                 .map(|x| x.or_default())
+                 .map(|(level_line, layer_line)|
+                     level_line.into_iter()
+                        .zip_longest(layer_line.into_iter())
+                        .map(|x| x.or_default())
+                        .map(|(mut level_cell, layer_cell)| {
+                            level_cell.extend(layer_cell);
+                            level_cell
+                        })
+                        .collect::<Vec<Vec<Entity>>>()
+                     )
+                 .collect::<Vec<Vec<Vec<Entity>>>>());
 
     (level, metas.get("palette").unwrap_or(&"default").to_string())
 }
@@ -867,6 +882,26 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
                         Entity::Text(_, _) if melts.contains(&Subject::Text) => None,
                         _ => Some(*e),
                     }).collect();
+                }
+            }
+        }
+    }
+
+    // open shut things
+    {
+        let shuts = adjs(&rules, Shut);
+        let opens = adjs(&rules, Open);
+        let rules_cache = cache_rules(&rules);
+        for x in 0..width {
+            for y in 0..height {
+                if contains(&level, x, y, &shuts) && contains(&level, x, y, &opens) {
+                    let is = |x, y, i, q| is(&level, x, y, i, &rules_cache, q);
+                    let removals: Vec<usize> = (0..level[y][x].len()).filter(|&i|
+                        is(x, y, i, Open) || is(x, y, i, Shut)
+                    ).collect::<Vec<usize>>();
+                    for (i, r) in removals.iter().enumerate() {
+                        level[y][x].remove(r - i);
+                    }
                 }
             }
         }
