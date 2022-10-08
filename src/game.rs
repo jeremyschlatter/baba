@@ -329,6 +329,37 @@ mod tests {
 
     #[test]
     fn replay_tests() {
+        for entry in walkdir::WalkDir::new("goldens").sort_by_file_name() {
+            let entry = entry.unwrap();
+            if entry.file_type().is_dir() {
+                continue;
+            }
+            println!("{}", entry.path().display());
+
+            let (screens, inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
+
+            for i in 0..screens.len() - 1 {
+                let (got, _) = step(&screens[i], inputs[i]);
+                if got != screens[i + 1] {
+                    save::<_, Diff>(
+                        &(
+                            screens[i].clone(),
+                            screens[i+1].clone(),
+                            got.clone(),
+                            palette_name.to_string(),
+                            inputs[i],
+                        ), "diff.ron.br").unwrap();
+
+                    assert!(std::process::Command::new("cargo")
+                        .args(&["run", "render-diff", "diff.ron.br"])
+                        .status()
+                        .unwrap()
+                        .success());
+
+                    assert!(false, "replay mismatch. saved diff as diff.ron.br");
+                }
+            }
+        }
     }
 }
 
@@ -820,7 +851,10 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
     (level, false)
 }
 
-async fn render_diff(start: &Level, good: &Level, bad: &Level, palette_name: &str, i: Input) {
+type Diff = (Level, Level, Level, String, Input);
+
+pub async fn render_diff(path: &str) {
+    let (start, good, bad, palette_name, input) = load::<_, Diff>(path).unwrap();
     let palette = load_image(&format!("resources/Data/Palettes/{palette_name}.png")).await.unwrap();
     let sprites = load_sprite_map().await;
     let render = |s, x, y, w, h| render_level(s, &palette, &sprites, Rect::new(x, y, w, h), 20.);
@@ -841,9 +875,9 @@ async fn render_diff(start: &Level, good: &Level, bad: &Level, palette_name: &st
 
             // before
             {
-                let bounds = render(start, 0., 0., width / 2., height);
+                let bounds = render(&start, 0., 0., width / 2., height);
                 draw_text(
-                    &format!("input: {}", match i {
+                    &format!("input: {}", match input {
                         Go(Down) => "down",
                         Go(Up) => "up",
                         Go(Left) => "left",
@@ -859,7 +893,7 @@ async fn render_diff(start: &Level, good: &Level, bad: &Level, palette_name: &st
             }
 
             // after (good)
-            let good_bounds = render(good, width / 2., 0., width / 2., height / 2.);
+            let good_bounds = render(&good, width / 2., 0., width / 2., height / 2.);
             draw_text(
                 "good:",
                 width / 2. - 50.,
@@ -869,7 +903,7 @@ async fn render_diff(start: &Level, good: &Level, bad: &Level, palette_name: &st
             );
 
             // after (maybe bad)
-            let bad_bounds = render(bad, width / 2., height / 2., width / 2., height / 2.);
+            let bad_bounds = render(&bad, width / 2., height / 2., width / 2., height / 2.);
             draw_text(
                 "bad:",
                 width / 2. - 50.,
@@ -906,7 +940,7 @@ async fn render_diff(start: &Level, good: &Level, bad: &Level, palette_name: &st
 }
 
 pub async fn replay(path: &str) {
-    let (screens, _, palette_name) = load_replay(path).unwrap();
+    let (screens, _, palette_name) = load::<_, Replay>(path).unwrap();
     let palette = load_image(&format!("resources/Data/Palettes/{palette_name}.png")).await.unwrap();
     let sprites = load_sprite_map().await;
 
@@ -944,7 +978,10 @@ pub async fn replay(path: &str) {
 
 pub type Replay = (Vec<Level>, Vec<Input>, String);
 
-pub fn load_replay(path: &str) -> Result<Replay> {
+pub fn load<P: AsRef<std::path::Path>, T>(path: P) -> Result<T>
+where
+    T: for<'a> Deserialize<'a>
+{
     let mut scratch = String::new();
     brotli::Decompressor::new(
         std::fs::File::open(path)?, 4096,
@@ -952,11 +989,14 @@ pub fn load_replay(path: &str) -> Result<Replay> {
     Ok(ron::from_str(&scratch)?)
 }
 
-pub fn save_replay(r: &Replay, path: &str) -> Result<()> {
+pub fn save<P: AsRef<std::path::Path>, T>(x: &T, path: P) -> Result<()>
+where
+    T: ?Sized + Serialize
+{
     Ok(
         brotli::CompressorWriter::new(
             std::fs::File::create(path)?, 4096, 9, 20,
-        ).write_all(ron::to_string(r)?.as_bytes())?
+        ).write_all(ron::to_string(x)?.as_bytes())?
     )
 }
 

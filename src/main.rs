@@ -22,11 +22,16 @@ enum Commands {
     Level {
         level: String,
     },
-    #[command(about = "Play a specific level")]
+    #[command(about = "View a replay file")]
     Replay {
         replay: String,
     },
+    #[command(about = "Render a diff (for testing)")]
+    RenderDiff {
+        diff: String,
+    },
 }
+use Commands::*;
 
 #[macroquad::main("Baba Is Clone")]
 async fn main() {
@@ -34,8 +39,11 @@ async fn main() {
 
     match cli.command {
         None => { game::main(None).await; },
-        Some(Commands::Level { level }) => { game::main(Some(&level)).await; },
-        Some(Commands::Golden{ level }) => test::record_golden(&level).await,
-        Some(Commands::Replay { replay }) => game::replay(&replay).await,
+        Some(c) => match c {
+            Level { level } => { game::main(Some(&level)).await; },
+            Golden{ level } => test::record_golden(&level).await,
+            Replay { replay } => game::replay(&replay).await,
+            RenderDiff { diff } => game::render_diff(&diff).await,
+        }
     }
 }
