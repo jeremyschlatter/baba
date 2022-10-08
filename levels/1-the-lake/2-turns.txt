@@ -3,7 +3,7 @@ x = skull
 j = jelly
 c = crab
 s = seastar
-b = baba
+b = baba on tile
 f = flag
 t = tile
 w = wall
@@ -18,8 +18,8 @@ a                        a
     wtttw           w
     wt twww  S=≉    wW=⊘
   c w C x s         wwwwww
-    wt twww  R=↦   rb twtw
-    wtttw           wwtttw
+    wt twww  R=↦     rtwtw
+    wtttw           wwtbtw
     wwBww    r &    wwtwtw
      w=ww           wwwwww
    f w✥ww           w
