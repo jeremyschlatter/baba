@@ -8,6 +8,7 @@ d = door
 k = key
 f = flag
 right pad = 1
+palette = ocean
 ---
       wtttttw           o
     a wtttttw   o  a
