@@ -339,6 +339,9 @@ mod tests {
             let (screens, inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
 
             for i in 0..screens.len() - 1 {
+                if inputs[i] == Undo {
+                    continue;
+                }
                 let (got, _) = step(&screens[i], inputs[i]);
                 if got != screens[i + 1] {
                     save::<_, Diff>(

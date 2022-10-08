@@ -17,6 +17,7 @@ enum Commands {
     #[command(about = "Record a golden session")]
     Golden {
         level: String,
+        output: String,
     },
     #[command(about = "Play a specific level")]
     Level {
@@ -41,7 +42,7 @@ async fn main() {
         None => { game::main(None).await; },
         Some(c) => match c {
             Level { level } => { game::main(Some(&level)).await; },
-            Golden{ level } => test::record_golden(&level).await,
+            Golden{ level, output } => test::record_golden(&level, &output).await,
             Replay { replay } => game::replay(&replay).await,
             RenderDiff { diff } => game::render_diff(&diff).await,
         }

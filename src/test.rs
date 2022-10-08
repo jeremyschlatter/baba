@@ -1,4 +1,4 @@
-pub async fn record_golden(level: &str) {
+pub async fn record_golden(level: &str, output: &str) {
     let history = crate::game::main(Some(level)).await;
-    crate::game::save(&history, "replay.ron.br").unwrap();
+    crate::game::save(&history, &format!("goldens/{output}.ron.br")).unwrap();
 }
