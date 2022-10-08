@@ -326,6 +326,10 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn replay_tests() {
+    }
 }
 
 fn scan_rules_text(rules: &mut Vec<Rule>, text: &[Text]) {
@@ -816,6 +820,91 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
     (level, false)
 }
 
+async fn render_diff(start: &Level, good: &Level, bad: &Level, palette_name: &str, i: Input) {
+    let palette = load_image(&format!("resources/Data/Palettes/{palette_name}.png")).await.unwrap();
+    let sprites = load_sprite_map().await;
+    let render = |s, x, y, w, h| render_level(s, &palette, &sprites, Rect::new(x, y, w, h), 20.);
+    let font_size = 20.;
+    let font_color = WHITE;
+    loop {
+        let width = screen_width();
+        let height = screen_height();
+
+        // update
+        if is_key_down(KeyCode::Escape) {
+            return;
+        }
+
+        // render
+        {
+            clear_background(palette.get_pixel(1, 0));
+
+            // before
+            {
+                let bounds = render(start, 0., 0., width / 2., height);
+                draw_text(
+                    &format!("input: {}", match i {
+                        Go(Down) => "down",
+                        Go(Up) => "up",
+                        Go(Left) => "left",
+                        Go(Right) => "right",
+                        Wait => "wait",
+                        Undo => "undo",
+                    }),
+                    width / 4. - 40.,
+                    bounds.y + bounds.h + 20.,
+                    font_size,
+                    font_color,
+                );
+            }
+
+            // after (good)
+            let good_bounds = render(good, width / 2., 0., width / 2., height / 2.);
+            draw_text(
+                "good:",
+                width / 2. - 50.,
+                10. + good_bounds.y,
+                font_size,
+                font_color,
+            );
+
+            // after (maybe bad)
+            let bad_bounds = render(bad, width / 2., height / 2., width / 2., height / 2.);
+            draw_text(
+                "bad:",
+                width / 2. - 50.,
+                bad_bounds.y + bad_bounds.h - (font_size / 2.),
+                font_size,
+                font_color,
+            );
+            for y in 0..bad.len() {
+                for x in 0..bad[0].len() {
+                    if bad[y][x] != good[y][x] {
+                        let sq_w = bad_bounds.w / bad[0].len() as f32;
+                        let sq_h = bad_bounds.h / bad.len() as f32;
+                        draw_rectangle(
+                            good_bounds.x + x as f32 * sq_w,
+                            good_bounds.y + y as f32 * sq_h,
+                            sq_w,
+                            sq_h,
+                            Color::new(0., 1., 0., 0.2),
+                        );
+                        draw_rectangle(
+                            bad_bounds.x + x as f32 * sq_w,
+                            bad_bounds.y + y as f32 * sq_h,
+                            sq_w,
+                            sq_h,
+                            Color::new(1., 0., 0., 0.2),
+                        );
+                    }
+                }
+            }
+        }
+
+        next_frame().await;
+    }
+}
+
 pub async fn replay(path: &str) {
     let (screens, _, palette_name) = load_replay(path).unwrap();
     let palette = load_image(&format!("resources/Data/Palettes/{palette_name}.png")).await.unwrap();
@@ -840,7 +929,14 @@ pub async fn replay(path: &str) {
         }
 
         // render
-        render_level(&screens[i], &palette, &sprites);
+        clear_background(palette.get_pixel(1, 0));
+        render_level(
+            &screens[i],
+            &palette,
+            &sprites,
+            Rect::new(0., 0., screen_width(), screen_height()),
+            20.,
+        );
 
         next_frame().await
     }
@@ -990,7 +1086,14 @@ pub async fn main(level: Option<&str>) -> Replay {
 
         // render
         {
-            render_level(&current_state, &palette, &sprites);
+            clear_background(palette.get_pixel(1, 0));
+            render_level(
+                &current_state,
+                &palette,
+                &sprites,
+                Rect::new(0., 0., screen_width(), screen_height()),
+                20.,
+            );
 
             // draw pause menu
             if paused {
@@ -1038,15 +1141,14 @@ pub async fn main(level: Option<&str>) -> Replay {
     }
 }
 
-fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap) {
+fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rect, min_border: f32) -> Rect {
     let width = level[0].len();
     let height = level.len();
-    let sq_size = ((screen_width() - 20.) / width as f32).min((screen_height() - 20.) / height as f32);
+    let sq_size = ((bounds.w - min_border) / width as f32).min((bounds.h - min_border) / height as f32);
     let game_width = sq_size * width as f32;
     let game_height = sq_size * height as f32;
-    let offset_x = (screen_width() - game_width) / 2.;
-    let offset_y = (screen_height() - game_height) / 2.;
-    let border_color = palette.get_pixel(1, 0);
+    let offset_x = bounds.x + (bounds.w - game_width) / 2.;
+    let offset_y = bounds.y + (bounds.h - game_height) / 2.;
 
     let draw_sprite = |x, y, w, h, entity| {
         let sprite = sprites[&entity];
@@ -1059,8 +1161,6 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap) {
             },
         );
     };
-
-    clear_background(border_color);
 
     draw_rectangle(offset_x, offset_y, game_width, game_height, palette.get_pixel(0, 4));
 
@@ -1079,6 +1179,9 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap) {
         }
     }
     gl_use_default_material();
+
+    // (offset_x - bounds.x, offset_y - bounds.y)
+    Rect::new(offset_x, offset_y, game_width, game_height)
 }
 
 type SpriteMap = HashMap<Entity, Texture2D>;
