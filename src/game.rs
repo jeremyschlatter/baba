@@ -180,7 +180,7 @@ fn parse_level(name: &str) -> (Level, String) {
     use LegendValue::*;
     let legend: HashMap<String, LegendValue> =
         metas.iter()
-             .filter(|(&k, _)| k.len() == 1)
+             .filter(|(&k, _)| k.chars().count() == 1)
              .map(|(&k, &c)| (
                 k.to_string(), {
                     if let Ok(n) = Noun::from_str(c) {
@@ -224,7 +224,15 @@ fn parse_level(name: &str) -> (Level, String) {
                     '⧜' => Some(Open),
                     _ => None
                 }) {
-                    (Some(FullCell(cell)), _) => cell.clone(),
+                    (Some(FullCell(cell)), _) => if c.is_uppercase() {
+                        if let Entity::Noun(_, n) = cell[cell.len() - 1] {
+                            vec![Entity::Text(Right, Text::Object(n))]
+                        } else {
+                            vec![]
+                        }
+                    } else {
+                        cell.clone()
+                    }
                     (Some(Abbreviation(noun)), _) => if c.is_uppercase() {
                         vec![Entity::Text(Right, Text::Object(*noun))]
                     } else {
@@ -352,16 +360,15 @@ mod tests {
                             palette_name.to_string(),
                             inputs[i],
                         ), "diff.ron.br").unwrap();
-
                     assert!(std::process::Command::new("cargo")
                         .args(&["run", "render-diff", "diff.ron.br"])
                         .status()
                         .unwrap()
                         .success());
-
                     assert!(false, "replay mismatch. saved diff as diff.ron.br");
                 }
             }
+
         }
     }
 }
@@ -607,6 +614,7 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
         };
         let mut queue = VecDeque::new();
         let mut movements = HashMap::new();
+        let mut tombstones = HashSet::new();
         let is = |x, y, i, q| is(&level, x, y, i, &rules_cache, q);
 
         // you
@@ -643,6 +651,9 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
             Down  => (0, 1),
         };
         while let Some((x, y, i)) = queue.pop_front() {
+            if tombstones.contains(&(x, y, i)) {
+                continue;
+            }
             let a = &movements[&(x, y, i)];
 
             let (x_, y_) = {
@@ -656,13 +667,24 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
                     // at edge
                     result = Some(true);
                 }
-                for i in 0..level[y_][x_].len() {
-                    let stop = is(x_, y_, i, Stop);
-                    let push = is(x_, y_, i, Push);
+                for j in 0..level[y_][x_].len() {
+                    if tombstones.contains(&(x_, y_, j)) {
+                        continue;
+                    }
+                    let open = is(x_, y_, j, Open) && is(x, y, i, Shut)
+                            || is(x_, y_, j, Shut) && is(x, y, i, Open);
+                    if open {
+                        // add tombstones to both
+                        tombstones.insert((x, y, i));
+                        tombstones.insert((x_, y_, j));
+                        continue;
+                    }
+                    let stop = is(x_, y_, j, Stop);
+                    let push = is(x_, y_, j, Push);
                     if result == Some(true) || !push && !stop {
                         continue;
                     }
-                    result = match movements.get(&(x_, y_, i)) {
+                    result = match movements.get(&(x_, y_, j)) {
                         Some(b) if a.dir == b.dir => match b.status {
                             Status::Resolved { moving } =>
                                 if moving { result } else { Some(true) },
@@ -710,6 +732,9 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
                 let d = a.dir;
                 let mut pushed = false;
                 for i in 0..level[y_][x_].len() {
+                    if tombstones.contains(&(x_, y_, i)) {
+                        continue;
+                    }
                     if is(x_, y_, i, Push) {
                         if !movements.contains_key(&(x_, y_, i)) {
                             try_move(&mut queue, &mut movements, x_, y_, i, d, false);
@@ -728,16 +753,22 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
         }
 
         // remove all movers from their current position
+        // and remove all tombstoned things
         let mut removals = vec![vec![vec![]; width]; height];
+        for &(x, y, i) in tombstones.iter() {
+            removals[y][x].push((i, None));
+        }
         for (&(x, y, i), a) in movements.iter() {
-            if a.status == (Status::Resolved { moving: true }) {
-                removals[y][x].push((i, level[y][x][i], a.dir));
+            if !tombstones.contains(&(x, y, i)) {
+                if a.status == (Status::Resolved { moving: true }) {
+                    removals[y][x].push((i, Some((level[y][x][i], a.dir))));
+                }
             }
         }
         for x in 0..width {
             for y in 0..height {
-                removals[y][x].sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
-                for (i, (r, _, _)) in removals[y][x].iter().enumerate() {
+                removals[y][x].sort_by(|a, b| a.0.cmp(&b.0));
+                for (i, (r, _)) in removals[y][x].iter().enumerate() {
                     level[y][x].remove(r - i);
                 }
             }
@@ -746,13 +777,15 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
         // add them to their new position
         for (y, row) in removals.iter().enumerate() {
             for (x, cell) in row.iter().enumerate() {
-                for &(_, e, d) in cell {
-                    let (dx, dy) = delta(d);
-                    let (x, y) = clip(&level, x as i16 + dx, y as i16 + dy);
-                    level[y][x].push(match e {
-                        Entity::Text(_, t) => Entity::Text(d, t),
-                        Entity::Noun(_, n) => Entity::Noun(d, n),
-                    });
+                for &(_, o) in cell {
+                    if let Some((e, d)) = o {
+                        let (dx, dy) = delta(d);
+                        let (x, y) = clip(&level, x as i16 + dx, y as i16 + dy);
+                        level[y][x].push(match e {
+                            Entity::Text(_, t) => Entity::Text(d, t),
+                            Entity::Noun(_, n) => Entity::Noun(d, n),
+                        });
+                    }
                 }
             }
         }
