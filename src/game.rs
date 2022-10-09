@@ -717,6 +717,35 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
             if tombstones.contains(&(x, y, i)) {
                 continue;
             }
+
+            // check for push
+            {
+                let a = &movements[&(x, y, i)];
+                let (x_, y_) = {
+                    let (dx, dy) = delta(a.dir);
+                    clip(&level, x as i16 + dx, y as i16 + dy)
+                };
+                if !(x == x_ && y == y_) {
+                    let d = a.dir;
+                    let mut pushed = false;
+                    for i in 0..level[y_][x_].len() {
+                        if tombstones.contains(&(x_, y_, i)) {
+                            continue;
+                        }
+                        if is(x_, y_, i, Push) {
+                            if !movements.contains_key(&(x_, y_, i)) {
+                                try_move(&mut queue, &mut movements, x_, y_, i, d, false);
+                                pushed = true;
+                            }
+                        }
+                    }
+                    if pushed {
+                        queue.push_back((x, y, i));
+                        continue;
+                    }
+                }
+            }
+
             let a = &movements[&(x, y, i)];
 
             let (x_, y_) = {
@@ -788,27 +817,6 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
                     continue;
                 },
                 Some(false) => (),
-            }
-
-            // check for push
-            {
-                let d = a.dir;
-                let mut pushed = false;
-                for i in 0..level[y_][x_].len() {
-                    if tombstones.contains(&(x_, y_, i)) {
-                        continue;
-                    }
-                    if is(x_, y_, i, Push) {
-                        if !movements.contains_key(&(x_, y_, i)) {
-                            try_move(&mut queue, &mut movements, x_, y_, i, d, false);
-                            pushed = true;
-                        }
-                    }
-                }
-                if pushed {
-                    queue.push_back((x, y, i));
-                    continue;
-                }
             }
 
             let a = movements.get_mut(&(x, y, i)).unwrap();
