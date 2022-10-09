@@ -84,6 +84,8 @@ pub enum Adjective {
     Shut,
     #[strum(props(text_color = "6 1", text_color_active = "2 4"))]
     Open,
+    #[strum(props(text_color = "1 2", text_color_active = "1 4"))]
+    Float,
 }
 use Adjective::*;
 
@@ -226,6 +228,7 @@ fn parse_level(name: &str) -> (Level, String) {
                     '→' => Some(Move),
                     '⨶' => Some(Shut),
                     '⧜' => Some(Open),
+                    '⚲' => Some(Float),
                     _ => None
                 }) {
                     (Some(FullCell(cell)), _) => if c.is_uppercase() {
@@ -611,6 +614,16 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
         })
     }
 
+    fn contains_(level: &Level, x: usize, y: usize, set: &HashSet<&Subject>, floats: &HashSet<&Subject>, float: bool) -> bool {
+        level[y][x].iter().any(|e| {
+            let s = match e {
+                Entity::Noun(_, n) => Subject::Noun(*n),
+                Entity::Text(_, _) => Subject::Text,
+            };
+            set.contains(&s) && (floats.contains(&s) == float)
+        })
+    }
+
     fn entities(level: &Level) -> impl Iterator<Item=((usize, usize, usize), Entity)> + '_ {
         level.iter()
              .enumerate()
@@ -900,10 +913,25 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
     // sink things
     {
         let sinks = adjs(&rules, Sink);
+        let floats = adjs(&rules, Float);
+        let rules_cache = cache_rules(&rules);
+        fn floating(level: &Level, rules_cache: &RulesCache, x: usize, y: usize, float: bool) -> Vec<Entity> {
+            level[y][x].iter()
+                .enumerate()
+                .filter(|(i, _)| is(&level, x, y, *i, rules_cache, Float) == float)
+                .map(|x| x.1)
+                .copied()
+                .collect()
+        }
         for x in 0..width {
             for y in 0..height {
-                if level[y][x].len() > 1 && contains(&level, x, y, &sinks) {
-                    level[y][x] = vec![];
+                for float in [true, false] {
+                    if contains_(&level, x, y, &sinks, &floats, float) {
+                        let f = floating(&level, &rules_cache, x, y, float);
+                        if f.len() > 1 {
+                            level[y][x] = floating(&level, &rules_cache, x, y, !float);
+                        }
+                    }
                 }
             }
         }
@@ -912,15 +940,20 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
     // defeat things
     {
         let defeats = adjs(&rules, Defeat);
-        let yous = adjs(&rules, You);
+        let floats = adjs(&rules, Float);
+        let rules_cache = cache_rules(&rules);
         for x in 0..width {
             for y in 0..height {
-                if contains(&level, x, y, &defeats) {
-                    level[y][x] = level[y][x].iter().filter_map(|e| match e {
-                        Entity::Noun(_, n) if yous.contains(&Subject::Noun(*n)) => None,
-                        Entity::Text(_, _) if yous.contains(&Subject::Text) => None,
-                        _ => Some(*e),
-                    }).collect();
+                for float in [true, false] {
+                    if contains_(&level, x, y, &defeats, &floats, float) {
+                        level[y][x] = level[y][x].iter()
+                            .enumerate()
+                            .filter(|(i, _)| !(is(&level, x, y, *i, &rules_cache, You)
+                                               && is(&level, x, y, *i, &rules_cache, Float) == float))
+                            .map(|x| x.1)
+                            .copied()
+                            .collect();
+                    }
                 }
             }
         }
@@ -929,15 +962,19 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
     // melt things
     {
         let hots = adjs(&rules, Hot);
-        let melts = adjs(&rules, Melt);
+        let floats = adjs(&rules, Float);
+        let rules_cache = cache_rules(&rules);
         for x in 0..width {
             for y in 0..height {
-                if contains(&level, x, y, &hots) {
-                    level[y][x] = level[y][x].iter().filter_map(|e| match e {
-                        Entity::Noun(_, n) if melts.contains(&Subject::Noun(*n)) => None,
-                        Entity::Text(_, _) if melts.contains(&Subject::Text) => None,
-                        _ => Some(*e),
-                    }).collect();
+                for float in [true, false] {
+                    if contains_(&level, x, y, &hots, &floats, float) {
+                        level[y][x] = level[y][x].iter()
+                            .enumerate()
+                            .filter(|(i, _)| !(is(&level, x, y, *i, &rules_cache, Melt) && is(&level, x, y, *i, &rules_cache, Float) == float))
+                            .map(|x| x.1)
+                            .copied()
+                            .collect();
+                    }
                 }
             }
         }
@@ -966,10 +1003,14 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
     // check for win
     let wins = adjs(&rules, Win);
     let yous = adjs(&rules, You);
+    let floats = adjs(&rules, Float);
     for x in 0..width {
         for y in 0..height {
-            if contains(&level, x, y, &wins) && contains(&level, x, y, &yous) {
-                return (level, true);
+            for float in [true, false] {
+                if contains_(&level, x, y, &wins, &floats, float) &&
+                    contains_(&level, x, y, &yous, &floats, float) {
+                    return (level, true);
+                }
             }
         }
     }
