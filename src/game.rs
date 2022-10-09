@@ -54,6 +54,8 @@ pub enum Noun {
     Pillar,
     #[strum(props(color = "1 4", text_color = "1 3", text_color_active = "1 4"))]
     Bubble,
+    #[strum(props(color = "5 1", text_color = "5 0", text_color_active = "5 1"))]
+    Hedge,
 }
 use Noun::*;
 
@@ -197,7 +199,7 @@ fn parse_level(name: &str) -> (Level, String) {
                                  let mut x = s.split(" ");
                                  let n = x.next().unwrap();
                                  let d = x.next().and_then(|s| Direction::from_str(s).ok()).unwrap_or(Right);
-                                 Entity::Noun(d, Noun::from_str(n).unwrap())
+                                 Entity::Noun(d, Noun::from_str(n).expect(n))
                              })
                              .collect()
                         )
