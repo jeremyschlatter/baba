@@ -547,7 +547,27 @@ fn scan_rules(l: &Level) -> Vec<(Vec<Index>, Rule)> {
 }
 
 fn scan_rules_no_index(l: &Level) -> Vec<Rule> {
-    scan_rules(l).into_iter().map(|x| x.1).collect()
+    let rules = scan_rules(l);
+    let (rules, _) = partition_overridden_rules(rules);
+    rules.into_iter().map(|x| x.1).collect()
+}
+
+fn partition_overridden_rules<A>(rules: Vec<(A, Rule)>) -> (Vec<(A, Rule)>, Vec<(A, Rule)>) {
+    // x is x
+    let (mut high_priority, the_rest): (Vec<(A, Rule)>, _) =
+        rules.into_iter().partition(|r| match r.1 {
+            (x, IsNoun(y)) => x == y,
+            _ => false,
+        });
+    let x_is_x = high_priority.iter().map(|(_, (x, _))| *x).collect::<HashSet<TextOrNoun>>();
+    let (overridden, the_rest) = the_rest.into_iter().partition(|r| match r.1 {
+        (x, IsNoun(_)) => x_is_x.contains(&x),
+        _ => false,
+    });
+
+    high_priority.extend(the_rest);
+
+    (high_priority, overridden)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
@@ -1287,10 +1307,19 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
     let offset_x = bounds.x + (bounds.w - game_width) / 2.;
     let offset_y = bounds.y + (bounds.h - game_height) / 2.;
 
-    let active_texts = scan_rules(level)
-        .into_iter()
-        .flat_map(|x| x.0)
+    let rules = scan_rules(level);
+
+    let active_texts = rules
+        .iter()
+        .flat_map(|x| x.0.clone())
         .collect::<HashSet<Index>>();
+
+    let overridden_texts = {
+        let (_, overridden) = partition_overridden_rules(rules);
+        overridden.into_iter()
+                  .flat_map(|x| x.0)
+                  .collect::<HashSet<Index>>()
+    };
 
     let draw_sprite = |x, y, w, h, entity, active| {
         let sprite = sprites[&entity];
@@ -1309,15 +1338,37 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
     gl_use_material(*SPRITES_MATERIAL);
     for row in 0..height {
         for col in 0..width {
+            let x = offset_x + sq_size * col as f32;
+            let y = offset_y + sq_size * row as f32;
             for (i, e) in level[row][col].iter().enumerate() {
                 draw_sprite(
-                    offset_x + sq_size * col as f32,
-                    offset_y + sq_size * row as f32,
+                    x,
+                    y,
                     sq_size,
                     sq_size,
                     *e,
                     active_texts.contains(&(col, row, i)),
                 );
+                if overridden_texts.contains(&(col, row, i)) {
+                    let c = palette.get_pixel(2, 1);
+                    SPRITES_MATERIAL.set_uniform("color", [c.r, c.g, c.b]);
+                    draw_line(
+                        x,
+                        y,
+                        x + sq_size,
+                        y + sq_size,
+                        sq_size / 10.,
+                        c,
+                    );
+                    draw_line(
+                        x + sq_size,
+                        y,
+                        x,
+                        y + sq_size,
+                        sq_size / 10.,
+                        c,
+                    );
+                }
             }
         }
     }
