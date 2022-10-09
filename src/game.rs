@@ -132,15 +132,16 @@ impl Entity {
     }
 }
 
-fn default_color(e: Entity, palette: &Image) -> Color {
+fn default_color(e: Entity, palette: &Image, active: bool) -> Color {
+    let text_prop = if active { "text_color_active" } else { "text_color" };
     let ixs = match e {
         Entity::Noun(_, n) => n.get_str("color"),
         Entity::Text(_, t) => match t {
-            Text::Object(n) => n.get_str("text_color_active"),
-            Text::Adjective(a) => a.get_str("text_color_active"),
-            Text::Is => t.get_str("text_color_active"),
-            Text::And => t.get_str("text_color_active"),
-            Text::Text => t.get_str("text_color_active"),
+            Text::Object(n) => n.get_str(text_prop),
+            Text::Adjective(a) => a.get_str(text_prop),
+            Text::Is => t.get_str(text_prop),
+            Text::And => t.get_str(text_prop),
+            Text::Text => t.get_str(text_prop),
         },
     }.unwrap();
 
@@ -339,12 +340,15 @@ mod tests {
                          (_, _, _, Ok(a)) => vec![Text::Adjective(a)],
                          _ => panic!("unrecognized word: '{}'", s),
                      })
-                     .map(|t| t.iter().map(|t| Entity::Text(Right, *t)).collect::<Vec<Entity>>())
-                     .collect::<Vec<Vec<Entity>>>();
-            scan_rules_line(&mut result, input_.iter());
+                     .map(|t| t.iter()
+                               .map(|t| Entity::Text(Right, *t))
+                               .collect::<Vec<Entity>>())
+                     .map(|c| ((0, 0), c))
+                     .collect::<Vec<((usize, usize), Vec<Entity>)>>();
+            scan_rules_line(&mut result, input_.iter().map(|(i, c)| (*i, c)));
             assert_eq!(
                 output.into_iter().collect::<HashSet<Rule>>(),
-                result.into_iter().collect::<HashSet<Rule>>(),
+                result.into_iter().map(|x| x.1).collect::<HashSet<Rule>>(),
                 "input: {:?}", input,
             );
         }
@@ -388,56 +392,67 @@ mod tests {
     }
 }
 
-fn scan_rules_text(rules: &mut Vec<Rule>, text: &[Text]) {
+fn scan_rules_text(rules: &mut Vec<(Vec<Index>, Rule)>, text: &[(Index, Text)]) {
     #[derive(Debug)]
     enum ListState {
         Complete,
-        Incomplete,
+        Incomplete(Option<Index>),
     }
     use ListState::*;
     #[derive(Debug)]
     enum ScanState {
-        Subjects(ListState, Vec<Subject>),
-        Predicates(ListState, Vec<TextOrNoun>, Option<Predicate>),
+        Subjects(ListState, Vec<(Vec<Index>, Subject)>),
+        Predicates(ListState, Vec<(Vec<Index>, Subject)>, Option<(Vec<Index>, Predicate)>),
     }
     use ScanState::*;
     use Text::{Is, And, Object, Adjective};
-    let zero = |mut v: Vec<Subject>| { v.clear(); Subjects(Incomplete, v) };
+    let zero = |mut v: Vec<(Vec<Index>, Subject)>| { v.clear(); Subjects(Incomplete(None), v) };
     let mut state = zero(vec![]);
     let mut i = 0;
+    fn cat_ixs(head: Option<Index>, tail: Index) -> Vec<Index> {
+        if let Some(ix) = head { vec![ix, tail] } else { vec![tail] }
+    }
     while i < text.len() {
-        let t = text[i];
+        let (ix, t) = text[i];
         i += 1;
         state = match state {
             Subjects(s, mut subjs) => match s {
-                Incomplete => match t {
-                    Object(noun) => { subjs.push(Subject::Noun(noun)); Subjects(Complete, subjs) },
-                    Text::Text => { subjs.push(Subject::Text); Subjects(Complete, subjs) },
+                Incomplete(opt_ix) => match t {
+                    Object(noun) => {
+                        subjs.push((cat_ixs(opt_ix, ix), Subject::Noun(noun)));
+                        Subjects(Complete, subjs)
+                    },
+                    Text::Text => {
+                        subjs.push((cat_ixs(opt_ix, ix), Subject::Text));
+                        Subjects(Complete, subjs)
+                    },
                     _ => zero(subjs),
                 },
                 Complete => match t {
-                    Is => Predicates(Incomplete, subjs, None),
-                    And => Subjects(Incomplete, subjs),
+                    Is => Predicates(Incomplete(Some(ix)), subjs, None),
+                    And => Subjects(Incomplete(Some(ix)), subjs),
                     _ => { i -= 1; zero(subjs) },
                 },
             },
             Predicates(s, subjs, preds) => match s {
-                Incomplete => match match t {
+                Incomplete(opt_ix) => match match t {
                     Object(noun) => Some(IsNoun(TextOrNoun::Noun(noun))),
                     Adjective(adj) => Some(IsAdjective(adj)),
                     Text::Text => Some(IsNoun(TextOrNoun::Text)),
                     _ => None,
                 } {
                     Some(pred) => {
-                        for s in &subjs {
-                            rules.push((*s, pred));
+                        for (ixs, s) in &subjs {
+                            let mut ixs = ixs.clone();
+                            ixs.extend(cat_ixs(opt_ix, ix));
+                            rules.push((ixs, (*s, pred)));
                         }
-                        Predicates(Complete, subjs, Some(pred))
+                        Predicates(Complete, subjs, Some((cat_ixs(opt_ix, ix), pred)))
                     },
                     None => { i -= 1; zero(subjs) },
                 },
                 Complete => match t {
-                    And => Predicates(Incomplete, subjs, preds),
+                    And => Predicates(Incomplete(Some(ix)), subjs, preds),
                     _ => {
                         i -= 2; // to pick up the last subject word, if present
                         zero(subjs)
@@ -448,12 +463,12 @@ fn scan_rules_text(rules: &mut Vec<Rule>, text: &[Text]) {
     }
 }
 
-fn scan_rules_line<'a, I>(rules: &mut Vec<Rule>, line: I)
+fn scan_rules_line<'a, I>(rules: &mut Vec<(Vec<Index>, Rule)>, line: I)
 where
-    I: Iterator<Item = &'a Cell>,
+    I: Iterator<Item = ((usize, usize), &'a Cell)>,
 {
-    fn chunks(i: Vec<Vec<Text>>) -> Vec<Vec<Vec<Text>>> {
-        i.iter().fold(vec![vec![]], |mut acc: Vec<Vec<Vec<Text>>>, v: &Vec<Text>| {
+    fn chunks(i: Vec<Vec<(Index, Text)>>) -> Vec<Vec<Vec<(Index, Text)>>> {
+        i.iter().fold(vec![vec![]], |mut acc: Vec<Vec<Vec<(Index, Text)>>>, v: &Vec<(Index, Text)>| {
             if v.len() == 0 {
                 acc.push(vec![]);
             } else {
@@ -464,9 +479,9 @@ where
         })
     }
 
-    fn branches(input: Vec<Vec<Text>>) -> Vec<Vec<Text>> {
+    fn branches(input: Vec<Vec<(Index, Text)>>) -> Vec<Vec<(Index, Text)>> {
         input.iter()
-         .fold(vec![vec![]], |acc: Vec<Vec<usize>>, v: &Vec<Text>| {
+         .fold(vec![vec![]], |acc: Vec<Vec<usize>>, v: &Vec<(Index, Text)>| {
              (0..v.len()).flat_map(|j| {
                  let mut x = acc.clone();
                  for xx in &mut x {
@@ -479,14 +494,15 @@ where
          .map(|ixs| ixs.iter()
                        .enumerate()
                        .map(|(i, &j)| input[i][j])
-                       .collect::<Vec<Text>>())
+                       .collect::<Vec<(Index, Text)>>())
          .collect()
     }
 
-    let x: Vec<Vec<Text>> =
-       line.map(|c| c.iter()
-                     .filter_map(|&e| match e {
-                         Entity::Text(_, t) => Some(t),
+    let x: Vec<Vec<(Index, Text)>> =
+       line.map(|((x, y), c)| c.iter()
+                     .enumerate()
+                     .filter_map(|(i, &e)| match e {
+                         Entity::Text(_, t) => Some(((x, y, i), t)),
                          _ => None,
                      }).collect()
            ).collect();
@@ -498,15 +514,21 @@ where
     }
 }
 
-fn scan_rules(l: &Level) -> Vec<Rule> {
+type Index = (usize, usize, usize);
+
+fn scan_rules(l: &Level) -> Vec<(Vec<Index>, Rule)> {
     let mut rules = vec![];
 
     if l.len() > 0 {
-        for row in l {
-            scan_rules_line(&mut rules, row.iter());
+        for (y, row) in l.iter().enumerate() {
+            scan_rules_line(
+                &mut rules,
+                row.iter()
+                   .enumerate()
+                   .map(|(x, cell)| ((x, y), cell)));
         }
         for col in 0..l[0].len() {
-            let mut row = -1;
+            let mut row: i32 = -1;
             scan_rules_line(
                 &mut rules,
                 iter::from_fn(|| {
@@ -514,7 +536,7 @@ fn scan_rules(l: &Level) -> Vec<Rule> {
                     if row as usize >= l.len() {
                         None
                     } else {
-                        Some(&l[row as usize][col])
+                        Some(((col, row as usize), &l[row as usize][col]))
                     }
                 })
             );
@@ -522,6 +544,10 @@ fn scan_rules(l: &Level) -> Vec<Rule> {
     }
 
     rules
+}
+
+fn scan_rules_no_index(l: &Level) -> Vec<Rule> {
+    scan_rules(l).into_iter().map(|x| x.1).collect()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
@@ -534,7 +560,7 @@ use Input::*;
 
 fn step(l: &Level, input: Input) -> (Level, bool) {
     let mut level = l.clone();
-    let mut rules = scan_rules(&level); // TODO: sus that it's mut
+    let mut rules = scan_rules_no_index(&level); // TODO: sus that it's mut
 
     let width = level[0].len();
     let height = level.len();
@@ -807,7 +833,7 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
     }
 
     // change things into other things
-    rules = scan_rules(&level); // TODO: sus to rescan here
+    rules = scan_rules_no_index(&level); // TODO: sus to rescan here
     {
         let changers =
             rules.iter()
@@ -1261,9 +1287,14 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
     let offset_x = bounds.x + (bounds.w - game_width) / 2.;
     let offset_y = bounds.y + (bounds.h - game_height) / 2.;
 
-    let draw_sprite = |x, y, w, h, entity| {
+    let active_texts = scan_rules(level)
+        .into_iter()
+        .flat_map(|x| x.0)
+        .collect::<HashSet<Index>>();
+
+    let draw_sprite = |x, y, w, h, entity, active| {
         let sprite = sprites[&entity];
-        let c = default_color(entity, &palette);
+        let c = default_color(entity, &palette, active);
         SPRITES_MATERIAL.set_uniform("color", [c.r, c.g, c.b]);
         draw_texture_ex(
             sprite, x, y, WHITE, DrawTextureParams {
@@ -1278,13 +1309,14 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
     gl_use_material(*SPRITES_MATERIAL);
     for row in 0..height {
         for col in 0..width {
-            for e in &level[row][col] {
+            for (i, e) in level[row][col].iter().enumerate() {
                 draw_sprite(
                     offset_x + sq_size * col as f32,
                     offset_y + sq_size * row as f32,
                     sq_size,
                     sq_size,
                     *e,
+                    active_texts.contains(&(col, row, i)),
                 );
             }
         }
