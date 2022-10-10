@@ -64,6 +64,10 @@ pub enum Noun {
     Robot,
     #[strum(props(color = "2 4", text_color = "2 3", text_color_active = "2 4"))]
     Bolt,
+    #[strum(props(color = "6 2", text_color = "6 1", text_color_active = "6 2"))]
+    Reed,
+    #[strum(props(color = "5 1", text_color = "5 1", text_color_active = "5 3"))]
+    Bog,
 }
 use Noun::*;
 
@@ -1474,6 +1478,7 @@ async fn load_sprite_map() -> SpriteMap {
             Some(n) => format!("resources/Data/Sprites/{:?}_0_1.png", n).to_lowercase(),
             None => {
                 let name = match e {
+                    Entity::Noun(_, Bog) => "water".to_string(),
                     Entity::Noun(_, Lava) => "water".to_string(),
                     Entity::Noun(_, n) => format!("{:?}", n),
                     Entity::Text(_, t) => "text_".to_string() + &(match t {
