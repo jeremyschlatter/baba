@@ -160,6 +160,7 @@ fn all_entities() -> impl Iterator<Item=Entity> {
         Noun::iter().map(move |n| Entity::Noun(d, n))
             .chain(iter::once(Entity::Text(d, Text::Is)))
             .chain(iter::once(Entity::Text(d, Text::And)))
+            .chain(iter::once(Entity::Text(d, Text::Text)))
             .chain(Noun::iter().map(move |n| Entity::Text(d, Text::Object(n))))
             .chain(Adjective::iter().map(move |a| Entity::Text(d, Text::Adjective(a)))))
 }
@@ -249,6 +250,7 @@ fn parse_level(name: &str) -> (Level, String) {
                     _ => match c {
                         '=' => vec![Entity::Text(Right, Text::Is)],
                         '&' => vec![Entity::Text(Right, Text::And)],
+                        '@' => vec![Entity::Text(Right, Text::Text)],
                         _ => vec![],
                     }
                 })
