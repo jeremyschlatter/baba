@@ -361,38 +361,59 @@ mod tests {
 
     #[test]
     fn replay_tests() {
-        for entry in walkdir::WalkDir::new("goldens").sort_by_file_name() {
-            let entry = entry.unwrap();
-            if entry.file_type().is_dir() {
-                continue;
-            }
-            println!("{}", entry.path().display());
+        let pool = threadpool::ThreadPool::new(
+            std::thread::available_parallelism().map(|n| n.get()).unwrap_or(10));
+        let (tx, rx) = std::sync::mpsc::channel::<(String, Result<(), Diff>)>();
 
-            let (screens, inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
+        let goldens = walkdir::WalkDir::new("goldens")
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| !e.file_type().is_dir())
+            .collect::<Vec<_>>();
+        let n = goldens.len();
 
-            for i in 0..screens.len() - 1 {
-                if inputs[i] == Undo {
-                    continue;
+        for entry in goldens {
+            let tx = tx.clone();
+            pool.execute(move|| {
+                let (screens, inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
+
+                for i in 0..screens.len() - 1 {
+                    if inputs[i] == Undo {
+                        continue;
+                    }
+                    let (got, _) = step(&screens[i], inputs[i]);
+                    if got != screens[i + 1] {
+                        tx.send((
+                            format!("{}", entry.path().display()),
+                            Err((
+                                screens[i].clone(),
+                                screens[i+1].clone(),
+                                got.clone(),
+                                palette_name.to_string(),
+                                inputs[i],
+                            ))
+                        )).unwrap();
+                        return;
+                    }
                 }
-                let (got, _) = step(&screens[i], inputs[i]);
-                if got != screens[i + 1] {
-                    save::<_, Diff>(
-                        &(
-                            screens[i].clone(),
-                            screens[i+1].clone(),
-                            got.clone(),
-                            palette_name.to_string(),
-                            inputs[i],
-                        ), "diff.ron.br").unwrap();
-                    assert!(std::process::Command::new("cargo")
-                        .args(&["run", "render-diff", "diff.ron.br"])
-                        .status()
-                        .unwrap()
-                        .success());
-                    assert!(false, "replay mismatch. saved diff as diff.ron.br");
-                }
-            }
 
+                tx.send((format!("{}", entry.path().display()), Ok(()))).unwrap();
+            });
+        }
+
+        let results = rx.into_iter().take(n).collect::<Vec<_>>();
+
+        for r in results {
+            if let (s, Err(diff)) = r {
+                println!("{s}");
+                save::<_, Diff>(&diff, "diff.ron.br").unwrap();
+                assert!(std::process::Command::new("cargo")
+                    .args(&["run", "render-diff", "diff.ron.br"])
+                    .status()
+                    .unwrap()
+                    .success());
+                assert!(false, "replay mismatch. saved diff as diff.ron.br");
+            }
         }
     }
 }
