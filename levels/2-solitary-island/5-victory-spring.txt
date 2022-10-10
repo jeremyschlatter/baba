@@ -1,0 +1,19 @@
+w = water
+b = baba
+c = cog
+palette = factory
+---
+W=≉   B=✥   C=↦
+
+
+      www    c
+ @=⚲  www  b
+      www   c
+
+
+---
+
+
+
+
+       ✓

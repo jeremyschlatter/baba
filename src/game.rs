@@ -56,6 +56,8 @@ pub enum Noun {
     Bubble,
     #[strum(props(color = "5 1", text_color = "5 0", text_color_active = "5 1"))]
     Hedge,
+    #[strum(props(color = "0 1", text_color = "0 1", text_color_active = "0 2"))]
+    Cog,
 }
 use Noun::*;
 
