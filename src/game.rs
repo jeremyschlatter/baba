@@ -58,6 +58,10 @@ pub enum Noun {
     Hedge,
     #[strum(props(color = "0 1", text_color = "0 1", text_color_active = "0 2"))]
     Cog,
+    #[strum(props(color = "1 1", text_color = "1 1", text_color_active = "0 1"))]
+    Pipe,
+    #[strum(props(color = "0 1", text_color = "1 1", text_color_active = "0 1"))]
+    Robot,
 }
 use Noun::*;
 
