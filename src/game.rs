@@ -74,6 +74,8 @@ pub enum Noun {
     Stump,
     #[strum(props(color = "6 1", text_color = "5 1", text_color_active = "6 1"))]
     Husk,
+    #[strum(props(color = "5 2", text_color = "5 1", text_color_active = "5 2"))]
+    Tree,
 }
 use Noun::*;
 
