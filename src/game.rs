@@ -70,6 +70,10 @@ pub enum Noun {
     Bog,
     #[strum(props(color = "6 2", text_color = "6 0", text_color_active = "6 1"))]
     Box,
+    #[strum(props(color = "6 1", text_color = "6 0", text_color_active = "6 2"))]
+    Stump,
+    #[strum(props(color = "6 1", text_color = "5 1", text_color_active = "6 1"))]
+    Husk,
 }
 use Noun::*;
 
