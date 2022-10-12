@@ -7,7 +7,7 @@ use strum::{EnumCount, EnumIter, EnumProperty, EnumString, IntoEnumIterator};
 
 use std::{io::{Read, Write}, iter, collections::{HashMap, HashSet, VecDeque}, str::FromStr};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString, EnumProperty)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString, EnumProperty)]
 #[strum(serialize_all = "snake_case")]
 pub enum Noun {
     #[strum(props(color = "0 3", text_color = "4 0", text_color_active = "4 1"))]
@@ -79,7 +79,7 @@ pub enum Noun {
 }
 use Noun::*;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString, EnumProperty, EnumCount)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString, EnumProperty, EnumCount)]
 #[strum(serialize_all = "snake_case")]
 pub enum Adjective {
     #[strum(props(text_color = "4 0", text_color_active = "4 1"))]
@@ -313,7 +313,7 @@ enum Predicate {
 }
 use Predicate::*;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 enum TextOrNoun {
     Text,
     Noun(Noun),
@@ -395,7 +395,9 @@ mod tests {
     fn replay_tests() {
         let pool = threadpool::ThreadPool::new(
             std::thread::available_parallelism().map(|n| n.get()).unwrap_or(10));
-        let (tx, rx) = std::sync::mpsc::channel::<(String, Result<(), Diff>)>();
+        let (tx, rx) = std::sync::mpsc::channel::<
+            (String, Result<(), (Diff, Replay)>)
+        >();
 
         let goldens = walkdir::WalkDir::new("goldens")
             .into_iter()
@@ -418,11 +420,31 @@ mod tests {
                         tx.send((
                             format!("{}", entry.path().display()),
                             Err((
-                                screens[i].clone(),
-                                screens[i+1].clone(),
-                                got.clone(),
-                                palette_name.to_string(),
-                                inputs[i],
+                                (
+                                    screens[i].clone(),
+                                    screens[i+1].clone(),
+                                    got.clone(),
+                                    palette_name.to_string(),
+                                    inputs[i],
+                                ),
+                                (
+                                    {
+                                        let mut screens = vec![screens[0].clone()];
+                                        let mut i = 0;
+                                        for input in &inputs {
+                                            if *input == Undo {
+                                                i -= 1;
+                                                screens.push(screens[i].clone());
+                                                continue;
+                                            }
+                                            screens.push(step(&screens[i], *input).0);
+                                            i = screens.len() - 1;
+                                        }
+                                        screens
+                                    },
+                                    inputs,
+                                    palette_name.to_string(),
+                                ),
                             ))
                         )).unwrap();
                         return;
@@ -436,15 +458,16 @@ mod tests {
         let results = rx.into_iter().take(n).collect::<Vec<_>>();
 
         for r in results {
-            if let (s, Err(diff)) = r {
+            if let (s, Err((diff, replay))) = r {
                 println!("{s}");
                 save::<_, Diff>(&diff, "diff.ron.br").unwrap();
+                save::<_, Replay>(&replay, "replay.ron.br").unwrap();
                 assert!(std::process::Command::new("cargo")
                     .args(&["run", "render-diff", "diff.ron.br"])
                     .status()
                     .unwrap()
                     .success());
-                assert!(false, "replay mismatch. saved diff as diff.ron.br");
+                assert!(false, "replay mismatch. saved diff and new replay");
             }
         }
     }
@@ -681,7 +704,7 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
 
     type RulesCache = (
         [HashSet<Subject>; Adjective::COUNT],
-        HashMap<Subject, HashSet<TextOrNoun>>
+        HashMap<Subject, Vec<TextOrNoun>>
     );
 
     fn cache_rules(rules: &Vec<Rule>) -> RulesCache {
@@ -701,7 +724,13 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
                     has.entry(*s).or_insert(HashSet::new()).insert(*t);
                 }
             }
-            has
+            has.into_iter()
+               .map(|(k, v)| {
+                   let mut v = v.into_iter().collect::<Vec<_>>();
+                   v.sort();
+                   (k, v)
+                })
+               .collect()
         })
     }
 
@@ -718,7 +747,7 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
         rules.1.get(&match level[y][x][i] {
             Entity::Text(_, _) => Subject::Text,
             Entity::Noun(_, n) => Subject::Noun(n),
-        }).unwrap_or(&HashSet::new()).iter()
+        }).unwrap_or(&vec![]).iter()
           .map(|h| match h {
               TextOrNoun::Noun(n) => Entity::Noun(d, *n),
               TextOrNoun::Text => Entity::Text(d, match e {
@@ -908,12 +937,6 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
 
         // flush movements along with the deletions and insertions they generated
         {
-            // add Has objects
-            for &(x, y, i) in tombstones.iter() {
-                let tmp = has(&level, x, y, i, &rules_cache);
-                level[y][x].extend(tmp);
-            }
-
             // remove all movers from their current position
             // and remove all tombstoned things
             let mut removals = vec![vec![vec![]; width]; height];
@@ -930,8 +953,17 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
             for x in 0..width {
                 for y in 0..height {
                     removals[y][x].sort_by(|a, b| a.0.cmp(&b.0));
+                    let mut n_inserts = 0;
                     for (i, (r, _)) in removals[y][x].iter().enumerate() {
-                        level[y][x].remove(r - i);
+                        let ix = n_inserts + r - i;
+                        let inserts = if tombstones.contains(&(x, y, i)) {
+                            has(&level, x, y, ix, &rules_cache)
+                        } else { vec![] };
+                        level[y][x].remove(ix);
+                        for e in &inserts {
+                            level[y][x].insert(ix, *e)
+                        }
+                        n_inserts += inserts.len();
                     }
                 }
             }
@@ -1061,12 +1093,15 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
             for x in 0..width {
                 let d = &mut deletions[y][x];
                 d.sort();
+                let mut n_inserts = 0;
                 for i in 0..d.len() {
-                    let tmp = has(&level, x, y, d[i], &rules_cache);
-                    level[y][x].extend(tmp);
-                }
-                for i in 0..d.len() {
-                    level[y][x].remove(d[i] - i);
+                    let ix = n_inserts + d[i] - i;
+                    let inserts = has(&level, x, y, ix, &rules_cache);
+                    level[y][x].remove(ix);
+                    for e in &inserts {
+                        level[y][x].insert(ix, *e)
+                    }
+                    n_inserts += inserts.len();
                 }
             }
         }
