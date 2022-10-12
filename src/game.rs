@@ -68,6 +68,8 @@ pub enum Noun {
     Reed,
     #[strum(props(color = "5 1", text_color = "5 1", text_color_active = "5 3"))]
     Bog,
+    #[strum(props(color = "6 2", text_color = "6 0", text_color_active = "6 1"))]
+    Box,
 }
 use Noun::*;
 
@@ -1054,7 +1056,7 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
                 let d = &mut deletions[y][x];
                 d.sort();
                 for i in 0..d.len() {
-                    let tmp = has(&level, x, y, i, &rules_cache);
+                    let tmp = has(&level, x, y, d[i], &rules_cache);
                     level[y][x].extend(tmp);
                 }
                 for i in 0..d.len() {
@@ -1253,8 +1255,6 @@ pub async fn main(level: Option<&str>) -> Replay {
         // "levels/1-the-lake/1-icy-waters.txt"
         "levels/1-the-lake/2-turns.txt"
     ));
-
-    // println!("{}", ron::to_string(&level).unwrap());
 
     let width = level[0].len();
     let height = level.len();
