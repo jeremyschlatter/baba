@@ -3,7 +3,7 @@ use itertools::Itertools;
 use macroquad::prelude::*;
 use miniquad::graphics::*;
 use serde::{Serialize, Deserialize};
-use strum::{EnumIter, EnumProperty, EnumString, IntoEnumIterator};
+use strum::{EnumCount, EnumIter, EnumProperty, EnumString, IntoEnumIterator};
 
 use std::{io::{Read, Write}, iter, collections::{HashMap, HashSet, VecDeque}, str::FromStr};
 
@@ -71,7 +71,7 @@ pub enum Noun {
 }
 use Noun::*;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString, EnumProperty)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString, EnumProperty, EnumCount)]
 #[strum(serialize_all = "snake_case")]
 pub enum Adjective {
     #[strum(props(text_color = "4 0", text_color_active = "4 1"))]
@@ -625,38 +625,12 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
     let width = level[0].len();
     let height = level.len();
 
-    fn adjs(rules: &Vec<Rule>, adj: Adjective) -> HashSet<&Subject> {
-        rules.iter()
-             .filter_map(|r| match r {
-                 (subj, IsAdjective(a)) if *a == adj => Some(subj),
-                 _ => None,
-              })
-             .collect::<HashSet<&Subject>>()
-    }
-
     fn clip(level: &Level, x: i16, y: i16) -> (usize, usize) {
         let width = level[0].len() as i16;
         let height = level.len() as i16;
 
         (0.max(x).min(width as i16 - 1) as usize,
          0.max(y).min(height as i16 - 1) as usize)
-    }
-
-    fn contains(level: &Level, x: usize, y: usize, set: &HashSet<&Subject>) -> bool {
-        level[y][x].iter().any(|e| match e {
-            Entity::Noun(_, n) => set.contains(&Subject::Noun(*n)),
-            Entity::Text(_, _) => set.contains(&Subject::Text),
-        })
-    }
-
-    fn contains_(level: &Level, x: usize, y: usize, set: &HashSet<&Subject>, floats: &HashSet<&Subject>, float: bool) -> bool {
-        level[y][x].iter().any(|e| {
-            let s = match e {
-                Entity::Noun(_, n) => Subject::Noun(*n),
-                Entity::Text(_, _) => Subject::Text,
-            };
-            set.contains(&s) && (floats.contains(&s) == float)
-        })
     }
 
     fn entities(level: &Level) -> impl Iterator<Item=((usize, usize, usize), Entity)> + '_ {
@@ -671,31 +645,24 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
                             .map(move |(i, e)| ((x, y, i), *e))))
     }
 
-    type RulesCache = HashMap<Adjective, HashSet<Subject>>;
+    type RulesCache = [HashSet<Subject>; Adjective::COUNT];
 
     fn cache_rules(rules: &Vec<Rule>) -> RulesCache {
-        let mut cache: RulesCache = HashMap::from([
-            (Push, HashSet::from([Subject::Text])),
-        ]);
+        let mut cache: RulesCache = core::array::from_fn(|_| HashSet::new());
+        cache[Push as usize].insert(Subject::Text);
         for (s, p) in rules {
             if let IsAdjective(adj) = p {
-                match cache.get_mut(adj) {
-                    Some(set) => { set.insert(*s); },
-                    None => { cache.insert(*adj, HashSet::from([*s])); },
-                };
+                cache[*adj as usize].insert(*s);
             }
         }
         cache
     }
 
     fn is(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache, quality: Adjective) -> bool {
-        match rules.get(&quality) {
-            None => false,
-            Some(set) => set.contains(&match level[y][x][i] {
-                Entity::Text(_, _) => Subject::Text,
-                Entity::Noun(_, n) => Subject::Noun(n),
-            }),
-        }
+        rules[quality as usize].contains(&match level[y][x][i] {
+            Entity::Text(_, _) => Subject::Text,
+            Entity::Noun(_, n) => Subject::Noun(n),
+        })
     }
 
     // move things
@@ -945,113 +912,85 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
         }
     }
 
-    // sink things
-    {
-        let sinks = adjs(&rules, Sink);
-        let floats = adjs(&rules, Float);
-        let rules_cache = cache_rules(&rules);
-        fn floating(level: &Level, rules_cache: &RulesCache, x: usize, y: usize, float: bool) -> Vec<Entity> {
-            level[y][x].iter()
-                .enumerate()
-                .filter(|(i, _)| is(&level, x, y, *i, rules_cache, Float) == float)
-                .map(|x| x.1)
-                .copied()
-                .collect()
-        }
-        for x in 0..width {
-            for y in 0..height {
+    let rules_cache = cache_rules(&rules);
+
+    type SelectT = ((usize, usize), Vec<usize>, Vec<usize>);
+    fn select(
+        level: &Level, rules_cache: &RulesCache, a: Adjective, b: Option<Adjective>,
+    ) -> Vec<SelectT> {
+        let mut result = vec![];
+        let is = |x, y, i, q| is(&level, x, y, i, rules_cache, q);
+        for y in 0..level.len() {
+            for x in 0..level[0].len() {
                 for float in [true, false] {
-                    if contains_(&level, x, y, &sinks, &floats, float) {
-                        let f = floating(&level, &rules_cache, x, y, float);
-                        if f.len() > 1 {
-                            level[y][x] = floating(&level, &rules_cache, x, y, !float);
+                    let mut as_ = vec![];
+                    let mut bs = vec![];
+                    for i in 0..level[y][x].len() {
+                        if is(x, y, i, Float) == float {
+                            if is(x, y, i, a) {
+                                as_.push(i);
+                            }
+                            if b.map(|b| is(x, y, i, b)).unwrap_or(true) {
+                                bs.push(i);
+                            }
                         }
                     }
-                }
-            }
-        }
-    }
-
-    // defeat things
-    {
-        let defeats = adjs(&rules, Defeat);
-        let floats = adjs(&rules, Float);
-        let rules_cache = cache_rules(&rules);
-        for x in 0..width {
-            for y in 0..height {
-                for float in [true, false] {
-                    if contains_(&level, x, y, &defeats, &floats, float) {
-                        level[y][x] = level[y][x].iter()
-                            .enumerate()
-                            .filter(|(i, _)| !(is(&level, x, y, *i, &rules_cache, You)
-                                               && is(&level, x, y, *i, &rules_cache, Float) == float))
-                            .map(|x| x.1)
-                            .copied()
-                            .collect();
+                    if as_.len() > 0 &&
+                        bs.len() > if b.is_none() { as_.len() } else { 0 } {
+                        result.push(((x, y), as_, bs));
                     }
                 }
             }
         }
+        result
     }
 
-    // melt things
+    // delete things
     {
-        let hots = adjs(&rules, Hot);
-        let floats = adjs(&rules, Float);
-        let rules_cache = cache_rules(&rules);
-        for x in 0..width {
-            for y in 0..height {
-                for float in [true, false] {
-                    if contains_(&level, x, y, &hots, &floats, float) {
-                        level[y][x] = level[y][x].iter()
-                            .enumerate()
-                            .filter(|(i, _)| !(is(&level, x, y, *i, &rules_cache, Melt) && is(&level, x, y, *i, &rules_cache, Float) == float))
-                            .map(|x| x.1)
-                            .copied()
-                            .collect();
-                    }
+        let mut deletions: Vec<Vec<Vec<usize>>> = vec![vec![vec![]; width]; height];
+        let mut delete_all = |(x, y): (usize, usize), ixs: Vec<usize>| {
+            for i in ixs {
+                if !deletions[y][x].contains(&i) {
+                    deletions[y][x].push(i);
                 }
             }
-        }
-    }
+        };
+        let select_occupied = |a| select(&level, &rules_cache, a, None);
+        let select_intersecting = |a, b| select(&level, &rules_cache, a, Some(b));
 
-    // open shut things
-    {
-        let shuts = adjs(&rules, Shut);
-        let opens = adjs(&rules, Open);
-        let rules_cache = cache_rules(&rules);
-        for x in 0..width {
-            for y in 0..height {
-                if contains(&level, x, y, &shuts) && contains(&level, x, y, &opens) {
-                    let is = |x, y, i, q| is(&level, x, y, i, &rules_cache, q);
-                    let removals: Vec<usize> = (0..level[y][x].len()).filter(|&i|
-                        is(x, y, i, Open) || is(x, y, i, Shut)
-                    ).collect::<Vec<usize>>();
-                    for (i, r) in removals.iter().enumerate() {
-                        level[y][x].remove(r - i);
-                    }
+        // sink
+        for (xy, _, ixs) in select_occupied(Sink) { delete_all(xy, ixs) }
+
+        // defeat
+        for (xy, _, yous) in select_intersecting(Defeat, You) { delete_all(xy, yous) }
+
+        // melt
+        for (xy, _, melts) in select_intersecting(Hot, Melt) { delete_all(xy, melts) }
+
+        // open and shut
+        for (xy, mut opens, mut shuts) in select_intersecting(Open, Shut) {
+            let n = opens.len().min(shuts.len());
+            opens.truncate(n);
+            shuts.truncate(n);
+            delete_all(xy, opens);
+            delete_all(xy, shuts);
+        }
+
+        // flush deletions
+        for y in 0..height {
+            for x in 0..width {
+                let d = &mut deletions[y][x];
+                d.sort();
+                for i in 0..d.len() {
+                    level[y][x].remove(d[i] - i);
                 }
             }
         }
     }
 
     // check for win
-    let wins = adjs(&rules, Win);
-    let yous = adjs(&rules, You);
-    let floats = adjs(&rules, Float);
-    for x in 0..width {
-        for y in 0..height {
-            for float in [true, false] {
-                if contains_(&level, x, y, &wins, &floats, float) &&
-                    contains_(&level, x, y, &yous, &floats, float) {
-                    return (level, true);
-                }
-            }
-        }
-    }
-
-
-    (level, false)
+    let win = select(&level, &rules_cache, You, Some(Win)).len() > 0;
+    (level, win)
 }
 
 type Diff = (Level, Level, Level, String, Input);
