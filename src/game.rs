@@ -98,6 +98,8 @@ pub enum Adjective {
     Open,
     #[strum(props(text_color = "1 2", text_color_active = "1 4"))]
     Float,
+    #[strum(props(text_color = "1 1", text_color_active = "1 2"))]
+    Weak,
 }
 use Adjective::*;
 
@@ -242,6 +244,7 @@ fn parse_level(name: &str) -> (Level, String) {
                     '⨶' => Some(Shut),
                     '⧜' => Some(Open),
                     '⚲' => Some(Float),
+                    '_' => Some(Weak),
                     _ => None
                 }) {
                     (Some(FullCell(cell)), _) => if c.is_uppercase() {
@@ -812,6 +815,10 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
 
             match at_unmoving_stop {
                 Some(true) => {
+                    if is(x, y, i, Weak) {
+                        tombstones.insert((x, y, i));
+                        continue;
+                    }
                     let a = movements.get_mut(&(x, y, i)).unwrap();
                     if a.is_move && !flipped {
                         a.dir = match a.dir {
@@ -975,6 +982,9 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
             delete_all(xy, opens);
             delete_all(xy, shuts);
         }
+
+        // weak
+        for (xy, weaks, _) in select_occupied(Weak) { delete_all(xy, weaks) }
 
         // flush deletions
         for y in 0..height {
