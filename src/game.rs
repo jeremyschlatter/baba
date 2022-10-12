@@ -111,6 +111,8 @@ pub enum Text {
     And,
     #[strum(props(text_color = "4 0", text_color_active = "4 1"))]
     Text,
+    #[strum(props(text_color = "0 1", text_color_active = "0 3"))]
+    Has,
     Object(Noun),
     Adjective(Adjective),
 }
@@ -120,6 +122,7 @@ impl FromStr for Text {
         match s {
             "is" => Ok(Text::Is),
             "and" => Ok(Text::And),
+            "has" => Ok(Text::Has),
             _ => Err(format!("can't parse this as Text: '{s}'")),
         }
     }
@@ -159,6 +162,7 @@ fn default_color(e: Entity, palette: &Image, active: bool) -> Color {
             Text::Adjective(a) => a.get_str(text_prop),
             Text::Is => t.get_str(text_prop),
             Text::And => t.get_str(text_prop),
+            Text::Has => t.get_str(text_prop),
             Text::Text => t.get_str(text_prop),
         },
     }.unwrap();
@@ -174,6 +178,7 @@ fn all_entities() -> impl Iterator<Item=Entity> {
         Noun::iter().map(move |n| Entity::Noun(d, n))
             .chain(iter::once(Entity::Text(d, Text::Is)))
             .chain(iter::once(Entity::Text(d, Text::And)))
+            .chain(iter::once(Entity::Text(d, Text::Has)))
             .chain(iter::once(Entity::Text(d, Text::Text)))
             .chain(Noun::iter().map(move |n| Entity::Text(d, Text::Object(n))))
             .chain(Adjective::iter().map(move |a| Entity::Text(d, Text::Adjective(a)))))
@@ -265,6 +270,7 @@ fn parse_level(name: &str) -> (Level, String) {
                     _ => match c {
                         '=' => vec![Entity::Text(Right, Text::Is)],
                         '&' => vec![Entity::Text(Right, Text::And)],
+                        '~' => vec![Entity::Text(Right, Text::Has)],
                         '@' => vec![Entity::Text(Right, Text::Text)],
                         _ => vec![],
                     }
@@ -293,6 +299,7 @@ fn parse_level(name: &str) -> (Level, String) {
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Predicate {
+    HasNoun(TextOrNoun),
     IsNoun(TextOrNoun),
     IsAdjective(Adjective),
 }
@@ -443,12 +450,14 @@ fn scan_rules_text(rules: &mut Vec<(Vec<Index>, Rule)>, text: &[(Index, Text)]) 
     }
     use ListState::*;
     #[derive(Debug)]
+    enum IsOrHas { Is, Has }
+    #[derive(Debug)]
     enum ScanState {
         Subjects(ListState, Vec<(Vec<Index>, Subject)>),
-        Predicates(ListState, Vec<(Vec<Index>, Subject)>, Option<(Vec<Index>, Predicate)>),
+        Predicates(IsOrHas, ListState, Vec<(Vec<Index>, Subject)>, Option<(Vec<Index>, Predicate)>),
     }
     use ScanState::*;
-    use Text::{Is, And, Object, Adjective};
+    use Text::{Is, And, Has, Object, Adjective};
     let zero = |mut v: Vec<(Vec<Index>, Subject)>| { v.clear(); Subjects(Incomplete(None), v) };
     let mut state = zero(vec![]);
     let mut i = 0;
@@ -472,30 +481,44 @@ fn scan_rules_text(rules: &mut Vec<(Vec<Index>, Rule)>, text: &[(Index, Text)]) 
                     _ => zero(subjs),
                 },
                 Complete => match t {
-                    Is => Predicates(Incomplete(Some(ix)), subjs, None),
+                    Is => Predicates(IsOrHas::Is, Incomplete(Some(ix)), subjs, None),
+                    Has => Predicates(IsOrHas::Has, Incomplete(Some(ix)), subjs, None),
                     And => Subjects(Incomplete(Some(ix)), subjs),
                     _ => { i -= 1; zero(subjs) },
                 },
             },
-            Predicates(s, subjs, preds) => match s {
-                Incomplete(opt_ix) => match match t {
-                    Object(noun) => Some(IsNoun(TextOrNoun::Noun(noun))),
-                    Adjective(adj) => Some(IsAdjective(adj)),
-                    Text::Text => Some(IsNoun(TextOrNoun::Text)),
-                    _ => None,
-                } {
-                    Some(pred) => {
-                        for (ixs, s) in &subjs {
-                            let mut ixs = ixs.clone();
-                            ixs.extend(cat_ixs(opt_ix, ix));
-                            rules.push((ixs, (*s, pred)));
+            Predicates(is_or_has, s, subjs, pred) => match s {
+                Incomplete(opt_ix) => match (pred, t) {
+                    (Some(_), Text::Is) =>
+                        Predicates(IsOrHas::Is, Incomplete(Some(ix)), subjs, None),
+                    (Some(_), Text::Has) =>
+                        Predicates(IsOrHas::Has, Incomplete(Some(ix)), subjs, None),
+                    _ => match match is_or_has {
+                        IsOrHas::Is => match t {
+                            Object(noun) => Some(IsNoun(TextOrNoun::Noun(noun))),
+                            Adjective(adj) => Some(IsAdjective(adj)),
+                            Text::Text => Some(IsNoun(TextOrNoun::Text)),
+                            _ => None,
+                        },
+                        IsOrHas::Has => match t {
+                            Object(noun) => Some(HasNoun(TextOrNoun::Noun(noun))),
+                            Text::Text => Some(HasNoun(TextOrNoun::Text)),
+                            _ => None,
                         }
-                        Predicates(Complete, subjs, Some((cat_ixs(opt_ix, ix), pred)))
+                    } {
+                        Some(pred) => {
+                            for (ixs, s) in &subjs {
+                                let mut ixs = ixs.clone();
+                                ixs.extend(cat_ixs(opt_ix, ix));
+                                rules.push((ixs, (*s, pred)));
+                            }
+                            Predicates(is_or_has, Complete, subjs, Some((cat_ixs(opt_ix, ix), pred)))
+                        },
+                        None => { i -= 1; zero(subjs) },
                     },
-                    None => { i -= 1; zero(subjs) },
                 },
                 Complete => match t {
-                    And => Predicates(Incomplete(Some(ix)), subjs, preds),
+                    And => Predicates(is_or_has, Incomplete(Some(ix)), subjs, pred),
                     _ => {
                         i -= 2; // to pick up the last subject word, if present
                         zero(subjs)
@@ -648,24 +671,54 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
                             .map(move |(i, e)| ((x, y, i), *e))))
     }
 
-    type RulesCache = [HashSet<Subject>; Adjective::COUNT];
+    type RulesCache = (
+        [HashSet<Subject>; Adjective::COUNT],
+        HashMap<Subject, HashSet<TextOrNoun>>
+    );
 
     fn cache_rules(rules: &Vec<Rule>) -> RulesCache {
-        let mut cache: RulesCache = core::array::from_fn(|_| HashSet::new());
-        cache[Push as usize].insert(Subject::Text);
-        for (s, p) in rules {
-            if let IsAdjective(adj) = p {
-                cache[*adj as usize].insert(*s);
+        ({
+            let mut is_adj = core::array::from_fn(|_| HashSet::new());
+            is_adj[Push as usize].insert(Subject::Text);
+            for (s, p) in rules {
+                if let IsAdjective(adj) = p {
+                    is_adj[*adj as usize].insert(*s);
+                }
             }
-        }
-        cache
+            is_adj
+        }, {
+            let mut has = HashMap::new();
+            for (s, p) in rules {
+                if let HasNoun(t) = p {
+                    has.entry(*s).or_insert(HashSet::new()).insert(*t);
+                }
+            }
+            has
+        })
     }
 
     fn is(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache, quality: Adjective) -> bool {
-        rules[quality as usize].contains(&match level[y][x][i] {
+        rules.0[quality as usize].contains(&match level[y][x][i] {
             Entity::Text(_, _) => Subject::Text,
             Entity::Noun(_, n) => Subject::Noun(n),
         })
+    }
+
+    fn has(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<Entity> {
+        let e = level[y][x][i];
+        let d = e.direction();
+        rules.1.get(&match level[y][x][i] {
+            Entity::Text(_, _) => Subject::Text,
+            Entity::Noun(_, n) => Subject::Noun(n),
+        }).unwrap_or(&HashSet::new()).iter()
+          .map(|h| match h {
+              TextOrNoun::Noun(n) => Entity::Noun(d, *n),
+              TextOrNoun::Text => Entity::Text(d, match e {
+                  Entity::Noun(_, n) => Text::Object(n),
+                  Entity::Text(_, _) => Text::Text,
+              }),
+          })
+          .collect()
     }
 
     // move things
@@ -845,39 +898,48 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
             a.status = Status::Resolved { moving: true };
         }
 
-        // remove all movers from their current position
-        // and remove all tombstoned things
-        let mut removals = vec![vec![vec![]; width]; height];
-        for &(x, y, i) in tombstones.iter() {
-            removals[y][x].push((i, None));
-        }
-        for (&(x, y, i), a) in movements.iter() {
-            if !tombstones.contains(&(x, y, i)) {
-                if a.status == (Status::Resolved { moving: true }) {
-                    removals[y][x].push((i, Some((level[y][x][i], a.dir))));
-                }
+        // flush movements along with the deletions and insertions they generated
+        {
+            // add Has objects
+            for &(x, y, i) in tombstones.iter() {
+                let tmp = has(&level, x, y, i, &rules_cache);
+                level[y][x].extend(tmp);
             }
-        }
-        for x in 0..width {
-            for y in 0..height {
-                removals[y][x].sort_by(|a, b| a.0.cmp(&b.0));
-                for (i, (r, _)) in removals[y][x].iter().enumerate() {
-                    level[y][x].remove(r - i);
-                }
-            }
-        }
 
-        // add them to their new position
-        for (y, row) in removals.iter().enumerate() {
-            for (x, cell) in row.iter().enumerate() {
-                for &(_, o) in cell {
-                    if let Some((e, d)) = o {
-                        let (dx, dy) = delta(d);
-                        let (x, y) = clip(&level, x as i16 + dx, y as i16 + dy);
-                        level[y][x].push(match e {
-                            Entity::Text(_, t) => Entity::Text(d, t),
-                            Entity::Noun(_, n) => Entity::Noun(d, n),
-                        });
+            // remove all movers from their current position
+            // and remove all tombstoned things
+            let mut removals = vec![vec![vec![]; width]; height];
+            for &(x, y, i) in tombstones.iter() {
+                removals[y][x].push((i, None));
+            }
+            for (&(x, y, i), a) in movements.iter() {
+                if !tombstones.contains(&(x, y, i)) {
+                    if a.status == (Status::Resolved { moving: true }) {
+                        removals[y][x].push((i, Some((level[y][x][i], a.dir))));
+                    }
+                }
+            }
+            for x in 0..width {
+                for y in 0..height {
+                    removals[y][x].sort_by(|a, b| a.0.cmp(&b.0));
+                    for (i, (r, _)) in removals[y][x].iter().enumerate() {
+                        level[y][x].remove(r - i);
+                    }
+                }
+            }
+
+            // add them to their new position
+            for (y, row) in removals.iter().enumerate() {
+                for (x, cell) in row.iter().enumerate() {
+                    for &(_, o) in cell {
+                        if let Some((e, d)) = o {
+                            let (dx, dy) = delta(d);
+                            let (x, y) = clip(&level, x as i16 + dx, y as i16 + dy);
+                            level[y][x].push(match e {
+                                Entity::Text(_, t) => Entity::Text(d, t),
+                                Entity::Noun(_, n) => Entity::Noun(d, n),
+                            });
+                        }
                     }
                 }
             }
@@ -991,6 +1053,10 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
             for x in 0..width {
                 let d = &mut deletions[y][x];
                 d.sort();
+                for i in 0..d.len() {
+                    let tmp = has(&level, x, y, i, &rules_cache);
+                    level[y][x].extend(tmp);
+                }
                 for i in 0..d.len() {
                     level[y][x].remove(d[i] - i);
                 }
@@ -1436,6 +1502,7 @@ async fn load_sprite_map() -> SpriteMap {
                         Text::Object(o) => format!("{:?}", o),
                         Text::Is => "is".to_string(),
                         Text::And => "and".to_string(),
+                        Text::Has => "has".to_string(),
                         Text::Text => "text".to_string(),
                     }),
                 }.to_lowercase();
