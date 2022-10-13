@@ -114,6 +114,8 @@ pub enum Adjective {
     Weak,
     #[strum(props(text_color = "1 2", text_color_active = "1 4"))]
     Tele,
+    #[strum(props(text_color = "6 1", text_color_active = "6 2"))]
+    Pull,
 }
 use Adjective::*;
 
@@ -265,6 +267,7 @@ fn parse_level(name: &str) -> (Level, String) {
                     '⚲' => Some(Float),
                     '_' => Some(Weak),
                     '*' => Some(Tele),
+                    '↣' => Some(Pull),
                     _ => None
                 }) {
                     (Some(FullCell(cell)), _) => if c.is_uppercase() {
@@ -878,7 +881,8 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
                     }
                     let stop = is(x_, y_, j, Stop);
                     let push = is(x_, y_, j, Push);
-                    if result == Some(true) || !push && !stop {
+                    let pull = is(x_, y_, j, Pull);
+                    if result == Some(true) || !push && !stop && !pull {
                         continue;
                     }
                     result = match movements.get(&(x_, y_, j)) {
@@ -887,7 +891,7 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
                                 if moving { result } else { Some(true) },
                             _ => None,
                         },
-                        _ => if stop { Some(true) } else { result },
+                        _ => if stop || pull { Some(true) } else { result },
                     }
                 }
                 result
@@ -926,6 +930,39 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
                     continue;
                 },
                 Some(false) => (),
+            }
+
+            // check for pull
+            {
+                let dir = movements.get(&(x, y, i)).unwrap().dir;
+                let (mut x, mut y) = (x, y);
+                loop {
+                    let (x_, y_) = {
+                        let (dx, dy) = delta(dir);
+                        clip(&level, x as i16 - dx, y as i16 - dy)
+                    };
+                    if x == x_ && y == y_ {
+                        break;
+                    }
+                    let mut keep_pulling = false;
+                    for i in 0..level[y_][x_].len() {
+                        if is(x_, y_, i, Pull) {
+                            if !movements.contains_key(&(x_, y_, i)) {
+                                keep_pulling = true;
+                                movements.insert((x_, y_, i), Arrow {
+                                    dir: dir,
+                                    status: Status::Resolved { moving: true },
+                                    is_move: false,
+                                });
+                            }
+                        }
+                    }
+                    if !keep_pulling {
+                        break;
+                    }
+                    x = x_;
+                    y = y_;
+                }
             }
 
             let a = movements.get_mut(&(x, y, i)).unwrap();
