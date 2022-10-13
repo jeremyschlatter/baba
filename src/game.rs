@@ -429,11 +429,14 @@ mod tests {
             pool.execute(move|| {
                 let (screens, inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
 
+                let mut n = 0;
                 for i in 0..screens.len() - 1 {
                     if inputs[i] == Undo {
+                        if n > 0 { n -= 1 };
                         continue;
                     }
-                    let (got, _) = step(&screens[i], inputs[i]);
+                    let (got, _) = step(&screens[i], inputs[i], n);
+                    n += 1;
                     if got != screens[i + 1] {
                         tx.send((
                             format!("{}", entry.path().display()),
@@ -455,7 +458,7 @@ mod tests {
                                                 screens.push(screens[i].clone());
                                                 continue;
                                             }
-                                            screens.push(step(&screens[i], *input).0);
+                                            screens.push(step(&screens[i], *input, i as u32).0);
                                             i = screens.len() - 1;
                                         }
                                         screens
@@ -693,7 +696,7 @@ pub enum Input {
 }
 use Input::*;
 
-fn step(l: &Level, input: Input) -> (Level, bool) {
+fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
     let mut level = l.clone();
     let rules = scan_rules_no_index(&level); // TODO: sus that it's mut
 
@@ -1085,47 +1088,6 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
     let rules = scan_rules_no_index(&level);
     let rules_cache = cache_rules(&rules);
 
-    // teleport things
-    {
-        fn tele_dest(pads: &Vec<(usize, usize)>, x: usize, y: usize) -> (usize, usize) {
-            // TODO: randomize
-            for xy in pads {
-                if *xy != (x, y) {
-                    return *xy;
-                }
-            }
-            panic!("bad logic in call to tele_dest");
-        }
-        let teles = select(&level, &rules_cache, Tele, None);
-        let mut pads = teles.iter().map(|x| x.0).collect::<Vec<(usize, usize)>>();
-        pads.dedup();
-        if pads.len() > 1 {
-            let mut travelers: HashMap<(usize, usize), Vec<(usize, Entity, (usize, usize))>>
-                = HashMap::new();
-            for ((x, y), _, all) in teles {
-                for i in all {
-                    if !is(&level, x, y, i, &rules_cache, Tele) {
-                        travelers.entry((x, y)).or_insert(vec![]).push((
-                            i, level[y][x][i],
-                            tele_dest(&pads, x, y),
-                        ));
-                    }
-                }
-            }
-            for ((x, y), ts) in travelers.iter_mut() {
-                ts.sort_by(|a, b| a.0.cmp(&b.0));
-                for i in 0..ts.len() {
-                    level[*y][*x].remove(ts[i].0 - i);
-                }
-            }
-            for (_, ts) in travelers.into_iter() {
-                for (_, e, (x, y)) in ts {
-                    level[y][x].push(e);
-                }
-            }
-        }
-    }
-
     // change things into other things
     {
         let changers =
@@ -1212,6 +1174,45 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
                         level[y][x].insert(ix, *e)
                     }
                     n_inserts += inserts.len();
+                }
+            }
+        }
+    }
+
+    // teleport things
+    {
+        let mut rng = oorandom::Rand32::new(n as u64);
+        fn tele_dest(rng: &mut oorandom::Rand32, pads: &Vec<(usize, usize)>, x: usize, y: usize) -> (usize, usize) {
+            let dests = pads.iter()
+                .filter(|xy| **xy != (x, y))
+                .collect::<Vec<_>>();
+            *dests[rng.rand_range(0..dests.len() as u32) as usize]
+        }
+        let teles = select(&level, &rules_cache, Tele, None);
+        let mut pads = teles.iter().map(|x| x.0).collect::<Vec<(usize, usize)>>();
+        pads.dedup();
+        if pads.len() > 1 {
+            let mut travelers: HashMap<(usize, usize), Vec<(usize, Entity, (usize, usize))>>
+                = HashMap::new();
+            for ((x, y), _, all) in teles {
+                for i in all {
+                    if !is(&level, x, y, i, &rules_cache, Tele) {
+                        travelers.entry((x, y)).or_insert(vec![]).push((
+                            i, level[y][x][i],
+                            tele_dest(&mut rng, &pads, x, y),
+                        ));
+                    }
+                }
+            }
+            for ((x, y), ts) in travelers.iter_mut() {
+                ts.sort_by(|a, b| a.0.cmp(&b.0));
+                for i in 0..ts.len() {
+                    level[*y][*x].remove(ts[i].0 - i);
+                }
+            }
+            for (_, ts) in travelers.into_iter() {
+                for (_, e, (x, y)) in ts {
+                    level[y][x].push(e);
                 }
             }
         }
@@ -1478,7 +1479,7 @@ pub async fn main(level: Option<&str>) -> Replay {
                     history.pop();
                 },
                 Some(Control(i)) => {
-                    let (next, win) = step(&current_state, i);
+                    let (next, win) = step(&current_state, i, history.len() as u32);
                     if win && win_time.is_none() {
                         win_time = Some(get_time());
                     }
