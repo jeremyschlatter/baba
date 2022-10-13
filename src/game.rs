@@ -84,6 +84,10 @@ pub enum Noun {
     Foliage,
     #[strum(props(color = "2 4", text_color = "6 1", text_color_active = "2 4"))]
     Leaf,
+    #[strum(props(color = "6 1", text_color = "6 0", text_color_active = "6 2"))]
+    Fungi,
+    #[strum(props(color = "6 1", text_color = "6 0", text_color_active = "6 1"))]
+    Fungus,
 }
 use Noun::*;
 
@@ -886,7 +890,8 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
                     let stop = is(x_, y_, j, Stop);
                     let push = is(x_, y_, j, Push);
                     let pull = is(x_, y_, j, Pull);
-                    if result == Some(true) || !push && !stop && !pull {
+                    let weak = is(x_, y_, j, Weak);
+                    if weak || result == Some(true) || !push && !stop && !pull {
                         continue;
                     }
                     result = match movements.get(&(x_, y_, j)) {
@@ -910,11 +915,11 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
 
             match at_unmoving_stop {
                 Some(true) => {
-                    if is(x, y, i, Weak) {
+                    let a = movements.get_mut(&(x, y, i)).unwrap();
+                    if is(x, y, i, Weak) && !a.is_move {
                         tombstones.insert((x, y, i));
                         continue;
                     }
-                    let a = movements.get_mut(&(x, y, i)).unwrap();
                     if a.is_move && !flipped {
                         a.dir = match a.dir {
                             Left  => Right,
