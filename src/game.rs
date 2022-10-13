@@ -78,6 +78,8 @@ pub enum Noun {
     Tree,
     #[strum(props(color = "4 2", text_color = "4 1", text_color_active = "4 2"))]
     Ghost,
+    #[strum(props(color = "6 1", text_color = "6 0", text_color_active = "6 1"))]
+    Fence,
 }
 use Noun::*;
 
@@ -110,6 +112,8 @@ pub enum Adjective {
     Float,
     #[strum(props(text_color = "1 1", text_color_active = "1 2"))]
     Weak,
+    #[strum(props(text_color = "1 2", text_color_active = "1 4"))]
+    Tele,
 }
 use Adjective::*;
 
@@ -260,6 +264,7 @@ fn parse_level(name: &str) -> (Level, String) {
                     '⧜' => Some(Open),
                     '⚲' => Some(Float),
                     '_' => Some(Weak),
+                    '*' => Some(Tele),
                     _ => None
                 }) {
                     (Some(FullCell(cell)), _) => if c.is_uppercase() {
@@ -679,7 +684,7 @@ use Input::*;
 
 fn step(l: &Level, input: Input) -> (Level, bool) {
     let mut level = l.clone();
-    let mut rules = scan_rules_no_index(&level); // TODO: sus that it's mut
+    let rules = scan_rules_no_index(&level); // TODO: sus that it's mut
 
     let width = level[0].len();
     let height = level.len();
@@ -1000,8 +1005,82 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
         move_things(&mut level, &rules, m);
     }
 
+    type SelectT = ((usize, usize), Vec<usize>, Vec<usize>);
+    fn select(
+        level: &Level, rules_cache: &RulesCache, a: Adjective, b: Option<Adjective>,
+    ) -> Vec<SelectT> {
+        let mut result = vec![];
+        let is = |x, y, i, q| is(&level, x, y, i, rules_cache, q);
+        for y in 0..level.len() {
+            for x in 0..level[0].len() {
+                for float in [true, false] {
+                    let mut as_ = vec![];
+                    let mut bs = vec![];
+                    for i in 0..level[y][x].len() {
+                        if is(x, y, i, Float) == float {
+                            if is(x, y, i, a) {
+                                as_.push(i);
+                            }
+                            if b.map(|b| is(x, y, i, b)).unwrap_or(true) {
+                                bs.push(i);
+                            }
+                        }
+                    }
+                    if as_.len() > 0 && bs.len() > 0 {
+                        result.push(((x, y), as_, bs));
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    // rescan since we might have just moved some new rules into place
+    let rules = scan_rules_no_index(&level);
+    let rules_cache = cache_rules(&rules);
+
+    // teleport things
+    {
+        fn tele_dest(pads: &Vec<(usize, usize)>, x: usize, y: usize) -> (usize, usize) {
+            // TODO: randomize
+            for xy in pads {
+                if *xy != (x, y) {
+                    return *xy;
+                }
+            }
+            panic!("bad logic in call to tele_dest");
+        }
+        let teles = select(&level, &rules_cache, Tele, None);
+        let mut pads = teles.iter().map(|x| x.0).collect::<Vec<(usize, usize)>>();
+        pads.dedup();
+        if pads.len() > 1 {
+            let mut travelers: HashMap<(usize, usize), Vec<(usize, Entity, (usize, usize))>>
+                = HashMap::new();
+            for ((x, y), _, all) in teles {
+                for i in all {
+                    if !is(&level, x, y, i, &rules_cache, Tele) {
+                        travelers.entry((x, y)).or_insert(vec![]).push((
+                            i, level[y][x][i],
+                            tele_dest(&pads, x, y),
+                        ));
+                    }
+                }
+            }
+            for ((x, y), ts) in travelers.iter_mut() {
+                ts.sort_by(|a, b| a.0.cmp(&b.0));
+                for i in 0..ts.len() {
+                    level[*y][*x].remove(ts[i].0 - i);
+                }
+            }
+            for (_, ts) in travelers.into_iter() {
+                for (_, e, (x, y)) in ts {
+                    level[y][x].push(e);
+                }
+            }
+        }
+    }
+
     // change things into other things
-    rules = scan_rules_no_index(&level); // TODO: sus to rescan here
     {
         let changers =
             rules.iter()
@@ -1035,39 +1114,6 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
         }
     }
 
-    let rules_cache = cache_rules(&rules);
-
-    type SelectT = ((usize, usize), Vec<usize>, Vec<usize>);
-    fn select(
-        level: &Level, rules_cache: &RulesCache, a: Adjective, b: Option<Adjective>,
-    ) -> Vec<SelectT> {
-        let mut result = vec![];
-        let is = |x, y, i, q| is(&level, x, y, i, rules_cache, q);
-        for y in 0..level.len() {
-            for x in 0..level[0].len() {
-                for float in [true, false] {
-                    let mut as_ = vec![];
-                    let mut bs = vec![];
-                    for i in 0..level[y][x].len() {
-                        if is(x, y, i, Float) == float {
-                            if is(x, y, i, a) {
-                                as_.push(i);
-                            }
-                            if b.map(|b| is(x, y, i, b)).unwrap_or(true) {
-                                bs.push(i);
-                            }
-                        }
-                    }
-                    if as_.len() > 0 &&
-                        bs.len() > if b.is_none() { as_.len() } else { 0 } {
-                        result.push(((x, y), as_, bs));
-                    }
-                }
-            }
-        }
-        result
-    }
-
     // delete things
     {
         let mut deletions: Vec<Vec<Vec<usize>>> = vec![vec![vec![]; width]; height];
@@ -1078,7 +1124,11 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
                 }
             }
         };
-        let select_occupied = |a| select(&level, &rules_cache, a, None);
+        let select_occupied = |a| {
+            let mut r = select(&level, &rules_cache, a, None);
+            r.retain(|(_, _, bs)| bs.len() > 1);
+            r
+        };
         let select_intersecting = |a, b| select(&level, &rules_cache, a, Some(b));
 
         // sink
