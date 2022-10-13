@@ -435,7 +435,7 @@ mod tests {
                                         let mut i = 0;
                                         for input in &inputs {
                                             if *input == Undo {
-                                                i -= 1;
+                                                if i > 0 { i -= 1 }
                                                 screens.push(screens[i].clone());
                                                 continue;
                                             }
@@ -761,8 +761,10 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
     }
 
     // move things
-    {
+    fn move_things(level: &mut Level, rules: &Vec<Rule>, movers: Vec<(usize, usize, usize, Direction, bool)>) {
         let rules_cache = cache_rules(&rules);
+        let width = level[0].len();
+        let height = level.len();
 
         #[derive(PartialEq, Eq, Hash)]
         enum Status {
@@ -790,20 +792,8 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
         let mut tombstones = HashSet::new();
         let is = |x, y, i, q| is(&level, x, y, i, &rules_cache, q);
 
-        // you
-        if let Go(d) = input {
-            for ((x, y, i), _) in entities(&level) {
-                if is(x, y, i, You) {
-                    try_move(&mut queue, &mut movements, x, y, i, d, false);
-                }
-            }
-        }
-
-        // move
-        for ((x, y, i), e) in entities(&level) {
-            if is(x, y, i, Move) {
-                try_move(&mut queue, &mut movements, x, y, i, e.direction(), true);
-            }
+        for (x, y, i, d, b) in movers {
+            try_move(&mut queue, &mut movements, x, y, i, d, b);
         }
 
         // until the queue is empty:
@@ -986,6 +976,28 @@ fn step(l: &Level, input: Input) -> (Level, bool) {
                 }
             }
         }
+    }
+
+    let rules_cache = cache_rules(&rules);
+
+    // move you
+    if let Go(d) = input {
+        let m = entities(&level)
+            .filter_map(|((x, y, i), _)| match is(&level, x, y, i, &rules_cache, You) {
+                true => Some((x, y, i, d, false)),
+                false => None,
+            }).collect();
+        move_things(&mut level, &rules, m);
+    }
+
+    // move move
+    {
+        let m = entities(&level)
+            .filter_map(|((x, y, i), e)| match is(&level, x, y, i, &rules_cache, Move) {
+                true => Some((x, y, i, e.direction(), true)),
+                false => None,
+            }).collect();
+        move_things(&mut level, &rules, m);
     }
 
     // change things into other things
