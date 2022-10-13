@@ -80,6 +80,10 @@ pub enum Noun {
     Ghost,
     #[strum(props(color = "6 1", text_color = "6 0", text_color_active = "6 1"))]
     Fence,
+    #[strum(props(color = "6 0", text_color = "2 2", text_color_active = "2 3"))]
+    Foliage,
+    #[strum(props(color = "2 4", text_color = "6 1", text_color_active = "2 4"))]
+    Leaf,
 }
 use Noun::*;
 
