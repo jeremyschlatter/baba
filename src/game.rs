@@ -429,7 +429,7 @@ mod tests {
             pool.execute(move|| {
                 let (screens, inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
 
-                let mut n = 0;
+                let mut n = 1;
                 for i in 0..screens.len() - 1 {
                     if inputs[i] == Undo {
                         if n > 0 { n -= 1 };
