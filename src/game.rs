@@ -161,6 +161,16 @@ pub enum Direction {
     Right,
 }
 use Direction::*;
+impl Direction {
+    fn reverse(&self) -> Direction {
+        match self {
+            Up => Down,
+            Down => Up,
+            Left => Right,
+            Right => Left,
+        }
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub enum Entity {
@@ -703,12 +713,17 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
     let width = level[0].len();
     let height = level.len();
 
-    fn clip(level: &Level, x: i16, y: i16) -> (usize, usize) {
-        let width = level[0].len() as i16;
-        let height = level.len() as i16;
-
-        (0.max(x).min(width as i16 - 1) as usize,
-         0.max(y).min(height as i16 - 1) as usize)
+    fn delta(level: &Level, d: Direction, x: usize, y: usize) -> (usize, usize) {
+        let width = level[0].len();
+        let height = level.len();
+        let (dx, dy) = match d {
+            Up    => (0, -1),
+            Down  => (0,  1),
+            Left  => (-1, 0),
+            Right => ( 1, 0),
+        };
+        (0.max(x as i16 + dx).min(width as i16 - 1) as usize,
+         0.max(y as i16 + dy).min(height as i16 - 1) as usize)
     }
 
     fn entities(level: &Level) -> impl Iterator<Item=((usize, usize, usize), Entity)> + '_ {
@@ -826,12 +841,6 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
         //                    // so will process them before we return to this one
         //                    // they cannot depend on this one because can only
         //                    // depend on arrows in front moving same direction.
-        let delta = |d| match d {
-            Left  => (-1, 0),
-            Up    => (0, -1),
-            Right => (1, 0),
-            Down  => (0, 1),
-        };
         while let Some((x, y, i)) = queue.pop_front() {
             if tombstones.contains(&(x, y, i)) {
                 continue;
@@ -840,10 +849,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
             // check for push
             {
                 let a = &movements[&(x, y, i)];
-                let (x_, y_) = {
-                    let (dx, dy) = delta(a.dir);
-                    clip(&level, x as i16 + dx, y as i16 + dy)
-                };
+                let (x_, y_) = delta(&level, a.dir, x, y);
                 if !(x == x_ && y == y_) {
                     let d = a.dir;
                     let mut pushed = false;
@@ -867,10 +873,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
 
             let a = &movements[&(x, y, i)];
 
-            let (x_, y_) = {
-                let (dx, dy) = delta(a.dir);
-                clip(&level, x as i16 + dx, y as i16 + dy)
-            };
+            let (x_, y_) = delta(&level, a.dir, x, y);
 
             let at_unmoving_stop = {
                 let mut result = Some(false);
@@ -947,33 +950,15 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
             // check for pull
             {
                 let dir = movements.get(&(x, y, i)).unwrap().dir;
-                let (mut x, mut y) = (x, y);
-                loop {
-                    let (x_, y_) = {
-                        let (dx, dy) = delta(dir);
-                        clip(&level, x as i16 - dx, y as i16 - dy)
-                    };
-                    if x == x_ && y == y_ {
-                        break;
-                    }
-                    let mut keep_pulling = false;
+                let (x_, y_) = delta(&level, dir.reverse(), x, y);
+                if !(x == x_ && y == y_) {
                     for i in 0..level[y_][x_].len() {
                         if is(x_, y_, i, Pull) {
                             if !movements.contains_key(&(x_, y_, i)) {
-                                keep_pulling = true;
-                                movements.insert((x_, y_, i), Arrow {
-                                    dir: dir,
-                                    status: Status::Resolved { moving: true },
-                                    is_move: false,
-                                });
+                                try_move(&mut queue, &mut movements, x_, y_, i, dir, false);
                             }
                         }
                     }
-                    if !keep_pulling {
-                        break;
-                    }
-                    x = x_;
-                    y = y_;
                 }
             }
 
@@ -1002,7 +987,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                     let mut n_inserts = 0;
                     for (i, (r, _)) in removals[y][x].iter().enumerate() {
                         let ix = n_inserts + r - i;
-                        let inserts = if tombstones.contains(&(x, y, i)) {
+                        let inserts = if tombstones.contains(&(x, y, ix)) {
                             has(&level, x, y, ix, &rules_cache)
                         } else { vec![] };
                         level[y][x].remove(ix);
@@ -1019,8 +1004,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                 for (x, cell) in row.iter().enumerate() {
                     for &(_, o) in cell {
                         if let Some((e, d)) = o {
-                            let (dx, dy) = delta(d);
-                            let (x, y) = clip(&level, x as i16 + dx, y as i16 + dy);
+                            let (x, y) = delta(&level, d, x, y);
                             level[y][x].push(match e {
                                 Entity::Text(_, t) => Entity::Text(d, t),
                                 Entity::Noun(_, n) => Entity::Noun(d, n),
