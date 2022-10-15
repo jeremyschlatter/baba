@@ -1471,9 +1471,6 @@ pub async fn main(level: Option<&str>) -> Replay {
         "levels/1-the-lake/2-turns.txt"
     ));
 
-    let width = level[0].len();
-    let height = level.len();
-
     let mut inputs: Vec<Input> = vec![];
     // views is different from history, below, in that the Undo action
     // pops from history and pushes onto views.
@@ -1507,12 +1504,6 @@ pub async fn main(level: Option<&str>) -> Replay {
     let mut last_input: (f64, Option<KeyCode>) = (0., None);
 
     loop {
-        let sq_size = ((screen_width() - 20.) / width as f32).min((screen_height() - 20.) / height as f32);
-        let game_width = sq_size * width as f32;
-        let game_height = sq_size * height as f32;
-        let offset_x = (screen_width() - game_width) / 2.;
-        let offset_y = (screen_height() - game_height) / 2.;
-
         // update
         let current_input = debounce(
             &mut last_input,
@@ -1560,7 +1551,7 @@ pub async fn main(level: Option<&str>) -> Replay {
         // render
         {
             clear_background(palette.get_pixel(1, 0));
-            render_level(
+            let bounds = render_level(
                 &current_state,
                 &palette,
                 &sprites,
@@ -1570,13 +1561,7 @@ pub async fn main(level: Option<&str>) -> Replay {
 
             // draw pause menu
             if paused {
-                draw_rectangle(
-                    offset_x,
-                    offset_y,
-                    game_width,
-                    game_height,
-                    pause_color,
-                );
+                draw_rectangle(bounds.x, bounds.y, bounds.w, bounds.h, pause_color);
             }
 
             // draw congratulations when you win
@@ -1591,11 +1576,11 @@ pub async fn main(level: Option<&str>) -> Replay {
                         "radius",
                         (((get_time() - anim_start) / anim_time) as f32).min(0.5_f32.sqrt()),
                     );
-                    let scale = (game_width * 0.65) / congrats.width();
+                    let scale = (bounds.w * 0.65) / congrats.width();
                     draw_texture_ex(
                         congrats,
-                        offset_x + (game_width - congrats.width() * scale) / 2.,
-                        offset_y + (game_height - congrats.height() * scale) / 2.,
+                        bounds.x + (bounds.w - congrats.width() * scale) / 2.,
+                        bounds.y + (bounds.h - congrats.height() * scale) / 2.,
                         WHITE,
                         DrawTextureParams {
                             dest_size: Some(Vec2{
