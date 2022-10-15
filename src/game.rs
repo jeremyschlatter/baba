@@ -185,6 +185,12 @@ impl Entity {
             Entity::Text(d, _) => *d,
         }
     }
+    fn to_text_or_noun(&self) -> TextOrNoun {
+        match self {
+            Entity::Noun(_, n) => TextOrNoun::Noun(*n),
+            Entity::Text(_, _) => TextOrNoun::Text,
+        }
+    }
 }
 
 fn default_color(e: Entity, palette: &Image, active: bool) -> Color {
@@ -347,17 +353,32 @@ enum TextOrNoun {
     Noun(Noun),
 }
 
-type Subject = TextOrNoun;
-type Rule = (Subject, Predicate);
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+enum Negatable<T> {
+    Yes(T),
+    No(T),
+}
+use Negatable::*;
+impl<T> Negatable<T> {
+    fn elim(self) -> (bool, T) {
+        match self {
+            Yes(t) => (true, t),
+            No(t) => (false, t),
+        }
+    }
+}
+
+type Subject = Negatable<TextOrNoun>;
+type Rule = (Subject, Negatable<Predicate>);
 
 #[cfg(test)]
 mod tests {
     use crate::game::*;
     #[test]
     fn scan_rules() {
-        let is_a = IsAdjective;
-        let is = |n| IsNoun(TextOrNoun::Noun(n));
-        let n = |n| TextOrNoun::Noun(n);
+        let is_a = |a| Yes(IsAdjective(a));
+        let is = |n| Yes(IsNoun(TextOrNoun::Noun(n)));
+        let n = |n| Yes(TextOrNoun::Noun(n));
         let tests = [
             (vec!["baba", "is", "you"], vec![(n(Baba), is_a(You))]),
             (
@@ -533,11 +554,11 @@ fn scan_rules_text(rules: &mut Vec<(Vec<Index>, Rule)>, text: &[(Index, Text)]) 
             Subjects(s, mut subjs) => match s {
                 Incomplete(opt_ix) => match t {
                     Object(noun) => {
-                        subjs.push((cat_ixs(opt_ix, ix), Subject::Noun(noun)));
+                        subjs.push((cat_ixs(opt_ix, ix), Yes(TextOrNoun::Noun(noun))));
                         Subjects(Complete, subjs)
                     },
                     Text::Text => {
-                        subjs.push((cat_ixs(opt_ix, ix), Subject::Text));
+                        subjs.push((cat_ixs(opt_ix, ix), Yes(TextOrNoun::Text)));
                         Subjects(Complete, subjs)
                     },
                     _ => zero(subjs),
@@ -572,7 +593,7 @@ fn scan_rules_text(rules: &mut Vec<(Vec<Index>, Rule)>, text: &[(Index, Text)]) 
                             for (ixs, s) in &subjs {
                                 let mut ixs = ixs.clone();
                                 ixs.extend(cat_ixs(opt_ix, ix));
-                                rules.push((ixs, (*s, pred)));
+                                rules.push((ixs, (*s, Yes(pred))));
                             }
                             Predicates(is_or_has, Complete, subjs, Some((cat_ixs(opt_ix, ix), pred)))
                         },
@@ -680,22 +701,61 @@ fn scan_rules_no_index(l: &Level) -> Vec<Rule> {
     rules.into_iter().map(|x| x.1).collect()
 }
 
-fn partition_overridden_rules<A>(rules: Vec<(A, Rule)>) -> (Vec<(A, Rule)>, Vec<(A, Rule)>) {
+fn partition_overridden_rules<A>(rules: Vec<(A, Rule)>)
+    -> (Vec<(A, Rule)>, Vec<(A, Rule)>)
+{
+    let (no, yes) = {
+        let mut no = vec![];
+        let mut yes = vec![];
+        for (a, x) in rules {
+            match x {
+                (s, No(p)) => no.push((a, (s, p))),
+                (s, Yes(p)) => yes.push((a, (s, p))),
+            }
+        }
+        (no, yes)
+    };
+
+    let (vetoed, the_rest): (Vec<_>, _) = yes.into_iter().partition(|(_, (s, p))|
+        no.iter().any(|(_, (ns, np))| np == p && {
+            // need to yield true iff ns is a superset of s
+            match (s, ns) {
+                (Yes(s), No(ns)) => s != ns,
+                (s, ns) => s == ns,
+            }
+        })
+    );
+
     // x is x
-    let (mut high_priority, the_rest): (Vec<(A, Rule)>, _) =
-        rules.into_iter().partition(|r| match r.1 {
-            (x, IsNoun(y)) => x == y,
-            _ => false,
-        });
-    let x_is_x = high_priority.iter().map(|(_, (x, _))| *x).collect::<HashSet<TextOrNoun>>();
-    let (overridden, the_rest) = the_rest.into_iter().partition(|r| match r.1 {
-        (x, IsNoun(_)) => x_is_x.contains(&x),
+    let (x_is_x, the_rest): (Vec<_>, _) = the_rest.into_iter().partition(|r| match r.1 {
+        (Yes(x), IsNoun(y)) => x == y,
         _ => false,
     });
 
-    high_priority.extend(the_rest);
+    let unchanging = x_is_x.iter()
+        .map(|(_, (x, _))| match x { Yes(x) => *x, No(_) => panic!("logic error") })
+        .collect::<HashSet<TextOrNoun>>();
 
-    (high_priority, overridden)
+    let (overridden, the_rest) = the_rest.into_iter().partition(|r| match r.1 {
+        (Yes(x), IsNoun(_)) => unchanging.contains(&x),
+        _ => false,
+    });
+
+    fn reapply<A, C>(v: Vec<(A, (Subject, Predicate))>, c: C) -> Vec<(A, Rule)>
+    where
+        C: Fn(Predicate) -> Negatable<Predicate>
+    {
+        v.into_iter().map(|(a, (s, p))| (a, (s, c(p)))).collect()
+    }
+
+    let mut active = reapply(no, No);
+    active.extend(reapply(x_is_x, Yes));
+    active.extend(reapply(the_rest, Yes));
+
+    let mut overridden = reapply(overridden, Yes);
+    overridden.extend(reapply(vetoed, Yes));
+
+    (active, overridden)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
@@ -739,52 +799,66 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
     }
 
     type RulesCache = (
-        [HashSet<Subject>; Adjective::COUNT],
-        HashMap<Subject, Vec<TextOrNoun>>
+        [[Vec<Subject>; 2]; Adjective::COUNT], // is adjective
+        [Vec<(Subject, TextOrNoun)>; 2], // has noun
+        [Vec<(Subject, TextOrNoun)>; 2], // is noun
     );
 
     fn cache_rules(rules: &Vec<Rule>) -> RulesCache {
-        ({
-            let mut is_adj = core::array::from_fn(|_| HashSet::new());
-            is_adj[Push as usize].insert(Subject::Text);
-            for (s, p) in rules {
-                if let IsAdjective(adj) = p {
-                    is_adj[*adj as usize].insert(*s);
-                }
+        let mut result: RulesCache = (
+            core::array::from_fn(|_| [vec![], vec![]]),
+            [vec![], vec![]],
+            [vec![], vec![]],
+        );
+        result.0[Push as usize][0].push(Yes(TextOrNoun::Text));
+        for (s, p) in rules {
+            let (yes, p) = p.elim();
+            let ix = !yes as usize;
+            match p {
+                IsAdjective(adj) => result.0[adj as usize][ix].push(*s),
+                HasNoun(n) => result.1[ix].push((*s, n)),
+                IsNoun(n) => result.2[ix].push((*s, n)),
             }
-            is_adj
-        }, {
-            let mut has = HashMap::new();
-            for (s, p) in rules {
-                if let HasNoun(t) = p {
-                    has.entry(*s).or_insert(HashSet::new()).insert(*t);
-                }
-            }
-            has.into_iter()
-               .map(|(k, v)| {
-                   let mut v = v.into_iter().collect::<Vec<_>>();
-                   v.sort();
-                   (k, v)
-                })
-               .collect()
-        })
+        }
+        result
+    }
+
+    fn subject_match(level: &Level, x: usize, y: usize, i: usize, s: &Subject) -> bool {
+        let t_or_n = level[y][x][i].to_text_or_noun();
+        match *s {
+            Yes(y) => y == t_or_n,
+            No(n) => n != t_or_n,
+        }
+    }
+
+    fn array_map_ref<T, F, U>(a: &[T; 2], f: F) -> [U; 2]
+    where
+        F: Fn(&T) -> U
+    {
+        [f(&a[0]), f(&a[1])]
     }
 
     fn is(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache, quality: Adjective) -> bool {
-        rules.0[quality as usize].contains(&match level[y][x][i] {
-            Entity::Text(_, _) => Subject::Text,
-            Entity::Noun(_, n) => Subject::Noun(n),
-        })
+        let [yes, no] = array_map_ref(&rules.0[quality as usize],
+            |v: &Vec<Subject>| v.iter().any(|s| subject_match(level, x, y, i, s)));
+        yes && !no
     }
 
-    fn has(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<Entity> {
+    fn is_or_has(level: &Level, x: usize, y: usize, i: usize, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> Vec<Entity> {
+        let [yes, no] = array_map_ref(&rules,
+            |v| v.iter()
+                 .filter(|(s, _)| subject_match(level, x, y, i, s))
+                 .map(|(_, e)| e)
+                 .copied()
+                 .collect::<HashSet<TextOrNoun>>());
+
+        let mut result = yes.difference(&no).copied().collect::<Vec<TextOrNoun>>();
+        result.sort();
         let e = level[y][x][i];
         let d = e.direction();
-        rules.1.get(&match level[y][x][i] {
-            Entity::Text(_, _) => Subject::Text,
-            Entity::Noun(_, n) => Subject::Noun(n),
-        }).unwrap_or(&vec![]).iter()
-          .map(|h| match h {
+        result
+          .iter()
+          .map(|x| match x {
               TextOrNoun::Noun(n) => Entity::Noun(d, *n),
               TextOrNoun::Text => Entity::Text(d, match e {
                   Entity::Noun(_, n) => Text::Object(n),
@@ -794,9 +868,22 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
           .collect()
     }
 
+    fn has(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<Entity> {
+        is_or_has(level, x, y, i, &rules.1)
+    }
+
+    fn is_noun(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<Entity> {
+        let v = is_or_has(level, x, y, i, &rules.2);
+        if v.contains(&level[y][x][i]) {
+            vec![] // x is x
+        } else {
+            v
+        }
+    }
+
     // move things
     fn move_things(level: &mut Level, rules: &Vec<Rule>, movers: Vec<(usize, usize, usize, Direction, bool)>) {
-        let rules_cache = cache_rules(&rules);
+        let rules_cache = cache_rules(rules);
         let width = level[0].len();
         let height = level.len();
 
@@ -1073,33 +1160,14 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
     let rules_cache = cache_rules(&rules);
 
     // change things into other things
-    {
-        let changers =
-            rules.iter()
-                 .filter_map(|r| match r {
-                     (from, IsNoun(to)) => Some((*from, *to)),
-                     _ => None,
-                 })
-                 .collect::<HashMap<Subject, TextOrNoun>>();
-        for x in 0..width {
-            for y in 0..height {
-                for i in 0..level[y][x].len() {
-                    // TODO: handle eg Baba Is Wall And Door
-                    let old = level[y][x][i];
-                    let (d, subject) = match old {
-                        Entity::Text(d, _) => (d, Subject::Text),
-                        Entity::Noun(d, n) => (d, Subject::Noun(n)),
-                    };
-                    if let Some(new) = changers.get(&subject) {
-                        match new {
-                            TextOrNoun::Text => match old {
-                                Entity::Text(_, _) => (), // Text Is Text, no-op
-                                Entity::Noun(_, n) =>
-                                    level[y][x][i] = Entity::Text(d, Text::Object(n)),
-                            },
-                            TextOrNoun::Noun(n) =>
-                                level[y][x][i] = Entity::Noun(d, *n),
-                        };
+    for x in 0..width {
+        for y in 0..height {
+            for i in (0..level[y][x].len()).rev() {
+                let changed = is_noun(&level, x, y, i, &rules_cache);
+                if changed.len() > 0 {
+                    level[y][x].remove(i);
+                    for new in changed.into_iter().rev() {
+                        level[y][x].insert(i, new);
                     }
                 }
             }
