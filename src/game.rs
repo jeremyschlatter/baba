@@ -1506,13 +1506,13 @@ pub async fn main(level: Option<&str>) -> Replay {
 
     let mut last_input: (f64, Option<KeyCode>) = (0., None);
 
-    let sq_size = ((screen_width() - 20.) / width as f32).min((screen_height() - 20.) / height as f32);
-    let game_width = sq_size * width as f32;
-    let game_height = sq_size * height as f32;
-    let offset_x = (screen_width() - game_width) / 2.;
-    let offset_y = (screen_height() - game_height) / 2.;
-
     loop {
+        let sq_size = ((screen_width() - 20.) / width as f32).min((screen_height() - 20.) / height as f32);
+        let game_width = sq_size * width as f32;
+        let game_height = sq_size * height as f32;
+        let offset_x = (screen_width() - game_width) / 2.;
+        let offset_y = (screen_height() - game_height) / 2.;
+
         // update
         let current_input = debounce(
             &mut last_input,
