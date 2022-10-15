@@ -137,6 +137,8 @@ pub enum Text {
     Text,
     #[strum(props(text_color = "0 1", text_color_active = "0 3"))]
     Has,
+    #[strum(props(text_color = "2 1", text_color_active = "2 2"))]
+    Not,
     Object(Noun),
     Adjective(Adjective),
 }
@@ -147,6 +149,7 @@ impl FromStr for Text {
             "is" => Ok(Text::Is),
             "and" => Ok(Text::And),
             "has" => Ok(Text::Has),
+            "not" => Ok(Text::Not),
             _ => Err(format!("can't parse this as Text: '{s}'")),
         }
     }
@@ -200,10 +203,7 @@ fn default_color(e: Entity, palette: &Image, active: bool) -> Color {
         Entity::Text(_, t) => match t {
             Text::Object(n) => n.get_str(text_prop),
             Text::Adjective(a) => a.get_str(text_prop),
-            Text::Is => t.get_str(text_prop),
-            Text::And => t.get_str(text_prop),
-            Text::Has => t.get_str(text_prop),
-            Text::Text => t.get_str(text_prop),
+            _ => t.get_str(text_prop),
         },
     }.unwrap();
 
@@ -217,6 +217,7 @@ fn all_entities() -> impl Iterator<Item=Entity> {
     Direction::iter().flat_map(|d|
         Noun::iter().map(move |n| Entity::Noun(d, n))
             .chain(iter::once(Entity::Text(d, Text::Is)))
+            .chain(iter::once(Entity::Text(d, Text::Not)))
             .chain(iter::once(Entity::Text(d, Text::And)))
             .chain(iter::once(Entity::Text(d, Text::Has)))
             .chain(iter::once(Entity::Text(d, Text::Text)))
@@ -311,6 +312,7 @@ fn parse_level(name: &str) -> (Level, String) {
                     (_, Some(adj)) => vec![Entity::Text(Right, Text::Adjective(adj))],
                     _ => match c {
                         '=' => vec![Entity::Text(Right, Text::Is)],
+                        '¬' => vec![Entity::Text(Right, Text::Not)],
                         '&' => vec![Entity::Text(Right, Text::And)],
                         '~' => vec![Entity::Text(Right, Text::Has)],
                         '@' => vec![Entity::Text(Right, Text::Text)],
@@ -536,46 +538,54 @@ fn scan_rules_text(rules: &mut Vec<(Vec<Index>, Rule)>, text: &[(Index, Text)]) 
     enum IsOrHas { Is, Has }
     #[derive(Debug)]
     enum ScanState {
-        Subjects(ListState, Vec<(Vec<Index>, Subject)>),
-        Predicates(IsOrHas, ListState, Vec<(Vec<Index>, Subject)>, Option<(Vec<Index>, Predicate)>),
+        Subjects(ListState, Vec<(Vec<Index>, Subject)>, bool),
+        Predicates(IsOrHas, ListState, bool, Vec<(Vec<Index>, Subject)>, Option<(Vec<Index>, Predicate)>),
     }
     use ScanState::*;
-    use Text::{Is, And, Has, Object, Adjective};
-    let zero = |mut v: Vec<(Vec<Index>, Subject)>| { v.clear(); Subjects(Incomplete(None), v) };
+    use Text::{Is, And, Not, Has, Object, Adjective};
+    let zero = |mut v: Vec<(Vec<Index>, Subject)>| {
+        v.clear();
+        Subjects(Incomplete(None), v, true)
+    };
     let mut state = zero(vec![]);
     let mut i = 0;
     fn cat_ixs(head: Option<Index>, tail: Index) -> Vec<Index> {
         if let Some(ix) = head { vec![ix, tail] } else { vec![tail] }
     }
+    fn from_bool<T>(b: bool, t: T) -> Negatable<T> {
+        if b { Yes(t) } else { No(t) }
+    }
     while i < text.len() {
         let (ix, t) = text[i];
         i += 1;
         state = match state {
-            Subjects(s, mut subjs) => match s {
+            Subjects(s, mut subjs, yes_or_no) => match s {
                 Incomplete(opt_ix) => match t {
+                    Not => Subjects(s, subjs, !yes_or_no),
                     Object(noun) => {
-                        subjs.push((cat_ixs(opt_ix, ix), Yes(TextOrNoun::Noun(noun))));
-                        Subjects(Complete, subjs)
+                        subjs.push((cat_ixs(opt_ix, ix), from_bool(yes_or_no, TextOrNoun::Noun(noun))));
+                        Subjects(Complete, subjs, true)
                     },
                     Text::Text => {
-                        subjs.push((cat_ixs(opt_ix, ix), Yes(TextOrNoun::Text)));
-                        Subjects(Complete, subjs)
+                        subjs.push((cat_ixs(opt_ix, ix), from_bool(yes_or_no, TextOrNoun::Text)));
+                        Subjects(Complete, subjs, true)
                     },
                     _ => zero(subjs),
                 },
                 Complete => match t {
-                    Is => Predicates(IsOrHas::Is, Incomplete(Some(ix)), subjs, None),
-                    Has => Predicates(IsOrHas::Has, Incomplete(Some(ix)), subjs, None),
-                    And => Subjects(Incomplete(Some(ix)), subjs),
+                    Is => Predicates(IsOrHas::Is, Incomplete(Some(ix)), true, subjs, None),
+                    Has => Predicates(IsOrHas::Has, Incomplete(Some(ix)), true, subjs, None),
+                    And => Subjects(Incomplete(Some(ix)), subjs, true),
                     _ => { i -= 1; zero(subjs) },
                 },
             },
-            Predicates(is_or_has, s, subjs, pred) => match s {
+            Predicates(is_or_has, s, yes_or_no, subjs, pred) => match s {
                 Incomplete(opt_ix) => match (pred, t) {
-                    (Some(_), Text::Is) =>
-                        Predicates(IsOrHas::Is, Incomplete(Some(ix)), subjs, None),
-                    (Some(_), Text::Has) =>
-                        Predicates(IsOrHas::Has, Incomplete(Some(ix)), subjs, None),
+                    (_, Not) => Predicates(is_or_has, s, !yes_or_no, subjs, None),
+                    (Some(_), Is) =>
+                        Predicates(IsOrHas::Is, Incomplete(Some(ix)), true, subjs, None),
+                    (Some(_), Has) =>
+                        Predicates(IsOrHas::Has, Incomplete(Some(ix)), true, subjs, None),
                     _ => match match is_or_has {
                         IsOrHas::Is => match t {
                             Object(noun) => Some(IsNoun(TextOrNoun::Noun(noun))),
@@ -593,15 +603,15 @@ fn scan_rules_text(rules: &mut Vec<(Vec<Index>, Rule)>, text: &[(Index, Text)]) 
                             for (ixs, s) in &subjs {
                                 let mut ixs = ixs.clone();
                                 ixs.extend(cat_ixs(opt_ix, ix));
-                                rules.push((ixs, (*s, Yes(pred))));
+                                rules.push((ixs, (*s, from_bool(yes_or_no, pred))));
                             }
-                            Predicates(is_or_has, Complete, subjs, Some((cat_ixs(opt_ix, ix), pred)))
+                            Predicates(is_or_has, Complete, true, subjs, Some((cat_ixs(opt_ix, ix), pred)))
                         },
                         None => { i -= 1; zero(subjs) },
                     },
                 },
                 Complete => match t {
-                    And => Predicates(is_or_has, Incomplete(Some(ix)), subjs, pred),
+                    And => Predicates(is_or_has, Incomplete(Some(ix)), true, subjs, pred),
                     _ => {
                         i -= 2; // to pick up the last subject word, if present
                         zero(subjs)
@@ -768,7 +778,7 @@ use Input::*;
 
 fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
     let mut level = l.clone();
-    let rules = scan_rules_no_index(&level); // TODO: sus that it's mut
+    let rules = scan_rules_no_index(&level);
 
     let width = level[0].len();
     let height = level.len();
@@ -825,9 +835,10 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
 
     fn subject_match(level: &Level, x: usize, y: usize, i: usize, s: &Subject) -> bool {
         let t_or_n = level[y][x][i].to_text_or_noun();
-        match *s {
-            Yes(y) => y == t_or_n,
-            No(n) => n != t_or_n,
+        match (*s, t_or_n) {
+            (Yes(y), _) => y == t_or_n,
+            (No(n), TextOrNoun::Noun(_)) => n != t_or_n,
+            (No(_), TextOrNoun::Text) => false,
         }
     }
 
@@ -1706,6 +1717,7 @@ async fn load_sprite_map() -> SpriteMap {
                         Text::Object(o) => format!("{:?}", o),
                         Text::Is => "is".to_string(),
                         Text::And => "and".to_string(),
+                        Text::Not => "not".to_string(),
                         Text::Has => "has".to_string(),
                         Text::Text => "text".to_string(),
                     }),
