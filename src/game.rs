@@ -1622,8 +1622,11 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
                   .collect::<HashSet<Index>>()
     };
 
-    let draw_sprite = |x, y, w, h, entity, active| {
-        let sprite = sprites[&entity];
+    let anim_frame = (get_time() / 0.15).trunc() as usize % 3;
+
+    let draw_sprite = |gx, gy, gz, x, y, w, h, entity, active| {
+        let anim_frame = (gx + gy + gz + anim_frame) % 3;
+        let sprite = sprites[&entity][anim_frame];
         let c = default_color(entity, &palette, active);
         SPRITES_MATERIAL.set_uniform("color", [c.r, c.g, c.b]);
         draw_texture_ex(
@@ -1643,6 +1646,7 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
             let y = offset_y + sq_size * row as f32;
             for (i, e) in level[row][col].iter().enumerate() {
                 draw_sprite(
+                    row, col, i,
                     x,
                     y,
                     sq_size,
@@ -1679,18 +1683,20 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
     Rect::new(offset_x, offset_y, game_width, game_height)
 }
 
-type SpriteMap = HashMap<Entity, Texture2D>;
+type SpriteMap = HashMap<Entity, [Texture2D; 3]>;
 
 async fn load_sprite_map() -> SpriteMap {
-    async fn load(e: Entity) -> (Entity, Texture2D) {
-        let filename = &match match e {
+    async fn load(e: Entity) -> (Entity, [Texture2D; 3]) {
+        let filename = match match e {
             Entity::Noun(_, n) => match n {
-                Wall => Some(n),
+                Wall => Some("wall_0".to_string()),
+                Line(x) => Some(format!("line_{x}")),
                 _ => None,
             },
+            Entity::Text(_, Text::Object(Line(_))) => Some("text_line_0".to_string()),
             _ => None,
         } {
-            Some(n) => format!("resources/Data/Sprites/{:?}_0_1.png", n).to_lowercase(),
+            Some(n) => format!("resources/Data/Sprites/{}", n).to_lowercase(),
             None => {
                 let name = match e {
                     Entity::Noun(_, Bog) => "water".to_string(),
@@ -1708,7 +1714,7 @@ async fn load_sprite_map() -> SpriteMap {
                     }),
                 }.to_lowercase();
                 let filename = format!(
-                    "resources/Data/Sprites/{name}_{}_1.png",
+                    "resources/Data/Sprites/{name}_{}",
                     match match e { Entity::Noun(d, _) => d, Entity::Text(d, _) => d } {
                         Right => "0",
                         Up => "8",
@@ -1716,14 +1722,21 @@ async fn load_sprite_map() -> SpriteMap {
                         Down => "24",
                     }
                 );
-                if std::path::Path::new(&filename).exists() {
+                if std::path::Path::new(&format!("{filename}_1.png")).exists() {
                     filename
                 } else {
-                    format!("resources/Data/Sprites/{name}_0_1.png")
+                    format!("resources/Data/Sprites/{name}_0")
                 }
             },
         };
-        (e, load_texture(filename).await.unwrap())
+        (
+            e,
+            [
+                load_texture(&format!("{filename}_1.png")).await.unwrap(),
+                load_texture(&format!("{filename}_2.png")).await.unwrap(),
+                load_texture(&format!("{filename}_3.png")).await.unwrap(),
+            ],
+        )
     }
     futures::future::join_all(all_entities().map(load)).await.into_iter().collect()
 }
