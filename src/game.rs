@@ -88,6 +88,8 @@ pub enum Noun {
     Fungi,
     #[strum(props(color = "6 1", text_color = "6 0", text_color_active = "6 1"))]
     Fungus,
+    #[strum(props(color = "4 2", text_color = "2 3", text_color_active = "2 4"))]
+    Cursor,
 
     #[strum(props(color = "0 3", text_color = "0 2", text_color_active = "0 3"))]
     Line(u8),
@@ -302,6 +304,7 @@ fn parse_level(name: &str) -> (Level, String) {
         Txt(self::Text),
         Line(u8),
         Level(LevelGroup),
+        Cursor,
         Blank,
     }
     use Thing::*;
@@ -364,6 +367,8 @@ fn parse_level(name: &str) -> (Level, String) {
                     '𝟐' => Level(Number(12)),
                     '𝟑' => Level(Number(13)),
 
+                    '•' => Cursor,
+
                     _ => Blank
                 }) {
                     (Some(FullCell(cell)), _) => if c.is_uppercase() {
@@ -384,6 +389,7 @@ fn parse_level(name: &str) -> (Level, String) {
                     (_, Txt(txt)) => vec![Entity::Text(Right, txt)],
                     (_, Line(x)) => vec![Entity::Noun(Right, Noun::Line(x))],
                     (_, Level(x)) => vec![Entity::Noun(Right, Noun::Level(x))],
+                    (_, Cursor) => vec![Entity::Noun(Right, Noun::Cursor)],
                     (_, Blank) => vec![],
                 })
                 .chain(iter::repeat(vec![]))
@@ -1182,6 +1188,29 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
     }
 
     let rules_cache = cache_rules(&rules);
+
+    // move cursor
+    if let Go(d) = input {
+        'top:
+        for col in 0..level.len() {
+            for row in 0..level[0].len() {
+                for i in 0..level[col][row].len() {
+                    if let Entity::Noun(_, Noun::Cursor) = level[col][row][i] {
+                        let (x, y) = delta(&level, d, row, col);
+                        for j in 0..level[y][x].len() {
+                            if let Entity::Noun(_, n) = level[y][x][j] {
+                                if match n { Line(_) => true, Level(_) => true, _ => false } {
+                                    level[col][row].remove(i);
+                                    level[y][x].push(Entity::Noun(d, Noun::Cursor));
+                                    break 'top;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // move you
     if let Go(d) = input {
