@@ -1,0 +1,31 @@
+f = flower
+g = grass
+h = husk
+w = wall
+b = brick
+r = statue
+t = tree
+c = column
+s = stump
+a = water
+d = door
+palette = ruins
+---
+    f    f              gg gggggg
+  f    f      g              gggg
+     h      gggg wwwww         gg
+   aa   wwwwwwgg   bbwg         g
+  aaaa  wbb bwg  𝟙 bbdggg       g
+    aag wbbbbw  8┤ bbwggg
+ h    ggwwwbww 769 wwwggwww     t
+    ggggg rbr  435     wwwww
+      g    b b  2  b c  ww  bb bb
+   c c c        │ bbbbbb bb bt
+bbb bbb b bb    1  bbcgg       t
+   c c c  gg    │   bggg  s
+g        gg  g  •  g cg       t
+g      wwdwwwww   ggbbb     s
+       wb bbbbwb  ggg b
+gg     wbbb bb   g g     s   t
+ggg    wwwwww         b
+ggggg                 b    t   t

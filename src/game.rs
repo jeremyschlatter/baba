@@ -88,8 +88,28 @@ pub enum Noun {
     Fungi,
     #[strum(props(color = "6 1", text_color = "6 0", text_color_active = "6 1"))]
     Fungus,
+
+    #[strum(props(color = "0 3", text_color = "0 2", text_color_active = "0 3"))]
+    Line(u8),
+
+    #[strum(props(color = "0 0", text_color = "4 0", text_color_active = "4 1"))]
+    Level(LevelGroup),
 }
 use Noun::*;
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+pub enum LevelGroup {
+    Number(u8),
+    Letter(char),
+    Extra(u8),
+}
+use LevelGroup::*;
+
+impl Default for LevelGroup {
+    fn default() -> LevelGroup {
+        Number(0)
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString, EnumProperty, EnumCount)]
 #[strum(serialize_all = "snake_case")]
@@ -216,6 +236,11 @@ fn default_color(e: Entity, palette: &Image, active: bool) -> Color {
 fn all_entities() -> impl Iterator<Item=Entity> {
     Direction::iter().flat_map(|d|
         Noun::iter().map(move |n| Entity::Noun(d, n))
+            .chain([3, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15].into_iter().map(move |i|
+                    Entity::Noun(d, Line(i))))
+            .chain((1..14).map(move |x| Entity::Noun(d, Level(Number(x)))))
+            .chain(('A'..'E').map(move |x| Entity::Noun(d, Level(Letter(x)))))
+            .chain((1..3).map(move |x| Entity::Noun(d, Level(Extra(x)))))
             .chain(iter::once(Entity::Text(d, Text::Is)))
             .chain(iter::once(Entity::Text(d, Text::Not)))
             .chain(iter::once(Entity::Text(d, Text::And)))
@@ -272,32 +297,78 @@ fn parse_level(name: &str) -> (Level, String) {
              .collect();
     let map: Vec<&str> = s.lines().skip_while(|s| *s != "---").skip(1).collect();
 
+    enum Thing {
+        Adj(self::Adjective),
+        Txt(self::Text),
+        Line(u8),
+        Level(LevelGroup),
+        Blank,
+    }
+    use Thing::*;
+    use self::Text::*;
+
     let max = map.iter().map(|l| l.chars().count()).max().unwrap_or_default() + right_pad;
     let level = map.split(|s| *s == "---")
         .map(|layer| layer.iter().map(
             |line| line.chars()
                 .map(|c| match (legend.get(c.to_string().to_lowercase().as_str())
                 , match c {
-                    '✥' => Some(You),
-                    '⊘' => Some(Stop),
-                    '↦' => Some(Push),
-                    '✓' => Some(Win),
-                    '≉' => Some(Sink),
-                    '⩍' => Some(Defeat),
-                    '⌇' => Some(Hot),
-                    '⌢' => Some(Melt),
-                    '→' => Some(Move),
-                    '⨶' => Some(Shut),
-                    '⧜' => Some(Open),
-                    '⚲' => Some(Float),
-                    '_' => Some(Weak),
-                    '*' => Some(Tele),
-                    '↣' => Some(Pull),
-                    _ => None
+                    '✥' => Adj(You),
+                    '⊘' => Adj(Stop),
+                    '↦' => Adj(Push),
+                    '✓' => Adj(Win),
+                    '≉' => Adj(Sink),
+                    '⩍' => Adj(Defeat),
+                    '⌇' => Adj(Hot),
+                    '⌢' => Adj(Melt),
+                    '→' => Adj(Move),
+                    '⨶' => Adj(Shut),
+                    '⧜' => Adj(Open),
+                    '⚲' => Adj(Float),
+                    '_' => Adj(Weak),
+                    '*' => Adj(Tele),
+                    '↣' => Adj(Pull),
+
+                    '=' => Txt(Is),
+                    '¬' => Txt(Not),
+                    '&' => Txt(And),
+                    '~' => Txt(Has),
+                    '@' => Txt(Text),
+
+                    '└' => Line(3),
+                    '─' => Line(5),
+                    '┘' => Line(6),
+                    '┴' => Line(7),
+                    '┌' => Line(9),
+                    '│' => Line(10),
+                    '├' => Line(11),
+                    '┐' => Line(12),
+                    '┬' => Line(13),
+                    '┤' => Line(14),
+                    '┼' => Line(15),
+
+                    '𝟙' => Level(Extra(1)),
+                    '𝟚' => Level(Extra(2)),
+
+                    '1' => Level(Number(1)),
+                    '2' => Level(Number(2)),
+                    '3' => Level(Number(3)),
+                    '4' => Level(Number(4)),
+                    '5' => Level(Number(5)),
+                    '6' => Level(Number(6)),
+                    '7' => Level(Number(7)),
+                    '8' => Level(Number(8)),
+                    '9' => Level(Number(9)),
+                    '𝟎' => Level(Number(10)),
+                    '𝟏' => Level(Number(11)),
+                    '𝟐' => Level(Number(12)),
+                    '𝟑' => Level(Number(13)),
+
+                    _ => Blank
                 }) {
                     (Some(FullCell(cell)), _) => if c.is_uppercase() {
                         if let Entity::Noun(_, n) = cell[cell.len() - 1] {
-                            vec![Entity::Text(Right, Text::Object(n))]
+                            vec![Entity::Text(Right, Object(n))]
                         } else {
                             vec![]
                         }
@@ -305,19 +376,15 @@ fn parse_level(name: &str) -> (Level, String) {
                         cell.clone()
                     }
                     (Some(Abbreviation(noun)), _) => if c.is_uppercase() {
-                        vec![Entity::Text(Right, Text::Object(*noun))]
+                        vec![Entity::Text(Right, Object(*noun))]
                     } else {
                         vec![Entity::Noun(Right, *noun)]
                     }
-                    (_, Some(adj)) => vec![Entity::Text(Right, Text::Adjective(adj))],
-                    _ => match c {
-                        '=' => vec![Entity::Text(Right, Text::Is)],
-                        '¬' => vec![Entity::Text(Right, Text::Not)],
-                        '&' => vec![Entity::Text(Right, Text::And)],
-                        '~' => vec![Entity::Text(Right, Text::Has)],
-                        '@' => vec![Entity::Text(Right, Text::Text)],
-                        _ => vec![],
-                    }
+                    (_, Adj(adj)) => vec![Entity::Text(Right, Adjective(adj))],
+                    (_, Txt(txt)) => vec![Entity::Text(Right, txt)],
+                    (_, Line(x)) => vec![Entity::Noun(Right, Noun::Line(x))],
+                    (_, Level(x)) => vec![Entity::Noun(Right, Noun::Level(x))],
+                    (_, Blank) => vec![],
                 })
                 .chain(iter::repeat(vec![]))
                 .take(max)
@@ -1290,7 +1357,7 @@ type Diff = (Level, Level, Level, String, Input);
 
 pub async fn render_diff(path: &str) {
     let (start, good, bad, palette_name, input) = load::<_, Diff>(path).unwrap();
-    let palette = load_image(&format!("resources/Data/Palettes/{palette_name}.png")).await.unwrap();
+    let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
     let sprites = load_sprite_map().await;
     let render = |s, x, y, w, h| render_level(s, &palette, &sprites, Rect::new(x, y, w, h), 20.);
     let font_size = 20.;
@@ -1376,7 +1443,7 @@ pub async fn render_diff(path: &str) {
 
 pub async fn replay(path: &str) {
     let (screens, _, palette_name) = load::<_, Replay>(path).unwrap();
-    let palette = load_image(&format!("resources/Data/Palettes/{palette_name}.png")).await.unwrap();
+    let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
     let sprites = load_sprite_map().await;
 
     let mut last_input: (f64, Option<KeyCode>) = (0., None);
@@ -1478,12 +1545,12 @@ pub async fn main(level: Option<&str>) -> Replay {
 
     let sprites = load_sprite_map().await;
 
-    let congrats: Texture2D = load_texture("congratulations.png").await.unwrap();
+    let congrats: Texture2D = load_texture("resources/congratulations.png").await.unwrap();
 
     let mut history = vec![level.clone()];
     let mut current_state = &history[0];
 
-    let palette = load_image(&format!("resources/Data/Palettes/{palette_name}.png")).await.unwrap();
+    let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
 
     let anim_time = 2.0;
     let border_color = palette.get_pixel(1, 0);
@@ -1679,7 +1746,6 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
     }
     gl_use_default_material();
 
-    // (offset_x - bounds.x, offset_y - bounds.y)
     Rect::new(offset_x, offset_y, game_width, game_height)
 }
 
@@ -1687,16 +1753,19 @@ type SpriteMap = HashMap<Entity, [Texture2D; 3]>;
 
 async fn load_sprite_map() -> SpriteMap {
     async fn load(e: Entity) -> (Entity, [Texture2D; 3]) {
+        let orig = |s| Some(format!("resources/original/Data/Sprites/{s}"));
         let filename = match match e {
             Entity::Noun(_, n) => match n {
-                Wall => Some("wall_0".to_string()),
-                Line(x) => Some(format!("line_{x}")),
+                Wall => orig("wall_0".to_string()),
+                Line(x) => orig(format!("line_{x}")),
+                Level(_) => Some("resources/level_0".to_string()),
                 _ => None,
             },
-            Entity::Text(_, Text::Object(Line(_))) => Some("text_line_0".to_string()),
+            Entity::Text(_, Text::Object(Line(_))) => orig("text_line_0".to_string()),
+            Entity::Text(_, Text::Object(Level(_))) => orig("text_level_0".to_string()),
             _ => None,
         } {
-            Some(n) => format!("resources/Data/Sprites/{}", n).to_lowercase(),
+            Some(f) => f,
             None => {
                 let name = match e {
                     Entity::Noun(_, Bog) => "water".to_string(),
@@ -1714,7 +1783,7 @@ async fn load_sprite_map() -> SpriteMap {
                     }),
                 }.to_lowercase();
                 let filename = format!(
-                    "resources/Data/Sprites/{name}_{}",
+                    "resources/original/Data/Sprites/{name}_{}",
                     match match e { Entity::Noun(d, _) => d, Entity::Text(d, _) => d } {
                         Right => "0",
                         Up => "8",
@@ -1725,7 +1794,7 @@ async fn load_sprite_map() -> SpriteMap {
                 if std::path::Path::new(&format!("{filename}_1.png")).exists() {
                     filename
                 } else {
-                    format!("resources/Data/Sprites/{name}_0")
+                    format!("resources/original/Data/Sprites/{name}_0")
                 }
             },
         };

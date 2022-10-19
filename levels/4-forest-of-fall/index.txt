@@ -1,0 +1,45 @@
+t = tree
+a = apple
+h = husk
+f = fence
+g = grass
+w = water
+palette = autumn
+---
+  t t                      fggggg
+ t   t       h      t      fggggg
+t tt   t        t          fggggg
+ t ttt    t      t    t    fggggg
+t t t              𝟙       ffffff
+ t    t            │
+                72─1─•        fff
+t  t  t     𝔸┬─┬65 │          fgg
+t           ℂ𝔹 9843┘          fgg
+ t  t   h   𝔼𝔻   │            fgg
+   t         │ h │            fgg
+t       gg w 𝟛   ├0̸─𝟚         fff
+       ggg ww    1̸2̸
+         gh
+t   t   h  gg   h  a        fffff
+           ggh       a  a   fgggg
+          h gg h    a       fgggg
+   t          h             fgggg
++++
+p = pink
+r = red
+y = yellow
+---
+
+
+
+
+                   r
+
+                rr r p
+            p   rr
+            pp rrrr
+            pp
+
+             p    y y
+                 yy
++++
