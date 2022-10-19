@@ -1189,6 +1189,16 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
 
     let rules_cache = cache_rules(&rules);
 
+    // move you
+    if let Go(d) = input {
+        let m = entities(&level)
+            .filter_map(|((x, y, i), _)| match is(&level, x, y, i, &rules_cache, You) {
+                true => Some((x, y, i, d, false)),
+                false => None,
+            }).collect();
+        move_things(&mut level, &rules, m);
+    }
+
     // move cursor
     if let Go(d) = input {
         'top:
@@ -1210,16 +1220,6 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                 }
             }
         }
-    }
-
-    // move you
-    if let Go(d) = input {
-        let m = entities(&level)
-            .filter_map(|((x, y, i), _)| match is(&level, x, y, i, &rules_cache, You) {
-                true => Some((x, y, i, d, false)),
-                false => None,
-            }).collect();
-        move_things(&mut level, &rules, m);
     }
 
     // move move
