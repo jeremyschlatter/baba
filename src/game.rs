@@ -95,20 +95,20 @@ pub enum Noun {
     Line(u8),
 
     #[strum(props(color = "0 0", text_color = "4 0", text_color_active = "4 1"))]
-    Level(LevelGroup),
+    Level(LevelName),
 }
 use Noun::*;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
-pub enum LevelGroup {
+pub enum LevelName {
     Number(u8),
     Letter(char),
     Extra(u8),
 }
-use LevelGroup::*;
+use LevelName::*;
 
-impl Default for LevelGroup {
-    fn default() -> LevelGroup {
+impl Default for LevelName {
+    fn default() -> LevelName {
         Number(0)
     }
 }
@@ -303,7 +303,7 @@ fn parse_level(name: &str) -> (Level, String) {
         Adj(self::Adjective),
         Txt(self::Text),
         Line(u8),
-        Level(LevelGroup),
+        Level(LevelName),
         Cursor,
         Blank,
     }
@@ -1720,14 +1720,11 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
 
     let anim_frame = (get_time() / 0.15).trunc() as usize % 3;
 
-    let draw_sprite = |gx, gy, gz, x, y, w, h, entity, active| {
-        let anim_frame = (gx + gy + gz + anim_frame) % 3;
-        let sprite = sprites[&entity][anim_frame];
-        let c = default_color(entity, &palette, active);
+    let draw_sprite = |x, y, sq, sprite, c: Color| {
         SPRITES_MATERIAL.set_uniform("color", [c.r, c.g, c.b]);
         draw_texture_ex(
             sprite, x, y, WHITE, DrawTextureParams {
-                dest_size: Some(Vec2{x: w, y: h}),
+                dest_size: Some(Vec2{x: sq, y: sq}),
                 ..Default::default()
             },
         );
@@ -1741,15 +1738,18 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
             let x = offset_x + sq_size * col as f32;
             let y = offset_y + sq_size * row as f32;
             for (i, e) in level[row][col].iter().enumerate() {
-                draw_sprite(
-                    row, col, i,
-                    x,
-                    y,
-                    sq_size,
-                    sq_size,
-                    *e,
-                    active_texts.contains(&(col, row, i)),
+                let anim_frame = (row + col + i + anim_frame) % 3;
+                let c = default_color(
+                    *e, &palette, active_texts.contains(&(col, row, i)),
                 );
+                draw_sprite(x, y, sq_size, sprites.0[&e][anim_frame], c);
+                if let Entity::Noun(_, Level(l)) = e {
+                    draw_sprite(
+                        x + sq_size * 0.052,
+                        y + sq_size * 0.052,
+                        sq_size * 0.86,
+                        sprites.1[&l], WHITE);
+                }
                 if overridden_texts.contains(&(col, row, i)) {
                     let c = palette.get_pixel(2, 1);
                     SPRITES_MATERIAL.set_uniform("color", [c.r, c.g, c.b]);
@@ -1778,11 +1778,12 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
     Rect::new(offset_x, offset_y, game_width, game_height)
 }
 
-type SpriteMap = HashMap<Entity, [Texture2D; 3]>;
+type SpriteMap = (HashMap<Entity, [Texture2D; 3]>, HashMap<LevelName, Texture2D>);
 
 async fn load_sprite_map() -> SpriteMap {
     async fn load(e: Entity) -> (Entity, [Texture2D; 3]) {
-        let orig = |s| Some(format!("resources/original/Data/Sprites/{s}"));
+        let original_sprite_path = "resources/original/Data/Sprites";
+        let orig = |s| Some(format!("{original_sprite_path}/{s}"));
         let filename = match match e {
             Entity::Noun(_, n) => match n {
                 Wall => orig("wall_0".to_string()),
@@ -1812,7 +1813,7 @@ async fn load_sprite_map() -> SpriteMap {
                     }),
                 }.to_lowercase();
                 let filename = format!(
-                    "resources/original/Data/Sprites/{name}_{}",
+                    "{original_sprite_path}/{name}_{}",
                     match match e { Entity::Noun(d, _) => d, Entity::Text(d, _) => d } {
                         Right => "0",
                         Up => "8",
@@ -1823,7 +1824,7 @@ async fn load_sprite_map() -> SpriteMap {
                 if std::path::Path::new(&format!("{filename}_1.png")).exists() {
                     filename
                 } else {
-                    format!("resources/original/Data/Sprites/{name}_0")
+                    format!("{original_sprite_path}/{name}_0")
                 }
             },
         };
@@ -1836,7 +1837,52 @@ async fn load_sprite_map() -> SpriteMap {
             ],
         )
     }
-    futures::future::join_all(all_entities().map(load)).await.into_iter().collect()
+    async fn load_level_label(l: LevelName) -> (LevelName, Texture2D) {
+        let original_sprite_path = "resources/original/Data/Sprites";
+        let custom_sprite_path = "resources";
+        (l, match l {
+            Number(n) => {
+                use image::{ImageBuffer, imageops};
+                let load = |n| image::open(
+                    &format!("{original_sprite_path}/text_{n}_0_1.png")
+                ).unwrap();
+                let a = load(n / 10);
+                let b = load(n % 10);
+                assert!(a.width() == b.width() && a.height() == b.height());
+                let width = a.width();
+                let mut result = ImageBuffer::new(width, a.height());
+                let mut overlay = |img: image::DynamicImage, x| imageops::overlay(
+                    &mut result,
+                    &imageops::resize(
+                        &img, width / 2, img.height(), imageops::Lanczos3,
+                    ),
+                    x, 0,
+                );
+                overlay(a, 0);
+                overlay(b, (width / 2).into());
+                Texture2D::from_rgba8(
+                    width as u16,
+                    result.height() as u16,
+                    result.as_raw(),
+                )
+            },
+            Extra(n) => load_texture(
+                &format!("{custom_sprite_path}/pip_{n}.png")
+            ).await.unwrap(),
+            Letter(l) => load_texture(
+                &format!("{original_sprite_path}/text_{}_0_1.png", l)
+            ).await.unwrap(),
+        })
+    }
+    (
+        futures::future::join_all(all_entities().map(load)).await.into_iter().collect(),
+        futures::future::join_all(
+            (1..14).map(move |x| Number(x))
+            .chain(('A'..'E').map(move |x| Letter(x)))
+            .chain((1..3).map(move |x| Extra(x)))
+            .map(load_level_label)
+        ).await.into_iter().collect(),
+    )
 }
 
 lazy_static! {
