@@ -1,7 +1,3 @@
-#[macro_use]
-extern crate lazy_static;
-
-mod game;
 mod test;
 
 use clap::{Parser, Subcommand};

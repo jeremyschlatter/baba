@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate lazy_static;
+
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
 use macroquad::prelude::*;
@@ -263,7 +266,7 @@ fn canon(e: &Entity) -> Entity {
 type Cell = Vec<Entity>;
 type Level = Vec<Vec<Cell>>;
 
-fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String) {
+pub fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String) {
     let s = std::fs::read_to_string(name).unwrap();
     let metas: HashMap<&str, &str> =
         s.lines()
@@ -456,7 +459,7 @@ type Rule = (Subject, Negatable<Predicate>);
 
 #[cfg(test)]
 mod tests {
-    use crate::game::*;
+    use crate::*;
     #[test]
     fn scan_rules() {
         let is_a = |a| Yes(IsAdjective(a));

@@ -19,5 +19,14 @@ serde = { version = "1.0.145", features = ["derive"] }
 strum = { version = "0.24.1", features = ["derive"] }
 
 [dev-dependencies]
+criterion = "0.4.0"
 threadpool = "1.8.1"
 walkdir = "2.3.2"
+
+[lib]
+name = "game"
+path = "src/game.rs"
+
+[[bench]]
+name = "parse_level"
+harness = false
