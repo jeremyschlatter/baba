@@ -240,9 +240,6 @@ fn all_entities() -> impl Iterator<Item=Entity> {
         Noun::iter().map(move |n| Entity::Noun(d, n))
             .chain([3, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15].into_iter().map(move |i|
                     Entity::Noun(d, Line(i))))
-            .chain((1..14).map(move |x| Entity::Noun(d, Level(Number(x)))))
-            .chain(('A'..'E').map(move |x| Entity::Noun(d, Level(Letter(x)))))
-            .chain((1..3).map(move |x| Entity::Noun(d, Level(Extra(x)))))
             .chain(iter::once(Entity::Text(d, Text::Is)))
             .chain(iter::once(Entity::Text(d, Text::Not)))
             .chain(iter::once(Entity::Text(d, Text::And)))
@@ -1742,8 +1739,10 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
                 let c = default_color(
                     *e, &palette, active_texts.contains(&(col, row, i)),
                 );
-                draw_sprite(x, y, sq_size, sprites.0[&e][anim_frame], c);
                 if let Entity::Noun(_, Level(l)) = e {
+                    draw_sprite(x, y, sq_size, sprites.0[
+                        &Entity::Noun(Right, Level(LevelName::default()))
+                    ][anim_frame], c);
                     let (x, y, sq) = if let Extra(_) = l {
                         (x, y, sq_size)
                     } else {
@@ -1754,6 +1753,8 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
                         )
                     };
                     draw_sprite(x, y, sq, sprites.1[&l], WHITE);
+                } else {
+                    draw_sprite(x, y, sq_size, sprites.0[&e][anim_frame], c);
                 }
                 if overridden_texts.contains(&(col, row, i)) {
                     let c = palette.get_pixel(2, 1);
