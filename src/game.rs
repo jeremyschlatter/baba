@@ -315,7 +315,6 @@ pub fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String) {
         Txt(self::Text),
         Line(u8),
         Level(LevelName),
-        Cursor,
         Blank,
     }
     use Thing::*;
@@ -378,8 +377,6 @@ pub fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String) {
                     '𝟐' => Level(Number(12)),
                     '𝟑' => Level(Number(13)),
 
-                    '•' => Cursor,
-
                     _ => Blank
                 }) {
                     (Some(FullCell(cell)), _) => if c.is_uppercase() {
@@ -400,7 +397,6 @@ pub fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String) {
                     (_, Txt(txt)) => vec![Entity::Text(Right, txt)],
                     (_, Line(x)) => vec![Entity::Noun(Right, Noun::Line(x))],
                     (_, Level(x)) => vec![Entity::Noun(Right, Noun::Level(x))],
-                    (_, Cursor) => vec![Entity::Noun(Right, Noun::Cursor)],
                     (_, Blank) => vec![],
                 })
                 .chain(iter::repeat(vec![]))
@@ -1611,15 +1607,15 @@ pub async fn play_overworld(level: &str) {
 
     use LevelResult::*;
     let level = parse_level_graph(level).unwrap();
-    let mut stack = vec![&level];
+    let mut stack = vec![(&level, None)];
     loop {
-        let level = if let Some(level) = stack.pop() { level } else { return; };
-        match play_level(&sprites, &level.path).await {
+        let (level, ix) = if let Some(x) = stack.pop() { x } else { return; };
+        match play_level(&sprites, &level.path, ix).await {
             Win(_) => (),
             Exit => (),
             Enter(lvl) => {
-                stack.push(&level);
-                stack.push(&level.sub_levels[&lvl]);
+                stack.push((&level, Some(lvl)));
+                stack.push((&level.sub_levels[&lvl], None));
             },
         };
     }
@@ -1631,8 +1627,29 @@ pub enum LevelResult {
     Enter(LevelName),
 }
 
-pub async fn play_level<P: AsRef<std::path::Path>>(sprites: &SpriteMap, level: P) -> LevelResult {
-    let (level, palette_name) = parse_level(level);
+pub async fn play_level<P>(sprites: &SpriteMap, level: P, cursor: Option<LevelName>) -> LevelResult
+where
+    P: AsRef<std::path::Path>
+{
+    let (mut level, palette_name) = parse_level(level);
+
+    let cursor = cursor.unwrap_or(Number(1));
+
+    'cursor_loop:
+    for y in 0..level.len() {
+        for x in 0..level[0].len() {
+            for i in 0..level[y][x].len() {
+                if let Entity::Noun(_, Level(l)) = level[y][x][i] {
+                    if l == cursor {
+                        level[y][x].push(Entity::Noun(Right, Cursor));
+                        break 'cursor_loop;
+                    }
+                }
+            }
+        }
+    }
+
+    let level = level; // drop mutability
 
     let mut inputs: Vec<Input> = vec![];
     // views is different from history, below, in that the Undo action
