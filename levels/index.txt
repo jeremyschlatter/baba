@@ -4,21 +4,23 @@ l = level 1/ lake
 i = level 2/ island
 r = level 3/ ruins
 a = level 4/ fall
+background = island island_decor
 ---
 
-          o
-                o   o
-           oo┐  │   │
-             ├──┴─r─┴o
-             │    │
-             o    │
-                ┌─i─┐
-                l   │   o
-                │   │
-           57┬──┘   │
-           246      └a
-           13┴──o
-           │
-          0┘               o   B=✥
 
-                               F=✓
+         o
+               o   o
+          oo┐  │   │
+            ├──┴─r─┴o
+            │    │
+            o    │
+               ┌─i─┐
+               l   │   o
+               │   │
+          57┬──┘   │
+          246      └a
+          13┴──o
+          │
+         0┘               o   B=✥
+
+                              F=✓

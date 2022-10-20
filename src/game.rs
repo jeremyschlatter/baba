@@ -266,7 +266,7 @@ fn canon(e: &Entity) -> Entity {
 type Cell = Vec<Entity>;
 type Level = Vec<Vec<Cell>>;
 
-pub fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String) {
+pub fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String, Vec<String>) {
     let s = std::fs::read_to_string(name).unwrap();
     let metas: HashMap<&str, &str> =
         s.lines()
@@ -278,6 +278,11 @@ pub fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String) {
              .collect();
     let right_pad: usize =
         metas.get("right pad").and_then(|s| s.parse().ok()).unwrap_or_default();
+    let backgrounds = metas.get("background")
+        .unwrap_or(&"")
+        .split(" ")
+        .map(|x| x.to_string())
+        .collect::<Vec<String>>();
     enum LegendValue {
         Abbreviation(Noun),
         FullCell(Cell),
@@ -418,7 +423,7 @@ pub fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String) {
                      )
                  .collect::<Vec<Vec<Vec<Entity>>>>());
 
-    (level, metas.get("palette").unwrap_or(&"default").to_string())
+    (level, metas.get("palette").unwrap_or(&"default").to_string(), backgrounds)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -1395,7 +1400,7 @@ pub async fn render_diff(path: &str) {
     let (start, good, bad, palette_name, input) = load::<_, Diff>(path).unwrap();
     let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
     let sprites = load_sprite_map().await;
-    let render = |s, x, y, w, h| render_level(s, &palette, &sprites, Rect::new(x, y, w, h), 20.);
+    let render = |s, x, y, w, h| render_level(s, &palette, &sprites, &[], Rect::new(x, y, w, h), 20.);
     let font_size = 20.;
     let font_color = WHITE;
     loop {
@@ -1506,6 +1511,7 @@ pub async fn replay(path: &str) {
             &screens[i],
             &palette,
             &sprites,
+            &[],
             Rect::new(0., 0., screen_width(), screen_height()),
             20.,
         );
@@ -1631,7 +1637,7 @@ pub async fn play_level<P>(sprites: &SpriteMap, level: P, cursor: Option<LevelNa
 where
     P: AsRef<std::path::Path>
 {
-    let (mut level, palette_name) = parse_level(level);
+    let (mut level, palette_name, backgrounds) = parse_level(level);
 
     let cursor = cursor.unwrap_or(Number(1));
 
@@ -1759,6 +1765,7 @@ where
                 &current_state,
                 &palette,
                 &sprites,
+                &backgrounds,
                 Rect::new(0., 0., screen_width(), screen_height()),
                 20.,
             );
@@ -1803,7 +1810,14 @@ where
     }
 }
 
-fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rect, min_border: f32) -> Rect {
+fn render_level(
+    level: &Level,
+    palette: &Image,
+    sprites: &SpriteMap,
+    backgrounds: &[String],
+    bounds: Rect,
+    min_border: f32,
+) -> Rect {
     let width = level[0].len();
     let height = level.len();
     let sq_size = ((bounds.w - min_border) / width as f32).min((bounds.h - min_border) / height as f32);
@@ -1839,6 +1853,15 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
     };
 
     draw_rectangle(offset_x, offset_y, game_width, game_height, palette.get_pixel(0, 4));
+
+    for b in backgrounds {
+        draw_texture_ex(
+            sprites.3[b][anim_frame], offset_x, offset_y, WHITE, DrawTextureParams {
+                dest_size: Some(Vec2{x: game_width, y: game_height}),
+                ..Default::default()
+            },
+        );
+    }
 
     gl_use_material(*SPRITES_MATERIAL);
     for row in 0..height {
@@ -1895,6 +1918,7 @@ type SpriteMap = (
     HashMap<Entity, [Texture2D; 3]>,
     HashMap<LevelName, Texture2D>,
     Texture2D,
+    HashMap<String, [Texture2D; 3]>,
 );
 
 pub async fn load_sprite_map() -> SpriteMap {
@@ -2009,15 +2033,36 @@ pub async fn load_sprite_map() -> SpriteMap {
     }
     let t = get_time();
     println!("start");
+    async fn collect<K, V, I, F>(iter: I) -> HashMap<K, V>
+    where
+        I: IntoIterator<Item = F>,
+        F: futures::future::Future<Output = (K, V)>,
+        K: std::hash::Hash + std::cmp::Eq,
+    {
+        futures::future::join_all(iter).await.into_iter().collect()
+    }
+    async fn load_background(img: &str) -> (String, [Texture2D; 3]) {
+        async fn load(img: &str, n: u8) -> Texture2D {
+            load_texture(
+                &format!(
+                    "resources/original/Data/Worlds/Baba/Images/{img}_{n}.png"
+                )
+            ).await.unwrap()
+        }
+        (img.to_string(), [load(img, 1).await, load(img, 2).await, load(img, 3).await])
+    }
     let r = (
-        futures::future::join_all(all_entities().map(load)).await.into_iter().collect(),
-        futures::future::join_all(
-            (1..14).map(move |x| Number(x))
+        collect(all_entities().map(load)).await,
+        collect(
+            (0..14).map(move |x| Number(x))
             .chain(('A'..'E').map(move |x| Letter(x)))
             .chain((1..3).map(move |x| Extra(x)))
             .map(load_level_label)
-        ).await.into_iter().collect(),
+        ).await,
         load_texture("resources/congratulations.png").await.unwrap(),
+        collect(
+            ["island", "island_decor", "flower"].into_iter().map(load_background)
+        ).await,
     );
     println!("{}s", get_time() - t);
     r
