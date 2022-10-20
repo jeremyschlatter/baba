@@ -1744,11 +1744,16 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
                 );
                 draw_sprite(x, y, sq_size, sprites.0[&e][anim_frame], c);
                 if let Entity::Noun(_, Level(l)) = e {
-                    draw_sprite(
-                        x + sq_size * 0.052,
-                        y + sq_size * 0.052,
-                        sq_size * 0.86,
-                        sprites.1[&l], WHITE);
+                    let (x, y, sq) = if let Extra(_) = l {
+                        (x, y, sq_size)
+                    } else {
+                        (
+                            x + sq_size * 0.175,
+                            y + sq_size * 0.175,
+                            sq_size * 0.6,
+                        )
+                    };
+                    draw_sprite(x, y, sq, sprites.1[&l], WHITE);
                 }
                 if overridden_texts.contains(&(col, row, i)) {
                     let c = palette.get_pixel(2, 1);
@@ -1844,22 +1849,38 @@ async fn load_sprite_map() -> SpriteMap {
             Number(n) => {
                 use image::{ImageBuffer, imageops};
                 let load = |n| image::open(
-                    &format!("{original_sprite_path}/text_{n}_0_1.png")
-                ).unwrap();
+                    &if n == 0 {
+                        format!("{original_sprite_path}/text_o_0_1.png")
+                    } else {
+                        format!("{original_sprite_path}/text_{n}_0_1.png")
+                    }
+                ).unwrap().into_rgba8();
+                fn shrinkwrap(img: image::RgbaImage) -> image::RgbaImage {
+                    let b = || img.enumerate_pixels().filter(|x| x.2[3] == 255);
+                    let w = || b().map(|x| x.0);
+                    let h = || b().map(|x| x.1);
+                    let buffer = 1;
+                    let left = w().min().unwrap() - buffer;
+                    let right = w().max().unwrap() + buffer;
+                    let top = h().min().unwrap();
+                    let bottom = h().max().unwrap();
+                    imageops::crop_imm(&img, left, top, right - left, bottom - top).to_image()
+                }
                 let a = load(n / 10);
                 let b = load(n % 10);
                 assert!(a.width() == b.width() && a.height() == b.height());
                 let width = a.width();
-                let mut result = ImageBuffer::new(width, a.height());
-                let mut overlay = |img: image::DynamicImage, x| imageops::overlay(
+                let height = a.width();
+                let mut result = ImageBuffer::new(width, height);
+                let mut overlay = |img: image::RgbaImage, x| imageops::overlay(
                     &mut result,
                     &imageops::resize(
-                        &img, width / 2, img.height(), imageops::Lanczos3,
+                        &img, width / 2, height, imageops::Lanczos3,
                     ),
                     x, 0,
                 );
-                overlay(a, 0);
-                overlay(b, (width / 2).into());
+                overlay(shrinkwrap(a), 0);
+                overlay(shrinkwrap(b), (width / 2).into());
                 Texture2D::from_rgba8(
                     width as u16,
                     result.height() as u16,
