@@ -236,17 +236,28 @@ fn default_color(e: Entity, palette: &Image, active: bool) -> Color {
 }
 
 fn all_entities() -> impl Iterator<Item=Entity> {
-    Direction::iter().flat_map(|d|
-        Noun::iter().map(move |n| Entity::Noun(d, n))
-            .chain([3, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15].into_iter().map(move |i|
-                    Entity::Noun(d, Line(i))))
-            .chain(iter::once(Entity::Text(d, Text::Is)))
-            .chain(iter::once(Entity::Text(d, Text::Not)))
-            .chain(iter::once(Entity::Text(d, Text::And)))
-            .chain(iter::once(Entity::Text(d, Text::Has)))
-            .chain(iter::once(Entity::Text(d, Text::Text)))
-            .chain(Noun::iter().map(move |n| Entity::Text(d, Text::Object(n))))
-            .chain(Adjective::iter().map(move |a| Entity::Text(d, Text::Adjective(a)))))
+    [3, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15].into_iter().map(move |i|
+            Entity::Noun(Right, Line(i)))
+    .chain(iter::once(Entity::Text(Right, Text::Is)))
+    .chain(iter::once(Entity::Text(Right, Text::Not)))
+    .chain(iter::once(Entity::Text(Right, Text::And)))
+    .chain(iter::once(Entity::Text(Right, Text::Has)))
+    .chain(iter::once(Entity::Text(Right, Text::Text)))
+    .chain(Noun::iter().map(move |n| Entity::Text(Right, Text::Object(n))))
+    .chain(Adjective::iter().map(move |a| Entity::Text(Right, Text::Adjective(a))))
+    .chain(Direction::iter().flat_map(|d|
+        Noun::iter().map(move |n| Entity::Noun(d, n))))
+}
+
+fn canon(e: &Entity) -> Entity {
+    match e {
+        Entity::Text(_, t) => Entity::Text(Right, *t),
+        Entity::Noun(_, n) => match n {
+            Line(x) => Entity::Noun(Right, Line(*x)),
+            Level(_) => Entity::Noun(Right, Level(LevelName::default())),
+            _ => *e,
+        }
+    }
 }
 
 type Cell = Vec<Entity>;
@@ -1739,10 +1750,8 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
                 let c = default_color(
                     *e, &palette, active_texts.contains(&(col, row, i)),
                 );
+                draw_sprite(x, y, sq_size, sprites.0[&canon(&e)][anim_frame], c);
                 if let Entity::Noun(_, Level(l)) = e {
-                    draw_sprite(x, y, sq_size, sprites.0[
-                        &Entity::Noun(Right, Level(LevelName::default()))
-                    ][anim_frame], c);
                     let (x, y, sq) = if let Extra(_) = l {
                         (x, y, sq_size)
                     } else {
@@ -1753,8 +1762,6 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
                         )
                     };
                     draw_sprite(x, y, sq, sprites.1[&l], WHITE);
-                } else {
-                    draw_sprite(x, y, sq_size, sprites.0[&e][anim_frame], c);
                 }
                 if overridden_texts.contains(&(col, row, i)) {
                     let c = palette.get_pixel(2, 1);
