@@ -1639,7 +1639,7 @@ pub async fn play_level<P: AsRef<std::path::Path>>(sprites: &SpriteMap, level: P
     // pops from history and pushes onto views.
     let mut views: Vec<Level> = vec![level.clone()];
 
-    let congrats: Texture2D = load_texture("resources/congratulations.png").await.unwrap();
+    let congrats = sprites.2;
 
     let mut history = vec![level.clone()];
     let mut current_state = &history[0];
@@ -1874,7 +1874,11 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
     Rect::new(offset_x, offset_y, game_width, game_height)
 }
 
-type SpriteMap = (HashMap<Entity, [Texture2D; 3]>, HashMap<LevelName, Texture2D>);
+type SpriteMap = (
+    HashMap<Entity, [Texture2D; 3]>,
+    HashMap<LevelName, Texture2D>,
+    Texture2D,
+);
 
 pub async fn load_sprite_map() -> SpriteMap {
     async fn load(e: Entity) -> (Entity, [Texture2D; 3]) {
@@ -1996,6 +2000,7 @@ pub async fn load_sprite_map() -> SpriteMap {
             .chain((1..3).map(move |x| Extra(x)))
             .map(load_level_label)
         ).await.into_iter().collect(),
+        load_texture("resources/congratulations.png").await.unwrap(),
     );
     println!("{}s", get_time() - t);
     r
