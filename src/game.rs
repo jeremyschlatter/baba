@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use itertools::Itertools;
 use macroquad::prelude::*;
 use miniquad::graphics::*;
@@ -263,7 +263,7 @@ fn canon(e: &Entity) -> Entity {
 type Cell = Vec<Entity>;
 type Level = Vec<Vec<Cell>>;
 
-fn parse_level(name: &str) -> (Level, String) {
+fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String) {
     let s = std::fs::read_to_string(name).unwrap();
     let metas: HashMap<&str, &str> =
         s.lines()
@@ -1561,26 +1561,80 @@ where
           .map(|&(k, a)| { *prev = (now, Some(k)); a })
 }
 
-pub async fn main(level: Option<&str>) -> Replay {
-    let (level, palette_name) = parse_level(level.unwrap_or(
-        // "levels/0-baba-is-you.txt"
-        // "levels/1-where-do-i-go.txt"
-        // "levels/2-now-what-is-this.txt"
-        // "levels/3-out-of-reach.txt"
-        // "levels/4-still-out-of-reach.txt"
-        // "levels/5-volcano.txt"
-        // "levels/6-off-limits.txt"
-        // "levels/7-grass-yard.txt"
-        // "levels/1-the-lake/1-icy-waters.txt"
-        "levels/1-the-lake/2-turns.txt"
-    ));
+#[derive(Debug)]
+struct LevelGraph {
+    path: std::path::PathBuf,
+    sub_levels: HashMap<LevelName, LevelGraph>,
+}
+
+fn parse_level_graph<P: AsRef<std::path::Path>>(path: P) -> Result<LevelGraph> {
+    fn to_level_name(p: &std::path::Path) -> Result<LevelName> {
+        let p = p.file_name().and_then(|x| x.to_str()).ok_or(anyhow!("un-string-able path: {p:?}"))?;
+        let nm = p.split("-").next().ok_or(anyhow!("need dashes in level name: {p:?}"))?;
+        if let Ok(n) = nm.parse::<u8>() {
+            Ok(Number(n))
+        } else if let Ok(c) = nm.parse::<char>() {
+            Ok(Letter(c))
+        } else if nm == "extra" {
+            let nm = p.split("-").skip(1).next().ok_or(anyhow!("need dashes in level name: {p:?}"))?;
+            Ok(Extra(nm.parse::<u8>()?))
+
+        } else {
+            anyhow::bail!("level name doesn't fit normal pattern: {p:?}")
+        }
+    }
+    let path = path.as_ref();
+    Ok(if path.is_dir() {
+        LevelGraph {
+            path: path.join("index.txt"),
+            sub_levels: {
+                let mut m = HashMap::new();
+                for e in path.read_dir()? {
+                    let path = e?.path();
+                    if path.file_name() != Some(std::ffi::OsStr::new("index.txt")) {
+                        m.insert(to_level_name(&path)?, parse_level_graph(&path)?);
+                    }
+                }
+                m
+            },
+        }
+    } else {
+        LevelGraph{ path: path.into(), sub_levels: HashMap::new() }
+    })
+}
+
+pub async fn play_overworld(level: &str) {
+    let sprites = load_sprite_map().await;
+
+    use LevelResult::*;
+    let level = parse_level_graph(level).unwrap();
+    let mut stack = vec![&level];
+    loop {
+        let level = if let Some(level) = stack.pop() { level } else { return; };
+        match play_level(&sprites, &level.path).await {
+            Win(_) => (),
+            Exit => (),
+            Enter(lvl) => {
+                stack.push(&level);
+                stack.push(&level.sub_levels[&lvl]);
+            },
+        };
+    }
+}
+
+pub enum LevelResult {
+    Win(Replay),
+    Exit,
+    Enter(LevelName),
+}
+
+pub async fn play_level<P: AsRef<std::path::Path>>(sprites: &SpriteMap, level: P) -> LevelResult {
+    let (level, palette_name) = parse_level(level);
 
     let mut inputs: Vec<Input> = vec![];
     // views is different from history, below, in that the Undo action
     // pops from history and pushes onto views.
     let mut views: Vec<Level> = vec![level.clone()];
-
-    let sprites = load_sprite_map().await;
 
     let congrats: Texture2D = load_texture("resources/congratulations.png").await.unwrap();
 
@@ -1602,10 +1656,17 @@ pub async fn main(level: Option<&str>) -> Replay {
     enum UIInput {
         Control(Input),
         Pause,
+        Enter,
     }
     use UIInput::*;
 
     let mut last_input: (f64, Option<KeyCode>) = (0., None);
+    loop {
+        if !is_key_down(KeyCode::Escape) && !is_key_down(KeyCode::Enter) {
+            break;
+        }
+        next_frame().await
+    }
 
     loop {
         // update
@@ -1619,6 +1680,7 @@ pub async fn main(level: Option<&str>) -> Replay {
                 (KeyCode::Space, Control(Wait)),
                 (KeyCode::Z, Control(Undo)),
                 (KeyCode::Escape, Pause),
+                (KeyCode::Enter, Enter),
             ],
             |i, t| match i {
                 Control(Undo) => t > 0.075,
@@ -1643,7 +1705,25 @@ pub async fn main(level: Option<&str>) -> Replay {
                     }
                     history.push(next);
                 },
-                Some(Pause) => paused = !paused,
+                Some(Pause) => return LevelResult::Exit,
+                // Some(Pause) => paused = !paused,
+                Some(Enter) => {
+                    for y in 0..current_state.len() {
+                        for x in 0..current_state[0].len() {
+                            if !current_state[y][x].iter().any(|e| match e {
+                                Entity::Noun(_, Cursor) => true,
+                                _ => false,
+                            }) {
+                                continue;
+                            }
+                            for e in current_state[y][x].iter() {
+                                if let Entity::Noun(_, Level(l)) = *e {
+                                    return LevelResult::Enter(l);
+                                }
+                            }
+                        }
+                    }
+                },
             };
             current_state = &history[history.len() - 1];
             if let Some(Control(i)) = current_input {
@@ -1673,7 +1753,7 @@ pub async fn main(level: Option<&str>) -> Replay {
                 None => (),
                 Some(anim_start) => {
                     if (get_time() - anim_start) > anim_time + 0.5 {
-                        return (views, inputs, palette_name.to_string());
+                        return LevelResult::Win((views, inputs, palette_name.to_string()));
                     }
                     gl_use_material(*MASK_MATERIAL);
                     MASK_MATERIAL.set_uniform(
@@ -1793,7 +1873,7 @@ fn render_level(level: &Level, palette: &Image, sprites: &SpriteMap, bounds: Rec
 
 type SpriteMap = (HashMap<Entity, [Texture2D; 3]>, HashMap<LevelName, Texture2D>);
 
-async fn load_sprite_map() -> SpriteMap {
+pub async fn load_sprite_map() -> SpriteMap {
     async fn load(e: Entity) -> (Entity, [Texture2D; 3]) {
         let original_sprite_path = "resources/original/Data/Sprites";
         let orig = |s| Some(format!("{original_sprite_path}/{s}"));
@@ -1903,7 +1983,9 @@ async fn load_sprite_map() -> SpriteMap {
             ).await.unwrap(),
         })
     }
-    (
+    let t = get_time();
+    println!("start");
+    let r = (
         futures::future::join_all(all_entities().map(load)).await.into_iter().collect(),
         futures::future::join_all(
             (1..14).map(move |x| Number(x))
@@ -1911,7 +1993,9 @@ async fn load_sprite_map() -> SpriteMap {
             .chain((1..3).map(move |x| Extra(x)))
             .map(load_level_label)
         ).await.into_iter().collect(),
-    )
+    );
+    println!("{}s", get_time() - t);
+    r
 }
 
 lazy_static! {

@@ -39,9 +39,9 @@ async fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        None => { game::main(None).await; },
+        None => { game::play_overworld("levels/1-the-lake/index.txt").await; },
         Some(c) => match c {
-            Level { level } => { game::main(Some(&level)).await; },
+            Level { level } => { game::play_overworld(&level).await; },
             Golden{ level, output } => test::record_golden(&level, &output).await,
             Replay { replay } => game::replay(&replay).await,
             RenderDiff { diff } => game::render_diff(&diff).await,
