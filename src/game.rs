@@ -282,6 +282,7 @@ pub fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String, Vec<St
         .unwrap_or(&"")
         .split(" ")
         .map(|x| x.to_string())
+        .filter(|x| x != "")
         .collect::<Vec<String>>();
     enum LegendValue {
         Abbreviation(Noun),
@@ -1399,7 +1400,7 @@ type Diff = (Level, Level, Level, String, Input);
 pub async fn render_diff(path: &str) {
     let (start, good, bad, palette_name, input) = load::<_, Diff>(path).unwrap();
     let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
-    let sprites = load_sprite_map().await;
+    let sprites = load_sprite_map();
     let render = |s, x, y, w, h| render_level(s, &palette, &sprites, &[], Rect::new(x, y, w, h), 20.);
     let font_size = 20.;
     let font_color = WHITE;
@@ -1485,7 +1486,7 @@ pub async fn render_diff(path: &str) {
 pub async fn replay(path: &str) {
     let (screens, _, palette_name) = load::<_, Replay>(path).unwrap();
     let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
-    let sprites = load_sprite_map().await;
+    let sprites = load_sprite_map();
 
     let mut last_input: (f64, Option<KeyCode>) = (0., None);
     let mut i = 0;
@@ -1609,7 +1610,7 @@ fn parse_level_graph<P: AsRef<std::path::Path>>(path: P) -> Result<LevelGraph> {
 }
 
 pub async fn play_overworld(level: &str) {
-    let sprites = load_sprite_map().await;
+    let sprites = load_sprite_map();
 
     use LevelResult::*;
     let level = parse_level_graph(level).unwrap();
@@ -1914,15 +1915,52 @@ fn render_level(
     Rect::new(offset_x, offset_y, game_width, game_height)
 }
 
-type SpriteMap = (
-    HashMap<Entity, [Texture2D; 3]>,
-    HashMap<LevelName, Texture2D>,
-    Texture2D,
-    HashMap<String, [Texture2D; 3]>,
+type SpriteMapT<T> = (
+    HashMap<Entity, [T; 3]>,
+    HashMap<LevelName, T>,
+    T,
+    HashMap<String, [T; 3]>,
 );
+type SpriteMap = SpriteMapT<Texture2D>;
 
-pub async fn load_sprite_map() -> SpriteMap {
-    async fn load(e: Entity) -> (Entity, [Texture2D; 3]) {
+pub fn load_sprite_map() -> SpriteMap {
+    type CPUTexture = (u16, u16, Vec<u8>);
+
+    fn memo<F: Fn() -> Result<image::DynamicImage>>(key: &str, f: F) -> Result<CPUTexture> {
+        let cache = dirs::cache_dir().unwrap().join("baba_is_clone").join(key);
+
+        if let Ok(mut b) = std::fs::read(&cache) {
+            let l = b.len() - 1;
+            let w = u16::from_be_bytes([b[l-3], b[l-2]]);
+            let h = u16::from_be_bytes([b[l-1], b[l-0]]);
+            b.truncate(b.len() - 4);
+            return Ok((w, h, b));
+        }
+
+        let img = f()?;
+        let w = img.width() as u16;
+        let h = img.height() as u16;
+        let mut b = img.to_rgba8().into_raw();
+        {
+            let w = u16::to_be_bytes(w);
+            let h = u16::to_be_bytes(h);
+            b.extend_from_slice(&w[..]);
+            b.extend_from_slice(&h[..]);
+            std::fs::create_dir_all(&cache.parent().unwrap())?;
+            std::fs::write(&cache, &b)?;
+            b.truncate(b.len() - 4);
+        }
+        Ok((w, h, b))
+    }
+
+    fn load_texture_sync(path: &str) -> Result<CPUTexture> {
+        memo(path, || {
+            let bytes = std::fs::read(path)?;
+            Ok(image::load_from_memory_with_format(&bytes[..], ImageFormat::Png)?)
+        })
+    }
+
+    fn load(e: Entity) -> (Entity, [CPUTexture; 3]) {
         let original_sprite_path = "resources/original/Data/Sprites";
         let orig = |s| Some(format!("{original_sprite_path}/{s}"));
         let filename = match match e {
@@ -1972,17 +2010,17 @@ pub async fn load_sprite_map() -> SpriteMap {
         (
             e,
             [
-                load_texture(&format!("{filename}_1.png")).await.unwrap(),
-                load_texture(&format!("{filename}_2.png")).await.unwrap(),
-                load_texture(&format!("{filename}_3.png")).await.unwrap(),
+                load_texture_sync(&format!("{filename}_1.png")).unwrap(),
+                load_texture_sync(&format!("{filename}_2.png")).unwrap(),
+                load_texture_sync(&format!("{filename}_3.png")).unwrap(),
             ],
         )
     }
-    async fn load_level_label(l: LevelName) -> (LevelName, Texture2D) {
+    fn load_level_label(l: LevelName) -> (LevelName, CPUTexture) {
         let original_sprite_path = "resources/original/Data/Sprites";
         let custom_sprite_path = "resources";
         (l, match l {
-            Number(n) => {
+            Number(n) => memo(&format!("level_number_{n}"), || {
                 use image::{ImageBuffer, imageops};
                 let load = |n| image::open(
                     &if n == 0 {
@@ -2017,55 +2055,50 @@ pub async fn load_sprite_map() -> SpriteMap {
                 );
                 overlay(shrinkwrap(a), 0);
                 overlay(shrinkwrap(b), (width / 2).into());
-                Texture2D::from_rgba8(
-                    width as u16,
-                    result.height() as u16,
-                    result.as_raw(),
-                )
-            },
-            Extra(n) => load_texture(
+                Ok(image::DynamicImage::ImageRgba8(result))
+            }).unwrap(),
+            Extra(n) => load_texture_sync(
                 &format!("{custom_sprite_path}/pip_{n}.png")
-            ).await.unwrap(),
-            Letter(l) => load_texture(
+            ).unwrap(),
+            Letter(l) => load_texture_sync(
                 &format!("{original_sprite_path}/text_{}_0_1.png", l)
-            ).await.unwrap(),
+            ).unwrap(),
         })
     }
-    let t = get_time();
-    println!("start");
-    async fn collect<K, V, I, F>(iter: I) -> HashMap<K, V>
-    where
-        I: IntoIterator<Item = F>,
-        F: futures::future::Future<Output = (K, V)>,
-        K: std::hash::Hash + std::cmp::Eq,
-    {
-        futures::future::join_all(iter).await.into_iter().collect()
-    }
-    async fn load_background(img: &str) -> (String, [Texture2D; 3]) {
-        async fn load(img: &str, n: u8) -> Texture2D {
-            load_texture(
+
+    fn load_background(img: &str) -> (String, [CPUTexture; 3]) {
+        fn load(img: &str, n: u8) -> CPUTexture {
+            load_texture_sync(
                 &format!(
                     "resources/original/Data/Worlds/Baba/Images/{img}_{n}.png"
                 )
-            ).await.unwrap()
+            ).unwrap()
         }
-        (img.to_string(), [load(img, 1).await, load(img, 2).await, load(img, 3).await])
+        (img.to_string(), [load(img, 1), load(img, 2), load(img, 3)])
     }
-    let r = (
-        collect(all_entities().map(load)).await,
-        collect(
-            (0..14).map(move |x| Number(x))
+
+    let r: SpriteMapT<CPUTexture> = (
+        all_entities().map(load).collect(),
+        (0..14).map(move |x| Number(x))
             .chain(('A'..'E').map(move |x| Letter(x)))
             .chain((1..3).map(move |x| Extra(x)))
             .map(load_level_label)
-        ).await,
-        load_texture("resources/congratulations.png").await.unwrap(),
-        collect(
-            ["island", "island_decor", "flower"].into_iter().map(load_background)
-        ).await,
+            .collect(),
+        load_texture_sync("resources/congratulations.png").unwrap(),
+        ["island", "island_decor", "flower"]
+            .into_iter().map(load_background).collect(),
     );
-    println!("{}s", get_time() - t);
-    r
+
+    fn l((w, h, b): CPUTexture) -> Texture2D {
+        Texture2D::from_rgba8(w, h, &b)
+    }
+
+    (
+        r.0.into_iter().map(|(k, [v0, v1, v2])| (k, [l(v0), l(v1), l(v2)])).collect(),
+        r.1.into_iter().map(|(k, v)| (k, l(v))).collect(),
+        l(r.2),
+        r.3.into_iter().map(|(k, [v0, v1, v2])| (k, [l(v0), l(v1), l(v2)])).collect(),
+    )
 }
 
 lazy_static! {
