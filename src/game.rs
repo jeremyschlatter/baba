@@ -107,6 +107,7 @@ pub enum LevelName {
     Number(u8),
     Letter(char),
     Extra(u8),
+    SubWorld(u8, usize),
 }
 use LevelName::*;
 
@@ -288,6 +289,7 @@ pub fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String, Vec<St
         Abbreviation(Noun),
         FullCell(Cell),
     }
+    let icons = level_icon_names();
     use LegendValue::*;
     let legend: HashMap<String, LegendValue> =
         metas.iter()
@@ -305,8 +307,17 @@ pub fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String, Vec<St
                              .map(|s| {
                                  let mut x = s.split(" ");
                                  let n = x.next().unwrap();
-                                 let d = x.next().and_then(|s| Direction::from_str(s).ok()).unwrap_or(Right);
-                                 Entity::Noun(d, Noun::from_str(n).expect(n))
+                                 if n == "map" {
+                                     let n = x.next().unwrap().parse().unwrap();
+                                     let icon = x.next().unwrap();
+                                     let icon = icons.iter().position(|i| i == icon).unwrap();
+                                     Entity::Noun(Right, Noun::Level(SubWorld(n, icon)))
+                                 } else {
+                                     let d = x.next()
+                                         .and_then(|s| Direction::from_str(s).ok())
+                                         .unwrap_or(Right);
+                                     Entity::Noun(d, Noun::from_str(n).expect(n))
+                                }
                              })
                              .collect()
                         )
@@ -369,6 +380,7 @@ pub fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String, Vec<St
                     '𝟙' => Level(Extra(1)),
                     '𝟚' => Level(Extra(2)),
 
+                    '0' => Level(Number(0)),
                     '1' => Level(Number(1)),
                     '2' => Level(Number(2)),
                     '3' => Level(Number(3)),
@@ -1575,14 +1587,17 @@ struct LevelGraph {
 
 fn parse_level_graph<P: AsRef<std::path::Path>>(path: P) -> Result<LevelGraph> {
     fn to_level_name(p: &std::path::Path) -> Result<LevelName> {
-        let p = p.file_name().and_then(|x| x.to_str()).ok_or(anyhow!("un-string-able path: {p:?}"))?;
-        let nm = p.split("-").next().ok_or(anyhow!("need dashes in level name: {p:?}"))?;
+        let f = p.file_name().and_then(|x| x.to_str()).ok_or(anyhow!("un-string-able path: {p:?}"))?;
+        let nm = f.split("-").next().ok_or(anyhow!("need dashes in level name: {p:?}"))?;
+        if p.is_dir() {
+            return Ok(SubWorld(nm.parse()?, 0));
+        }
         if let Ok(n) = nm.parse::<u8>() {
             Ok(Number(n))
         } else if let Ok(c) = nm.parse::<char>() {
             Ok(Letter(c))
         } else if nm == "extra" {
-            let nm = p.split("-").skip(1).next().ok_or(anyhow!("need dashes in level name: {p:?}"))?;
+            let nm = f.split("-").skip(1).next().ok_or(anyhow!("need dashes in level name: {p:?}"))?;
             Ok(Extra(nm.parse::<u8>()?))
 
         } else {
@@ -1612,6 +1627,13 @@ fn parse_level_graph<P: AsRef<std::path::Path>>(path: P) -> Result<LevelGraph> {
 pub async fn play_overworld(level: &str) {
     let sprites = load_sprite_map();
 
+    fn erase_icon(l: LevelName) -> LevelName {
+        match l {
+            SubWorld(i, _) => SubWorld(i, 0),
+            _ => l,
+        }
+    }
+
     use LevelResult::*;
     let level = parse_level_graph(level).unwrap();
     let mut stack = vec![(&level, None)];
@@ -1622,7 +1644,7 @@ pub async fn play_overworld(level: &str) {
             Exit => (),
             Enter(lvl) => {
                 stack.push((&level, Some(lvl)));
-                stack.push((&level.sub_levels[&lvl], None));
+                stack.push((&level.sub_levels[&erase_icon(lvl)], None));
             },
         };
     }
@@ -1885,6 +1907,10 @@ fn render_level(
                             sq_size * 0.6,
                         )
                     };
+                    let l = match l {
+                        SubWorld(_, i) => SubWorld(0, *i),
+                        _ => *l,
+                    };
                     draw_sprite(x, y, sq, sprites.1[&l], WHITE);
                 }
                 if overridden_texts.contains(&(col, row, i)) {
@@ -1922,6 +1948,18 @@ type SpriteMapT<T> = (
     HashMap<String, [T; 3]>,
 );
 type SpriteMap = SpriteMapT<Texture2D>;
+
+fn level_icon_names() -> Vec<String> {
+    let mut r = vec![];
+    for e in std::fs::read_dir("resources/original/Data/Worlds/baba/Sprites").unwrap() {
+        let p = e.unwrap().path();
+        let mut x = p.file_name().unwrap().to_str().unwrap().split("_");
+        if let Some("icon") = x.next() {
+            r.push(x.next().unwrap().to_string());
+        }
+    }
+    r
+}
 
 pub fn load_sprite_map() -> SpriteMap {
     type CPUTexture = (u16, u16, Vec<u8>);
@@ -2016,7 +2054,7 @@ pub fn load_sprite_map() -> SpriteMap {
             ],
         )
     }
-    fn load_level_label(l: LevelName) -> (LevelName, CPUTexture) {
+    fn load_level_label(icons: &[String], l: LevelName) -> (LevelName, CPUTexture) {
         let original_sprite_path = "resources/original/Data/Sprites";
         let custom_sprite_path = "resources";
         (l, match l {
@@ -2063,6 +2101,12 @@ pub fn load_sprite_map() -> SpriteMap {
             Letter(l) => load_texture_sync(
                 &format!("{original_sprite_path}/text_{}_0_1.png", l)
             ).unwrap(),
+            SubWorld(_, icon) => load_texture_sync(
+                &format!(
+                    "resources/original/Data/Worlds/baba/Sprites/icon_{}_1.png",
+                    icons[icon],
+                )
+            ).unwrap(),
         })
     }
 
@@ -2077,12 +2121,15 @@ pub fn load_sprite_map() -> SpriteMap {
         (img.to_string(), [load(img, 1), load(img, 2), load(img, 3)])
     }
 
+    let icons = level_icon_names();
+
     let r: SpriteMapT<CPUTexture> = (
         all_entities().map(load).collect(),
         (0..14).map(move |x| Number(x))
             .chain(('A'..'E').map(move |x| Letter(x)))
             .chain((1..3).map(move |x| Extra(x)))
-            .map(load_level_label)
+            .chain((0..icons.len()).map(|x| SubWorld(0, x)))
+            .map(|l| load_level_label(&icons, l))
             .collect(),
         load_texture_sync("resources/congratulations.png").unwrap(),
         ["island", "island_decor", "flower"]
