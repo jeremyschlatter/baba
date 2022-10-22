@@ -1,5 +1,5 @@
 r = rock
-s = skull
+s = skull down
 f = flag
 g = grass
 p = flower
