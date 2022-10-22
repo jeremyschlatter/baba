@@ -1920,14 +1920,14 @@ fn render_level(
                 );
                 draw_sprite(x, y, sq_size, sprites.0[&canon(&e)][anim_frame], c);
                 if let Entity::Noun(_, Level(l)) = e {
-                    let (x, y, sq) = if let Extra(_) = l {
-                        (x, y, sq_size)
-                    } else {
-                        (
+                    let (x, y, sq) = match l {
+                        Extra(_) => (x, y, sq_size),
+                        Parent => (x, y, sq_size),
+                        _ => (
                             x + sq_size * 0.175,
                             y + sq_size * 0.175,
                             sq_size * 0.6,
-                        )
+                        ),
                     };
                     let l = match l {
                         SubWorld(_, i) => SubWorld(0, *i),
