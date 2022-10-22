@@ -5,7 +5,7 @@ w = wall
 b = brick
 r = statue
 t = tree
-c = column
+p = pillar
 s = stump
 a = water
 d = door
@@ -19,11 +19,11 @@ palette = ruins
     aag wbbbbw  8┤ bbwggg
  h    ggwwwbww 769 wwwggwww     t
     ggggg rbr  435     wwwww
-      g    b b  2  b c  ww  bb bb
-   c c c        │ bbbbbb bb bt
-bbb bbb b bb    1  bbcgg       t
-   c c c  gg    │   bggg  s
-g        gg  g  •  g cg       t
+      g    b b  2  b p  ww  bb bb
+   p p p        │ bbbbbb bb bt
+bbb bbb b bb    1  bbpgg       t
+   p p p  gg    │   bggg  s
+g        gg  g  •  g pg       t
 g      wwdwwwww   ggbbb     s
        wb bbbbwb  ggg b
 gg     wbbb bb   g g     s   t
