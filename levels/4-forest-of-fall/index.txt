@@ -17,8 +17,8 @@ t  t  t     𝔸┬─┬65 │          fgg
 t           ℂ𝔹 9843┘          fgg
  t  t   h   𝔼𝔻   │            fgg
    t         │ h │            fgg
-t       gg w 𝟛   ├0̸─𝟚         fff
-       ggg ww    1̸2̸
+t       gg w 𝟛   ├𝟎─𝟚         fff
+       ggg ww    𝟏𝟐
          gh
 t   t   h  gg   h  a        fffff
            ggh       a  a   fgggg

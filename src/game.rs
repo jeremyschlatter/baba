@@ -384,6 +384,16 @@ pub fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String, Vec<St
 
                     '𝟙' => Level(Extra(1)),
                     '𝟚' => Level(Extra(2)),
+                    '𝟛' => Level(Extra(3)),
+                    '𝟜' => Level(Extra(4)),
+                    '𝟝' => Level(Extra(5)),
+                    '𝟞' => Level(Extra(6)),
+
+                    '𝔸' => Level(Letter('a')),
+                    '𝔹' => Level(Letter('b')),
+                    'ℂ' => Level(Letter('c')),
+                    '𝔻' => Level(Letter('d')),
+                    '𝔼' => Level(Letter('e')),
 
                     '0' => Level(Number(0)),
                     '1' => Level(Number(1)),
@@ -2141,8 +2151,8 @@ pub fn load_sprite_map() -> SpriteMap {
     let r: SpriteMapT<CPUTexture> = (
         all_entities().map(load).collect(),
         (0..14).map(move |x| Number(x))
-            .chain(('A'..'E').map(move |x| Letter(x)))
-            .chain((1..3).map(move |x| Extra(x)))
+            .chain(('a'..'f').map(move |x| Letter(x)))
+            .chain((1..7).map(move |x| Extra(x)))
             .chain((0..icons.len()).map(|x| SubWorld(0, x)))
             .chain(iter::once(Parent))
             .map(|l| load_level_label(&icons, l))
