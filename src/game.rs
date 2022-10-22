@@ -93,6 +93,10 @@ pub enum Noun {
     Fungus,
     #[strum(props(color = "4 2", text_color = "2 3", text_color_active = "2 4"))]
     Cursor,
+    #[strum(props(color = "0 1", text_color = "0 1", text_color_active = "0 2"))]
+    Statue,
+    #[strum(props(color = "2 2", text_color = "2 1", text_color_active = "2 2"))]
+    Fruit,
 
     #[strum(props(color = "0 3", text_color = "0 2", text_color_active = "0 3"))]
     Line(u8),

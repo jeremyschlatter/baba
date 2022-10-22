@@ -1,5 +1,5 @@
 t = tree
-a = apple
+a = fruit
 h = husk
 f = fence
 g = grass
