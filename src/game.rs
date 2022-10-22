@@ -112,6 +112,7 @@ pub enum LevelName {
     Letter(char),
     Extra(u8),
     SubWorld(u8, usize),
+    Parent,
 }
 use LevelName::*;
 
@@ -398,6 +399,8 @@ pub fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String, Vec<St
                     '𝟏' => Level(Number(11)),
                     '𝟐' => Level(Number(12)),
                     '𝟑' => Level(Number(13)),
+
+                    '•' => Level(Parent),
 
                     _ => Blank
                 }) {
@@ -1646,6 +1649,7 @@ pub async fn play_overworld(level: &str) {
         match play_level(&sprites, &level.path, ix).await {
             Win(_) => (),
             Exit => (),
+            Enter(Parent) => (),
             Enter(lvl) => {
                 stack.push((&level, Some(lvl)));
                 stack.push((&level.sub_levels[&erase_icon(lvl)], None));
@@ -1666,20 +1670,24 @@ where
 {
     let (mut level, palette_name, backgrounds) = parse_level(level);
 
-    let cursor = cursor.unwrap_or(Number(1));
-
-    'cursor_loop:
-    for y in 0..level.len() {
-        for x in 0..level[0].len() {
-            for i in 0..level[y][x].len() {
-                if let Entity::Noun(_, Level(l)) = level[y][x][i] {
-                    if l == cursor {
-                        level[y][x].push(Entity::Noun(Right, Cursor));
-                        break 'cursor_loop;
+    fn place_cursor(level: &mut Level, at: LevelName) -> bool {
+        for y in 0..level.len() {
+            for x in 0..level[0].len() {
+                for i in 0..level[y][x].len() {
+                    if let Entity::Noun(_, Level(l)) = level[y][x][i] {
+                        if l == at {
+                            level[y][x].push(Entity::Noun(Right, Cursor));
+                            return true;
+                        }
                     }
                 }
             }
         }
+        return false;
+    }
+
+    if !place_cursor(&mut level, cursor.unwrap_or(Parent)) {
+        place_cursor(&mut level, Number(0));
     }
 
     let level = level; // drop mutability
@@ -2111,6 +2119,9 @@ pub fn load_sprite_map() -> SpriteMap {
                     icons[icon],
                 )
             ).unwrap(),
+            Parent => load_texture_sync(
+                &format!("{custom_sprite_path}/up.png")
+            ).unwrap(),
         })
     }
 
@@ -2133,6 +2144,7 @@ pub fn load_sprite_map() -> SpriteMap {
             .chain(('A'..'E').map(move |x| Letter(x)))
             .chain((1..3).map(move |x| Extra(x)))
             .chain((0..icons.len()).map(|x| SubWorld(0, x)))
+            .chain(iter::once(Parent))
             .map(|l| load_level_label(&icons, l))
             .collect(),
         load_texture_sync("resources/congratulations.png").unwrap(),
