@@ -2,9 +2,18 @@ p = pipe
 t = tile
 c = cog
 r = robot
+l = robot left
+u = robot up
+d = robot down
 w = water
 g = grass
 palette = factory
++ 0,• = 4,1
++ 1,2,3,4,𝟙,𝟚 = 5,1
++ 5,6,7,8,9,𝟎,𝟏,𝟛,𝟜,𝟝,𝟞 = 2,1
++ w = 3,2
++ g,t = 1,0
++ c = 0,0
 ---
               tttt           tttt
    ppp     t   tt           ttttt
@@ -12,38 +21,15 @@ palette = factory
      p pp   ppp   𝟝 c  pt  ppp  t
         pp   p    │  ppptt p pp t
       ppp  ww  𝟚  𝟏┬𝟞  pp  p  p
-  r    p   www │ 679    pppp  pp
+  u    p   www │ 679    pppp  pp
           wwww 4─58𝟎─𝟜    p  tp
        gg  ww  3  │       p  tt
     c   gg     │  𝟛  pp     tttt
         gg   𝟙─2 g    p      tt
   c    c   g   1 gg pppp c   t
           ggg  │
-     r     ggg •─0g g   r    c
+     l     ggg •─0g g   r    c
            ggg   ggg  g   c
          g  g   gggg gg
-    c          gggg         r
+    c          gggg         d
                 g
-+++
-g = green
-p = pink
-r = red
----
-
-
-
-                  r
-
-               g  r r
-  ↑              rrr
-               g rrr r
-               g
-                  r
-             g g
-               g
-
-     ←         p p      →
-
-
-                            ↓
-+++
