@@ -1957,10 +1957,7 @@ fn render_level(
                 ));
                 let c = palette.get_pixel(cx, cy);
                 if let Entity::Noun(_, Cursor) = e {
-                    let x = x - sq_size * 0.18;
-                    let y = y - sq_size * 0.18;
-                    let sq_size = sq_size * 1.36;
-                    draw_sprite(x, y, sq_size, sprites.0[&canon(&e)][anim_frame], c);
+                    // draw it at the end so it's on top of everything
                     continue;
                 }
                 draw_sprite(x, y, sq_size, sprites.0[&canon(&e)][anim_frame], c);
@@ -1999,6 +1996,20 @@ fn render_level(
                         sq_size / 10.,
                         c,
                     );
+                }
+            }
+        }
+    }
+    for row in 0..height {
+        for col in 0..width {
+            for e in &level[row][col] {
+                if let Entity::Noun(_, Cursor) = e {
+                    let (cx, cy) = default_color(*e, false);
+                    let c = palette.get_pixel(cx, cy);
+                    let x = offset_x + sq_size * (col as f32 - 0.18);
+                    let y = offset_y + sq_size * (row as f32 - 0.18);
+                    let sq_size = sq_size * 1.36;
+                    draw_sprite(x, y, sq_size, sprites.0[&e][anim_frame], c);
                 }
             }
         }
