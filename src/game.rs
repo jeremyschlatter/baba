@@ -227,7 +227,7 @@ impl Entity {
     }
 }
 
-fn default_color(e: Entity, palette: &Image, active: bool) -> Color {
+fn default_color(e: Entity, active: bool) -> (u32, u32) {
     let text_prop = if active { "text_color_active" } else { "text_color" };
     let ixs = match e {
         Entity::Noun(_, n) => n.get_str("color"),
@@ -238,7 +238,7 @@ fn default_color(e: Entity, palette: &Image, active: bool) -> Color {
         },
     }.unwrap();
 
-    palette.get_pixel(
+    (
         ixs[0..1].parse().unwrap(),
         ixs[2..3].parse().unwrap(),
     )
@@ -272,11 +272,14 @@ fn canon(e: &Entity) -> Entity {
 type Cell = Vec<Entity>;
 type Level = Vec<Vec<Cell>>;
 
-pub fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String, Vec<String>) {
+pub fn parse_level<P>(name: P) -> (Level, String, Vec<String>, HashMap<Noun, (u32, u32)>)
+where
+    P: AsRef<std::path::Path>
+{
     let s = std::fs::read_to_string(name).unwrap();
     let metas: HashMap<&str, &str> =
         s.lines()
-             .take_while(|&s| s != "---")
+             .take_while(|&s| s != "---" && s != "+++")
              .map(|s| {
                  let mut x = s.split(" = ");
                  (x.next().unwrap(), x.next().unwrap())
@@ -342,98 +345,104 @@ pub fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String, Vec<St
     use Thing::*;
     use self::Text::*;
 
+    fn to_cell(legend: &HashMap<String, LegendValue>, c: char) -> Vec<Entity> {
+        match (
+            legend.get(c.to_string().to_lowercase().as_str())
+            , match c {
+                '✥' => Adj(You),
+                '⊘' => Adj(Stop),
+                '↦' => Adj(Push),
+                '✓' => Adj(Win),
+                '≉' => Adj(Sink),
+                '⩍' => Adj(Defeat),
+                '⌇' => Adj(Hot),
+                '⌢' => Adj(Melt),
+                '→' => Adj(Move),
+                '⨶' => Adj(Shut),
+                '⧜' => Adj(Open),
+                '⚲' => Adj(Float),
+                '_' => Adj(Weak),
+                '*' => Adj(Tele),
+                '↣' => Adj(Pull),
+
+                '=' => Txt(Is),
+                '¬' => Txt(Not),
+                '&' => Txt(And),
+                '~' => Txt(Has),
+                '@' => Txt(Text),
+
+                '└' => Line(3),
+                '─' => Line(5),
+                '┘' => Line(6),
+                '┴' => Line(7),
+                '┌' => Line(9),
+                '│' => Line(10),
+                '├' => Line(11),
+                '┐' => Line(12),
+                '┬' => Line(13),
+                '┤' => Line(14),
+                '┼' => Line(15),
+
+                '𝟙' => Level(Extra(1)),
+                '𝟚' => Level(Extra(2)),
+                '𝟛' => Level(Extra(3)),
+                '𝟜' => Level(Extra(4)),
+                '𝟝' => Level(Extra(5)),
+                '𝟞' => Level(Extra(6)),
+
+                '𝔸' => Level(Letter('a')),
+                '𝔹' => Level(Letter('b')),
+                'ℂ' => Level(Letter('c')),
+                '𝔻' => Level(Letter('d')),
+                '𝔼' => Level(Letter('e')),
+
+                '0' => Level(Number(0)),
+                '1' => Level(Number(1)),
+                '2' => Level(Number(2)),
+                '3' => Level(Number(3)),
+                '4' => Level(Number(4)),
+                '5' => Level(Number(5)),
+                '6' => Level(Number(6)),
+                '7' => Level(Number(7)),
+                '8' => Level(Number(8)),
+                '9' => Level(Number(9)),
+                '𝟎' => Level(Number(10)),
+                '𝟏' => Level(Number(11)),
+                '𝟐' => Level(Number(12)),
+                '𝟑' => Level(Number(13)),
+
+                '•' => Level(Parent),
+
+                _ => Blank
+            })
+        {
+            (Some(FullCell(cell)), _) => if c.is_uppercase() {
+                if let Entity::Noun(_, n) = cell[cell.len() - 1] {
+                    vec![Entity::Text(Right, Object(n))]
+                } else {
+                    vec![]
+                }
+            } else {
+                cell.clone()
+            }
+            (Some(Abbreviation(noun)), _) => if c.is_uppercase() {
+                vec![Entity::Text(Right, Object(*noun))]
+            } else {
+                vec![Entity::Noun(Right, *noun)]
+            }
+            (_, Adj(adj)) => vec![Entity::Text(Right, Adjective(adj))],
+            (_, Txt(txt)) => vec![Entity::Text(Right, txt)],
+            (_, Line(x)) => vec![Entity::Noun(Right, Noun::Line(x))],
+            (_, Level(x)) => vec![Entity::Noun(Right, Noun::Level(x))],
+            (_, Blank) => vec![],
+        }
+    }
+
     let max = map.iter().map(|l| l.chars().count()).max().unwrap_or_default() + right_pad;
     let level = map.split(|s| *s == "---")
         .map(|layer| layer.iter().map(
             |line| line.chars()
-                .map(|c| match (legend.get(c.to_string().to_lowercase().as_str())
-                , match c {
-                    '✥' => Adj(You),
-                    '⊘' => Adj(Stop),
-                    '↦' => Adj(Push),
-                    '✓' => Adj(Win),
-                    '≉' => Adj(Sink),
-                    '⩍' => Adj(Defeat),
-                    '⌇' => Adj(Hot),
-                    '⌢' => Adj(Melt),
-                    '→' => Adj(Move),
-                    '⨶' => Adj(Shut),
-                    '⧜' => Adj(Open),
-                    '⚲' => Adj(Float),
-                    '_' => Adj(Weak),
-                    '*' => Adj(Tele),
-                    '↣' => Adj(Pull),
-
-                    '=' => Txt(Is),
-                    '¬' => Txt(Not),
-                    '&' => Txt(And),
-                    '~' => Txt(Has),
-                    '@' => Txt(Text),
-
-                    '└' => Line(3),
-                    '─' => Line(5),
-                    '┘' => Line(6),
-                    '┴' => Line(7),
-                    '┌' => Line(9),
-                    '│' => Line(10),
-                    '├' => Line(11),
-                    '┐' => Line(12),
-                    '┬' => Line(13),
-                    '┤' => Line(14),
-                    '┼' => Line(15),
-
-                    '𝟙' => Level(Extra(1)),
-                    '𝟚' => Level(Extra(2)),
-                    '𝟛' => Level(Extra(3)),
-                    '𝟜' => Level(Extra(4)),
-                    '𝟝' => Level(Extra(5)),
-                    '𝟞' => Level(Extra(6)),
-
-                    '𝔸' => Level(Letter('a')),
-                    '𝔹' => Level(Letter('b')),
-                    'ℂ' => Level(Letter('c')),
-                    '𝔻' => Level(Letter('d')),
-                    '𝔼' => Level(Letter('e')),
-
-                    '0' => Level(Number(0)),
-                    '1' => Level(Number(1)),
-                    '2' => Level(Number(2)),
-                    '3' => Level(Number(3)),
-                    '4' => Level(Number(4)),
-                    '5' => Level(Number(5)),
-                    '6' => Level(Number(6)),
-                    '7' => Level(Number(7)),
-                    '8' => Level(Number(8)),
-                    '9' => Level(Number(9)),
-                    '𝟎' => Level(Number(10)),
-                    '𝟏' => Level(Number(11)),
-                    '𝟐' => Level(Number(12)),
-                    '𝟑' => Level(Number(13)),
-
-                    '•' => Level(Parent),
-
-                    _ => Blank
-                }) {
-                    (Some(FullCell(cell)), _) => if c.is_uppercase() {
-                        if let Entity::Noun(_, n) = cell[cell.len() - 1] {
-                            vec![Entity::Text(Right, Object(n))]
-                        } else {
-                            vec![]
-                        }
-                    } else {
-                        cell.clone()
-                    }
-                    (Some(Abbreviation(noun)), _) => if c.is_uppercase() {
-                        vec![Entity::Text(Right, Object(*noun))]
-                    } else {
-                        vec![Entity::Noun(Right, *noun)]
-                    }
-                    (_, Adj(adj)) => vec![Entity::Text(Right, Adjective(adj))],
-                    (_, Txt(txt)) => vec![Entity::Text(Right, txt)],
-                    (_, Line(x)) => vec![Entity::Noun(Right, Noun::Line(x))],
-                    (_, Level(x)) => vec![Entity::Noun(Right, Noun::Level(x))],
-                    (_, Blank) => vec![],
-                })
+                .map(|c| to_cell(&legend, c))
                 .chain(iter::repeat(vec![]))
                 .take(max)
                 .collect::<Vec<Vec<Entity>>>()).collect::<Vec<Vec<Vec<Entity>>>>())
@@ -453,7 +462,29 @@ pub fn parse_level<P: AsRef<std::path::Path>>(name: P) -> (Level, String, Vec<St
                      )
                  .collect::<Vec<Vec<Vec<Entity>>>>());
 
-    (level, metas.get("palette").unwrap_or(&"default").to_string(), backgrounds)
+    (
+        level,
+        metas.get("palette").unwrap_or(&"default").to_string(),
+        backgrounds,
+        {
+            let mut color_overrides = HashMap::new();
+            for (k, v) in metas.iter() {
+                if k.starts_with("+ ") {
+                    // println!("{v}, {}, {}", v[0..1], v[2);
+                    let v: (u32, u32) = (v[0..1].parse().unwrap(), v[2..3].parse().unwrap());
+                    for k in k[2..].split(",") {
+                        if k != "" {
+                            let c = to_cell(&legend, k.chars().next().unwrap());
+                            if let Entity::Noun(_, n) = c[0] {
+                                color_overrides.insert(n, v);
+                            }
+                        }
+                    }
+                }
+            }
+            color_overrides
+        }
+    )
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -1430,7 +1461,7 @@ pub async fn render_diff(path: &str) {
     let (start, good, bad, palette_name, input) = load::<_, Diff>(path).unwrap();
     let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
     let sprites = load_sprite_map();
-    let render = |s, x, y, w, h| render_level(s, &palette, &sprites, &[], Rect::new(x, y, w, h), 20.);
+    let render = |s, x, y, w, h| render_level(s, &palette, &sprites, &[], &HashMap::new(), Rect::new(x, y, w, h), 20.);
     let font_size = 20.;
     let font_color = WHITE;
     loop {
@@ -1542,6 +1573,7 @@ pub async fn replay(path: &str) {
             &palette,
             &sprites,
             &[],
+            &HashMap::new(),
             Rect::new(0., 0., screen_width(), screen_height()),
             20.,
         );
@@ -1678,7 +1710,7 @@ pub async fn play_level<P>(sprites: &SpriteMap, level: P, cursor: Option<LevelNa
 where
     P: AsRef<std::path::Path>
 {
-    let (mut level, palette_name, backgrounds) = parse_level(level);
+    let (mut level, palette_name, backgrounds, color_overrides) = parse_level(level);
 
     fn place_cursor(level: &mut Level, at: LevelName) -> bool {
         for y in 0..level.len() {
@@ -1811,6 +1843,7 @@ where
                 &palette,
                 &sprites,
                 &backgrounds,
+                &color_overrides,
                 Rect::new(0., 0., screen_width(), screen_height()),
                 20.,
             );
@@ -1860,6 +1893,7 @@ fn render_level(
     palette: &Image,
     sprites: &SpriteMap,
     backgrounds: &[String],
+    color_overrides: &HashMap<Noun, (u32, u32)>,
     bounds: Rect,
     min_border: f32,
 ) -> Rect {
@@ -1915,9 +1949,13 @@ fn render_level(
             let y = offset_y + sq_size * row as f32;
             for (i, e) in level[row][col].iter().enumerate() {
                 let anim_frame = (row + col + i + anim_frame) % 3;
-                let c = default_color(
-                    *e, &palette, active_texts.contains(&(col, row, i)),
-                );
+                let (cx, cy) = match e {
+                    Entity::Noun(_, n) => color_overrides.get(n).copied(),
+                    _ => None,
+                }.unwrap_or_else(|| default_color(
+                    *e, active_texts.contains(&(col, row, i)),
+                ));
+                let c = palette.get_pixel(cx, cy);
                 draw_sprite(x, y, sq_size, sprites.0[&canon(&e)][anim_frame], c);
                 if let Entity::Noun(_, Level(l)) = e {
                     let (x, y, sq) = match l {
