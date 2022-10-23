@@ -1686,9 +1686,12 @@ pub async fn play_overworld(level: &str) {
     use LevelResult::*;
     let level = parse_level_graph(level).unwrap();
     let mut stack = vec![(&level, None)];
+    let mut last_input = (0., None);
     loop {
         let (level, ix) = if let Some(x) = stack.pop() { x } else { return; };
-        match play_level(&sprites, &level.path, ix).await {
+        let (result, input) = play_level(&sprites, last_input, &level.path, ix).await;
+        last_input = input;
+        match result {
             Win(_) => (),
             Exit => (),
             Enter(Parent) => (),
@@ -1706,7 +1709,9 @@ pub enum LevelResult {
     Enter(LevelName),
 }
 
-pub async fn play_level<P>(sprites: &SpriteMap, level: P, cursor: Option<LevelName>) -> LevelResult
+pub async fn play_level<P>
+    (sprites: &SpriteMap, mut last_input: (f64, Option<KeyCode>), level: P, cursor: Option<LevelName>)
+    -> (LevelResult, (f64, Option<KeyCode>))
 where
     P: AsRef<std::path::Path>
 {
@@ -1763,14 +1768,6 @@ where
     }
     use UIInput::*;
 
-    let mut last_input: (f64, Option<KeyCode>) = (0., None);
-    loop {
-        if !is_key_down(KeyCode::Escape) && !is_key_down(KeyCode::Enter) {
-            break;
-        }
-        next_frame().await
-    }
-
     loop {
         // update
         let current_input = debounce(
@@ -1808,7 +1805,7 @@ where
                     }
                     history.push(next);
                 },
-                Some(Pause) => return LevelResult::Exit,
+                Some(Pause) => return (LevelResult::Exit, last_input),
                 // Some(Pause) => paused = !paused,
                 Some(Enter) => {
                     for y in 0..current_state.len() {
@@ -1821,7 +1818,7 @@ where
                             }
                             for e in current_state[y][x].iter() {
                                 if let Entity::Noun(_, Level(l)) = *e {
-                                    return LevelResult::Enter(l);
+                                    return (LevelResult::Enter(l), last_input);
                                 }
                             }
                         }
@@ -1858,7 +1855,7 @@ where
                 None => (),
                 Some(anim_start) => {
                     if (get_time() - anim_start) > anim_time + 0.5 {
-                        return LevelResult::Win((views, inputs, palette_name.to_string()));
+                        return (LevelResult::Win((views, inputs, palette_name.to_string())), last_input);
                     }
                     gl_use_material(*MASK_MATERIAL);
                     MASK_MATERIAL.set_uniform(
