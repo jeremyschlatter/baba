@@ -1956,6 +1956,13 @@ fn render_level(
                     *e, active_texts.contains(&(col, row, i)),
                 ));
                 let c = palette.get_pixel(cx, cy);
+                if let Entity::Noun(_, Cursor) = e {
+                    let x = x - sq_size * 0.18;
+                    let y = y - sq_size * 0.18;
+                    let sq_size = sq_size * 1.36;
+                    draw_sprite(x, y, sq_size, sprites.0[&canon(&e)][anim_frame], c);
+                    continue;
+                }
                 draw_sprite(x, y, sq_size, sprites.0[&canon(&e)][anim_frame], c);
                 if let Entity::Noun(_, Level(l)) = e {
                     let (x, y, sq) = match l {
