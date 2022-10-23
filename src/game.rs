@@ -1970,6 +1970,7 @@ fn render_level(
                     let (x, y, sq) = match l {
                         Extra(_) => (x, y, sq_size),
                         Parent => (x, y, sq_size),
+                        SubWorld(_, _) => (x, y, sq_size),
                         _ => (
                             x + sq_size * 0.175,
                             y + sq_size * 0.175,
