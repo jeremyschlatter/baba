@@ -4,22 +4,46 @@ l = map 1 lake
 i = map 2 island
 r = map 3 ruins
 a = map 4 fall
+t = trees
+z = rocket up
+m = fungi
+h = husks
+w = flower
+s = star
 background = island island_decor
++ 1,2,3,4,5,6,7 = 1,1
++ l = 1,3
++ z = 0,2
++ h = 6,1
 ---
 
 
-         o
+
+
+
+                m  m
+
+
+
+
+
+
+                   h
+---
+                             s
+
+         o         z
                o   o
-          oo┐  │   │
-            ├──┴─r─┴o
-            │    │
-            o    │
-               ┌─i─┐
+          oo┐ m│tm │t
+            ├──┴─r─┴ot
+            │ wm │  t
+           wo    │
+            w  ┌─i─┐
                l   │   o
-               │   │
-          57┬──┘   │
-          246      └a
-          13┴──o
+               │   │  h
+          57┬──┘   │ h
+          246    h └a
+          13┴──o     h
           │
          0┘               o   B=✥
 

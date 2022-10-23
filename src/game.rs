@@ -97,6 +97,14 @@ pub enum Noun {
     Statue,
     #[strum(props(color = "2 2", text_color = "2 1", text_color_active = "2 2"))]
     Fruit,
+    #[strum(props(color = "0 1", text_color = "1 1", text_color_active = "0 1"))]
+    Rocket,
+    #[strum(props(color = "2 4", text_color = "6 1", text_color_active = "2 4"))]
+    Star,
+    #[strum(props(color = "5 2", text_color = "5 1", text_color_active = "5 2"))]
+    Trees,
+    #[strum(props(color = "6 1", text_color = "6 1", text_color_active = "6 2"))]
+    Husks,
 
     #[strum(props(color = "0 3", text_color = "0 2", text_color_active = "0 3"))]
     Line(u8),
