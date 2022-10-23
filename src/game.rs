@@ -2225,7 +2225,9 @@ pub fn load_sprite_map() -> SpriteMap {
     );
 
     fn l((w, h, b): CPUTexture) -> Texture2D {
-        Texture2D::from_rgba8(w, h, &b)
+        let t = Texture2D::from_rgba8(w, h, &b);
+        t.set_filter(FilterMode::Nearest);
+        t
     }
 
     (
