@@ -7,6 +7,7 @@ b = baba down
 c = brick
 r = husk on grass
 palette = autumn
++ g = 1,0
 ---
 F=¬✥         ggggg    gggrggg  gg
 F=⊘    gg  h        h   ggg     g
