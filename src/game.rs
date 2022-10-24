@@ -2207,11 +2207,22 @@ fn load_sprite_map() -> SpriteMap {
     }
 
     fn load_level_label(icons: &[String], l: LevelName) -> (LevelName, CPUTexture) {
+        use image::{ImageBuffer, imageops};
         let original_sprite_path = "resources/original/Data/Sprites";
         let custom_sprite_path = "resources";
+        fn shrinkwrap(img: image::RgbaImage) -> image::RgbaImage {
+            let b = || img.enumerate_pixels().filter(|x| x.2[3] == 255);
+            let w = || b().map(|x| x.0);
+            let h = || b().map(|x| x.1);
+            let buffer = 1;
+            let left = w().min().unwrap() - buffer;
+            let right = w().max().unwrap() + buffer;
+            let top = h().min().unwrap();
+            let bottom = h().max().unwrap();
+            imageops::crop_imm(&img, left, top, right - left, bottom - top).to_image()
+        }
         (l, match l {
             Number(n) => memo(&format!("level_number_{n}"), || {
-                use image::{ImageBuffer, imageops};
                 let load = |n| image::open(
                     &if n == 0 {
                         format!("{original_sprite_path}/text_o_0_1.png")
@@ -2219,17 +2230,6 @@ fn load_sprite_map() -> SpriteMap {
                         format!("{original_sprite_path}/text_{n}_0_1.png")
                     }
                 ).unwrap().into_rgba8();
-                fn shrinkwrap(img: image::RgbaImage) -> image::RgbaImage {
-                    let b = || img.enumerate_pixels().filter(|x| x.2[3] == 255);
-                    let w = || b().map(|x| x.0);
-                    let h = || b().map(|x| x.1);
-                    let buffer = 1;
-                    let left = w().min().unwrap() - buffer;
-                    let right = w().max().unwrap() + buffer;
-                    let top = h().min().unwrap();
-                    let bottom = h().max().unwrap();
-                    imageops::crop_imm(&img, left, top, right - left, bottom - top).to_image()
-                }
                 let a = load(n / 10);
                 let b = load(n % 10);
                 assert!(a.width() == b.width() && a.height() == b.height());
@@ -2250,9 +2250,14 @@ fn load_sprite_map() -> SpriteMap {
             Extra(n) => load_texture_sync(
                 &format!("{custom_sprite_path}/pip_{n}.png")
             ).unwrap(),
-            Letter(l) => load_texture_sync(
-                &format!("{original_sprite_path}/text_{}_0_1.png", l)
-            ).unwrap(),
+
+            Letter(l) => memo(&format!("level_letter_{l}"), || {
+                let bytes = std::fs::read(format!(
+                    "{original_sprite_path}/text_{l}_0_1.png",
+                ))?;
+                let img = image::load_from_memory_with_format(&bytes[..], ImageFormat::Png)?;
+                Ok(image::DynamicImage::ImageRgba8(shrinkwrap(img.into_rgba8())))
+            }).unwrap(),
             SubWorld(_, icon) => load_texture_sync(
                 &format!(
                     "resources/original/Data/Worlds/baba/Sprites/icon_{}_1.png",
