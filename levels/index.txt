@@ -37,17 +37,17 @@ background = island island_decor
 
          o         z
                o   o
-          oo┐ m│tm │t
-            ├──┴─r─┴ot
-            │ wm │  t
-           wo    │
-            w  ┌─i─┐
-               l   │   o
-               │   │  h
-          57┬──┘   │ h
-          246    h └a
-          13┴──o     h
-          │
-         0┘               o   B=✥
+          oo. m.tm .t
+            .....r..ot
+            . wm .  t
+           wo    .
+            w  ..i..
+               l   .   o
+               .   .  h
+          57....   . h
+          246    h .a
+          13...o     h
+          .
+         0.               o   B=✥
 
                               F=✓

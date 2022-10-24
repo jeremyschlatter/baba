@@ -1,5 +1,3 @@
-mod test;
-
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -38,7 +36,7 @@ async fn main() {
         None => { game::play_overworld("levels/").await; },
         Some(c) => match c {
             Level { level } => { game::play_overworld(&level).await; },
-            Golden{ level, output } => test::record_golden(&level, &output).await,
+            Golden{ level, output } => game::record_golden(&level, &output).await,
             Replay { replay } => game::replay(&replay).await,
             RenderDiff { diff } => game::render_diff(&diff).await,
         }

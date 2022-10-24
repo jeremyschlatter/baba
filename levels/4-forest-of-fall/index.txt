@@ -11,13 +11,13 @@ palette = autumn
 t tt   t        t          fggggg
  t ttt    t      t    t    fggggg
 t t t              𝟙       ffffff
- t    t            │
-                72─1─•        fff
-t  t  t     𝔸┬─┬65 │          fgg
-t           ℂ𝔹 9843┘          fgg
- t  t   h   𝔼𝔻   │            fgg
-   t         │ h │            fgg
-t       gg w 𝟛   ├𝟎─𝟚         fff
+ t    t            .
+                72.1.•        fff
+t  t  t     𝔸...65 .          fgg
+t           ℂ𝔹 9843.          fgg
+ t  t   h   𝔼𝔻   .            fgg
+   t         . h .            fgg
+t       gg w 𝟛   .𝟎.𝟚         fff
        ggg ww    𝟏𝟐
          gh
 t   t   h  gg   h  a        fffff

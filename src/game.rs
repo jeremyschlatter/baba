@@ -4,66 +4,97 @@ extern crate lazy_static;
 use macros::*;
 
 use anyhow::{anyhow, Result};
-use itertools::Itertools;
+use itertools::{iproduct, Itertools};
 use macroquad::prelude::*;
 use miniquad::graphics::*;
 use serde::{Serialize, Deserialize};
-use strum::{EnumCount, EnumIter, EnumString, IntoEnumIterator};
+use strum::{EnumCount, EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
 
 use std::{io::{Read, Write}, iter, collections::{HashMap, HashSet, VecDeque}, str::FromStr};
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString, BabaProps)]
+#[derive_the_basics]
+enum SpriteVariant {
+    Idle, // -1, no variants
+    Face, // 0, depends on direction
+    Fuse, // 1, depends on neighbors
+    Walk, // 2, depends on motion and direction
+    Look, // 3, depends on timestep and direction
+    Tick, // 4, depends on timestep
+}
+use SpriteVariant::*;
+
+#[derive_the_basics]
+struct Neighborhood {
+    above: bool,
+    right: bool,
+    below: bool,
+    left: bool,
+}
+
+#[derive_the_basics]
+enum SpriteVariantState {
+    IdleState,
+    FaceState(Direction),
+    FuseState(Neighborhood),
+    WalkState(u8, Direction),
+    LookState(u8, Direction),
+    TickState(u8),
+}
+use SpriteVariantState::*;
+
+#[derive_the_basics]
+#[derive(EnumIter, EnumString, IntoStaticStr, BabaProps)]
 #[strum(serialize_all = "snake_case")]
-#[props(u32, u32, u32, u32, u32, u32)]
+#[props(u32, u32, u32, u32, u32, u32, SpriteVariant)]
 pub enum Noun {
-    #[props(0, 3, 4, 0, 4, 1)] Baba,
-    #[props(2, 2, 2, 1, 2, 2)] Keke,
-    #[props(1, 1, 1, 1, 0, 1)] Wall,
-    #[props(2, 2, 2, 1, 2, 2)] Door,
-    #[props(2, 4, 6, 1, 2, 4)] Key,
-    #[props(2, 4, 6, 1, 2, 4)] Flag,
-    #[props(6, 2, 6, 0, 6, 1)] Rock,
-    #[props(0, 0, 1, 1, 0, 1)] Tile,
-    #[props(5, 0, 5, 1, 5, 3)] Grass,
-    #[props(1, 3, 1, 2, 1, 3)] Water,
-    #[props(2, 1, 2, 0, 2, 1)] Skull,
-    #[props(2, 3, 2, 2, 2, 3)] Lava,
-    #[props(6, 3, 6, 0, 6, 1)] Brick,
-    #[props(3, 3, 3, 2, 3, 3)] Flower,
-    #[props(1, 2, 1, 2, 1, 3)] Ice,
-    #[props(1, 4, 1, 3, 1, 4)] Jelly,
-    #[props(2, 2, 2, 1, 2, 2)] Crab,
-    #[props(2, 3, 2, 2, 2, 3)] Seastar,
-    #[props(5, 2, 5, 0, 5, 1)] Algae,
-    #[props(4, 2, 4, 1, 4, 2)] Love,
-    #[props(0, 1, 1, 1, 0, 1)] Pillar,
-    #[props(1, 4, 1, 3, 1, 4)] Bubble,
-    #[props(5, 1, 5, 0, 5, 1)] Hedge,
-    #[props(0, 1, 0, 1, 0, 2)] Cog,
-    #[props(1, 1, 1, 1, 0, 1)] Pipe,
-    #[props(0, 1, 1, 1, 0, 1)] Robot,
-    #[props(2, 4, 2, 3, 2, 4)] Bolt,
-    #[props(6, 2, 6, 1, 6, 2)] Reed,
-    #[props(5, 1, 5, 1, 5, 3)] Bog,
-    #[props(6, 2, 6, 0, 6, 1)] Box,
-    #[props(6, 1, 6, 0, 6, 2)] Stump,
-    #[props(6, 1, 5, 1, 6, 1)] Husk,
-    #[props(5, 2, 5, 1, 5, 2)] Tree,
-    #[props(4, 2, 4, 1, 4, 2)] Ghost,
-    #[props(6, 1, 6, 0, 6, 1)] Fence,
-    #[props(6, 0, 2, 2, 2, 3)] Foliage,
-    #[props(2, 4, 6, 1, 2, 4)] Leaf,
-    #[props(6, 1, 6, 0, 6, 2)] Fungi,
-    #[props(6, 1, 6, 0, 6, 1)] Fungus,
-    #[props(4, 2, 2, 3, 2, 4)] Cursor,
-    #[props(0, 1, 0, 1, 0, 2)] Statue,
-    #[props(2, 2, 2, 1, 2, 2)] Fruit,
-    #[props(0, 1, 1, 1, 0, 1)] Rocket,
-    #[props(2, 4, 6, 1, 2, 4)] Star,
-    #[props(5, 2, 5, 1, 5, 2)] Trees,
-    #[props(6, 1, 6, 1, 6, 2)] Husks,
-    #[props(0, 3, 0, 2, 0, 3)] Line(u8),
-    #[props(0, 0, 4, 0, 4, 1)] Level(LevelName),
+    #[props(0, 3, 4, 0, 4, 1, Walk)] Baba,
+    #[props(2, 2, 2, 1, 2, 2, Walk)] Keke,
+    #[props(1, 1, 1, 1, 0, 1, Fuse)] Wall,
+    #[props(2, 2, 2, 1, 2, 2, Idle)] Door,
+    #[props(2, 4, 6, 1, 2, 4, Idle)] Key,
+    #[props(2, 4, 6, 1, 2, 4, Idle)] Flag,
+    #[props(6, 2, 6, 0, 6, 1, Idle)] Rock,
+    #[props(0, 0, 1, 1, 0, 1, Idle)] Tile,
+    #[props(5, 0, 5, 1, 5, 3, Fuse)] Grass,
+    #[props(1, 3, 1, 2, 1, 3, Fuse)] Water,
+    #[props(2, 1, 2, 0, 2, 1, Face)] Skull,
+    #[props(2, 3, 2, 2, 2, 3, Fuse)] Lava,
+    #[props(6, 3, 6, 0, 6, 1, Fuse)] Brick,
+    #[props(3, 3, 3, 2, 3, 3, Idle)] Flower,
+    #[props(1, 2, 1, 2, 1, 3, Fuse)] Ice,
+    #[props(1, 4, 1, 3, 1, 4, Idle)] Jelly,
+    #[props(2, 2, 2, 1, 2, 2, Face)] Crab,
+    #[props(2, 3, 2, 2, 2, 3, Idle)] Seastar,
+    #[props(5, 2, 5, 0, 5, 1, Idle)] Algae,
+    #[props(4, 2, 4, 1, 4, 2, Idle)] Love,
+    #[props(0, 1, 1, 1, 0, 1, Idle)] Pillar,
+    #[props(1, 4, 1, 3, 1, 4, Tick)] Bubble,
+    #[props(5, 1, 5, 0, 5, 1, Fuse)] Hedge,
+    #[props(0, 1, 0, 1, 0, 2, Tick)] Cog,
+    #[props(1, 1, 1, 1, 0, 1, Fuse)] Pipe,
+    #[props(0, 1, 1, 1, 0, 1, Walk)] Robot,
+    #[props(2, 4, 2, 3, 2, 4, Face)] Bolt,
+    #[props(6, 2, 6, 1, 6, 2, Idle)] Reed,
+    #[props(5, 1, 5, 1, 5, 3, Fuse)] Bog,
+    #[props(6, 2, 6, 0, 6, 1, Idle)] Box,
+    #[props(6, 1, 6, 0, 6, 2, Idle)] Stump,
+    #[props(6, 1, 5, 1, 6, 1, Idle)] Husk,
+    #[props(5, 2, 5, 1, 5, 2, Idle)] Tree,
+    #[props(4, 2, 4, 1, 4, 2, Face)] Ghost,
+    #[props(6, 1, 6, 0, 6, 1, Fuse)] Fence,
+    #[props(6, 0, 2, 2, 2, 3, Idle)] Foliage,
+    #[props(2, 4, 6, 1, 2, 4, Idle)] Leaf,
+    #[props(6, 1, 6, 0, 6, 2, Idle)] Fungi,
+    #[props(6, 1, 6, 0, 6, 1, Idle)] Fungus,
+    #[props(4, 2, 2, 3, 2, 4, Idle)] Cursor,
+    #[props(0, 1, 0, 1, 0, 2, Face)] Statue,
+    #[props(2, 2, 2, 1, 2, 2, Idle)] Fruit,
+    #[props(0, 1, 1, 1, 0, 1, Face)] Rocket,
+    #[props(2, 4, 6, 1, 2, 4, Idle)] Star,
+    #[props(5, 2, 5, 1, 5, 2, Idle)] Trees,
+    #[props(6, 1, 6, 1, 6, 2, Idle)] Husks,
+    #[props(0, 3, 0, 2, 0, 3, Fuse)] Line,
+    #[props(0, 0, 4, 0, 4, 1, Idle)] Level(LevelName),
 }
 use Noun::*;
 
@@ -76,9 +107,12 @@ impl Noun {
         let p = self.props();
         if active { (p.4, p.5) } else { (p.2, p.3) }
     }
+    fn sprite_variant(&self) -> SpriteVariant {
+        self.props().6
+    }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+#[derive_the_basics]
 pub enum LevelName {
     Number(u8),
     Letter(char),
@@ -94,7 +128,8 @@ impl Default for LevelName {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString, EnumCount, BabaProps)]
+#[derive_the_basics]
+#[derive(EnumIter, EnumString, EnumCount, IntoStaticStr, BabaProps)]
 #[strum(serialize_all = "snake_case")]
 #[props(u32, u32, u32, u32)]
 pub enum Adjective {
@@ -122,8 +157,10 @@ impl Adjective {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, BabaProps)]
+#[derive_the_basics]
+#[derive(IntoStaticStr, BabaProps)]
 #[props(u32, u32, u32, u32)]
+#[strum(serialize_all = "snake_case")]
 pub enum Text {
     #[props(0, 1, 0, 3)] Is,
     #[props(0, 1, 0, 3)] And,
@@ -152,7 +189,8 @@ impl FromStr for Text {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumString, EnumIter)]
+#[derive_the_basics]
+#[derive(EnumString, EnumIter)]
 #[strum(serialize_all = "snake_case")]
 pub enum Direction {
     Up,
@@ -172,29 +210,29 @@ impl Direction {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[derive_the_basics]
+pub struct LiveEntity {
+    dir: Direction,
+    e: Entity,
+}
+
+#[derive_the_basics]
 pub enum Entity {
-    Noun(Direction, Noun),
-    Text(Direction, Text),
+    Noun(Noun),
+    Text(Text),
 }
 
 impl Entity {
-    fn direction(&self) -> Direction {
-        match self {
-            Entity::Noun(d, _) => *d,
-            Entity::Text(d, _) => *d,
-        }
-    }
     fn to_text_or_noun(&self) -> TextOrNoun {
         match self {
-            Entity::Noun(_, n) => TextOrNoun::Noun(*n),
-            Entity::Text(_, _) => TextOrNoun::Text,
+            Entity::Noun(n) => TextOrNoun::Noun(*n),
+            Entity::Text(_) => TextOrNoun::Text,
         }
     }
     fn default_color(&self, active: bool) -> (u32, u32) {
         match self {
-            Entity::Noun(_, n) => n.color(),
-            Entity::Text(_, t) => match t {
+            Entity::Noun(n) => n.color(),
+            Entity::Text(t) => match t {
                 Text::Object(n) => n.text_color(active),
                 Text::Adjective(a) => a.color(active),
                 _ => t.color(active),
@@ -204,31 +242,17 @@ impl Entity {
 }
 
 fn all_entities() -> impl Iterator<Item=Entity> {
-    [3, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15].into_iter().map(move |i|
-            Entity::Noun(Right, Line(i)))
-    .chain(iter::once(Entity::Text(Right, Text::Is)))
-    .chain(iter::once(Entity::Text(Right, Text::Not)))
-    .chain(iter::once(Entity::Text(Right, Text::And)))
-    .chain(iter::once(Entity::Text(Right, Text::Has)))
-    .chain(iter::once(Entity::Text(Right, Text::Text)))
-    .chain(Noun::iter().map(move |n| Entity::Text(Right, Text::Object(n))))
-    .chain(Adjective::iter().map(move |a| Entity::Text(Right, Text::Adjective(a))))
-    .chain(Direction::iter().flat_map(|d|
-        Noun::iter().map(move |n| Entity::Noun(d, n))))
+    Noun::iter().map(Entity::Noun)
+    .chain(iter::once(Entity::Text(Text::Is)))
+    .chain(iter::once(Entity::Text(Text::Not)))
+    .chain(iter::once(Entity::Text(Text::And)))
+    .chain(iter::once(Entity::Text(Text::Has)))
+    .chain(iter::once(Entity::Text(Text::Text)))
+    .chain(Noun::iter().map(move |n| Entity::Text(Text::Object(n))))
+    .chain(Adjective::iter().map(move |a| Entity::Text(Text::Adjective(a))))
 }
 
-fn canon(e: &Entity) -> Entity {
-    match e {
-        Entity::Text(_, t) => Entity::Text(Right, *t),
-        Entity::Noun(_, n) => match n {
-            Line(x) => Entity::Noun(Right, Line(*x)),
-            Level(_) => Entity::Noun(Right, Level(LevelName::default())),
-            _ => *e,
-        }
-    }
-}
-
-type Cell = Vec<Entity>;
+type Cell = Vec<LiveEntity>;
 type Level = Vec<Vec<Cell>>;
 
 pub fn parse_level<P>(name: P) -> (Level, String, Vec<String>, HashMap<Noun, (u32, u32)>)
@@ -278,12 +302,18 @@ where
                                      let n = x.next().unwrap().parse().unwrap();
                                      let icon = x.next().unwrap();
                                      let icon = icons.iter().position(|i| i == icon).unwrap();
-                                     Entity::Noun(Right, Noun::Level(SubWorld(n, icon)))
+                                     LiveEntity {
+                                         dir: Right,
+                                         e: Entity::Noun(Noun::Level(SubWorld(n, icon))),
+                                    }
                                  } else {
                                      let d = x.next()
                                          .and_then(|s| Direction::from_str(s).ok())
                                          .unwrap_or(Right);
-                                     Entity::Noun(d, Noun::from_str(n).expect(n))
+                                     LiveEntity {
+                                         dir: d,
+                                         e: Entity::Noun(Noun::from_str(n).expect(n)),
+                                    }
                                 }
                              })
                              .collect()
@@ -297,14 +327,14 @@ where
     enum Thing {
         Adj(self::Adjective),
         Txt(self::Text),
-        Line(u8),
+        Line,
         Level(LevelName),
         Blank,
     }
     use Thing::*;
     use self::Text::*;
 
-    fn to_cell(legend: &HashMap<String, LegendValue>, c: char) -> Vec<Entity> {
+    fn to_cell(legend: &HashMap<String, LegendValue>, c: char) -> Vec<LiveEntity> {
         match (
             legend.get(c.to_string().to_lowercase().as_str())
             , match c {
@@ -330,17 +360,7 @@ where
                 '~' => Txt(Has),
                 '@' => Txt(Text),
 
-                '└' => Line(3),
-                '─' => Line(5),
-                '┘' => Line(6),
-                '┴' => Line(7),
-                '┌' => Line(9),
-                '│' => Line(10),
-                '├' => Line(11),
-                '┐' => Line(12),
-                '┬' => Line(13),
-                '┤' => Line(14),
-                '┼' => Line(15),
+                '.' => Line,
 
                 '𝟙' => Level(Extra(1)),
                 '𝟚' => Level(Extra(2)),
@@ -376,8 +396,8 @@ where
             })
         {
             (Some(FullCell(cell)), _) => if c.is_uppercase() {
-                if let Entity::Noun(_, n) = cell[cell.len() - 1] {
-                    vec![Entity::Text(Right, Object(n))]
+                if let Entity::Noun(n) = cell[cell.len() - 1].e {
+                    vec![LiveEntity { dir: Right, e: Entity::Text(Object(n)) }]
                 } else {
                     vec![]
                 }
@@ -385,14 +405,14 @@ where
                 cell.clone()
             }
             (Some(Abbreviation(noun)), _) => if c.is_uppercase() {
-                vec![Entity::Text(Right, Object(*noun))]
+                vec![LiveEntity { dir: Right, e: Entity::Text(Object(*noun)) }]
             } else {
-                vec![Entity::Noun(Right, *noun)]
+                vec![LiveEntity { dir: Right, e: Entity::Noun(*noun) }]
             }
-            (_, Adj(adj)) => vec![Entity::Text(Right, Adjective(adj))],
-            (_, Txt(txt)) => vec![Entity::Text(Right, txt)],
-            (_, Line(x)) => vec![Entity::Noun(Right, Noun::Line(x))],
-            (_, Level(x)) => vec![Entity::Noun(Right, Noun::Level(x))],
+            (_, Adj(adj)) => vec![LiveEntity { dir: Right, e: Entity::Text(Adjective(adj)) }],
+            (_, Txt(txt)) => vec![LiveEntity { dir: Right, e: Entity::Text(txt) }],
+            (_, Line) => vec![LiveEntity { dir: Right, e: Entity::Noun(Noun::Line) }],
+            (_, Level(x)) => vec![LiveEntity { dir: Right, e: Entity::Noun(Noun::Level(x)) }],
             (_, Blank) => vec![],
         }
     }
@@ -404,8 +424,8 @@ where
                 .map(|c| to_cell(&legend, c))
                 .chain(iter::repeat(vec![]))
                 .take(max)
-                .collect::<Vec<Vec<Entity>>>()).collect::<Vec<Vec<Vec<Entity>>>>())
-        .fold(vec![], |level: Vec<Vec<Vec<Entity>>>, layer: Vec<Vec<Vec<Entity>>>|
+                .collect::<Vec<Vec<LiveEntity>>>()).collect::<Vec<Vec<Vec<LiveEntity>>>>())
+        .fold(vec![], |level: Vec<Vec<Vec<LiveEntity>>>, layer: Vec<Vec<Vec<LiveEntity>>>|
             level.into_iter()
                  .zip_longest(layer.into_iter())
                  .map(|x| x.or_default())
@@ -417,9 +437,9 @@ where
                             level_cell.extend(layer_cell);
                             level_cell
                         })
-                        .collect::<Vec<Vec<Entity>>>()
+                        .collect::<Vec<Vec<LiveEntity>>>()
                      )
-                 .collect::<Vec<Vec<Vec<Entity>>>>());
+                 .collect::<Vec<Vec<Vec<LiveEntity>>>>());
 
     (
         level,
@@ -434,7 +454,7 @@ where
                     for k in k[2..].split(",") {
                         if k != "" {
                             let c = to_cell(&legend, k.chars().next().unwrap());
-                            if let Entity::Noun(_, n) = c[0] {
+                            if let Entity::Noun(n) = c[0].e {
                                 color_overrides.insert(n, v);
                             }
                         }
@@ -446,7 +466,7 @@ where
     )
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive_the_basics]
 enum Predicate {
     HasNoun(TextOrNoun),
     IsNoun(TextOrNoun),
@@ -454,13 +474,13 @@ enum Predicate {
 }
 use Predicate::*;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive_the_basics]
 enum TextOrNoun {
     Text,
     Noun(Noun),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive_the_basics]
 enum Negatable<T> {
     Yes(T),
     No(T),
@@ -534,10 +554,10 @@ mod tests {
                          _ => panic!("unrecognized word: '{}'", s),
                      })
                      .map(|t| t.iter()
-                               .map(|t| Entity::Text(Right, *t))
-                               .collect::<Vec<Entity>>())
+                               .map(|t| LiveEntity { dir: Right, e: Entity::Text(*t) })
+                               .collect::<Vec<LiveEntity>>())
                      .map(|c| ((0, 0), c))
-                     .collect::<Vec<((usize, usize), Vec<Entity>)>>();
+                     .collect::<Vec<((usize, usize), Vec<LiveEntity>)>>();
             scan_rules_line(&mut result, input_.iter().map(|(i, c)| (*i, c)));
             assert_eq!(
                 output.into_iter().collect::<HashSet<Rule>>(),
@@ -765,8 +785,8 @@ where
     let x: Vec<Vec<(Index, Text)>> =
        line.map(|((x, y), c)| c.iter()
                      .enumerate()
-                     .filter_map(|(i, &e)| match e {
-                         Entity::Text(_, t) => Some(((x, y, i), t)),
+                     .filter_map(|(i, &e)| match e.e {
+                         Entity::Text(t) => Some(((x, y, i), t)),
                          _ => None,
                      }).collect()
            ).collect();
@@ -873,7 +893,7 @@ fn partition_overridden_rules<A>(rules: Vec<(A, Rule)>)
     (active, overridden)
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[derive_the_basics]
 pub enum Input {
     Go(Direction),
     Wait,
@@ -901,7 +921,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
          0.max(y as i16 + dy).min(height as i16 - 1) as usize)
     }
 
-    fn entities(level: &Level) -> impl Iterator<Item=((usize, usize, usize), Entity)> + '_ {
+    fn entities(level: &Level) -> impl Iterator<Item=((usize, usize, usize), LiveEntity)> + '_ {
         level.iter()
              .enumerate()
              .flat_map(move |(y, row)|
@@ -939,7 +959,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
     }
 
     fn subject_match(level: &Level, x: usize, y: usize, i: usize, s: &Subject) -> bool {
-        let t_or_n = level[y][x][i].to_text_or_noun();
+        let t_or_n = level[y][x][i].e.to_text_or_noun();
         match (*s, t_or_n) {
             (Yes(y), _) => y == t_or_n,
             (No(n), TextOrNoun::Noun(_)) => n != t_or_n,
@@ -960,7 +980,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
         yes && !no
     }
 
-    fn is_or_has(level: &Level, x: usize, y: usize, i: usize, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> Vec<Entity> {
+    fn is_or_has(level: &Level, x: usize, y: usize, i: usize, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> Vec<LiveEntity> {
         let [yes, no] = array_map_ref(&rules,
             |v| v.iter()
                  .filter(|(s, _)| subject_match(level, x, y, i, s))
@@ -971,24 +991,26 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
         let mut result = yes.difference(&no).copied().collect::<Vec<TextOrNoun>>();
         result.sort();
         let e = level[y][x][i];
-        let d = e.direction();
         result
           .iter()
-          .map(|x| match x {
-              TextOrNoun::Noun(n) => Entity::Noun(d, *n),
-              TextOrNoun::Text => Entity::Text(d, match e {
-                  Entity::Noun(_, n) => Text::Object(n),
-                  Entity::Text(_, _) => Text::Text,
-              }),
+          .map(|x| LiveEntity {
+              dir: e.dir,
+              e: match x {
+                  TextOrNoun::Noun(n) => Entity::Noun(*n),
+                  TextOrNoun::Text => Entity::Text(match e.e {
+                      Entity::Noun(n) => Text::Object(n),
+                      Entity::Text(_) => Text::Text,
+                  }),
+              }
           })
           .collect()
     }
 
-    fn has(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<Entity> {
+    fn has(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<LiveEntity> {
         is_or_has(level, x, y, i, &rules.1)
     }
 
-    fn is_noun(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<Entity> {
+    fn is_noun(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<LiveEntity> {
         let v = is_or_has(level, x, y, i, &rules.2);
         if v.contains(&level[y][x][i]) {
             vec![] // x is x
@@ -1208,10 +1230,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                     for &(_, o) in cell {
                         if let Some((e, d)) = o {
                             let (x, y) = delta(&level, d, x, y);
-                            level[y][x].push(match e {
-                                Entity::Text(_, t) => Entity::Text(d, t),
-                                Entity::Noun(_, n) => Entity::Noun(d, n),
-                            });
+                            level[y][x].push(LiveEntity { dir: d, e: e.e, });
                         }
                     }
                 }
@@ -1237,13 +1256,16 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
         for col in 0..level.len() {
             for row in 0..level[0].len() {
                 for i in 0..level[col][row].len() {
-                    if let Entity::Noun(_, Noun::Cursor) = level[col][row][i] {
+                    if let Entity::Noun(Noun::Cursor) = level[col][row][i].e {
                         let (x, y) = delta(&level, d, row, col);
                         for j in 0..level[y][x].len() {
-                            if let Entity::Noun(_, n) = level[y][x][j] {
-                                if match n { Line(_) => true, Level(_) => true, _ => false } {
+                            if let Entity::Noun(n) = level[y][x][j].e {
+                                if match n { Line => true, Level(_) => true, _ => false } {
                                     level[col][row].remove(i);
-                                    level[y][x].push(Entity::Noun(d, Noun::Cursor));
+                                    level[y][x].push(LiveEntity {
+                                        dir: d,
+                                        e: Entity::Noun(Noun::Cursor)
+                                    });
                                     break 'top;
                                 }
                             }
@@ -1258,7 +1280,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
     {
         let m = entities(&level)
             .filter_map(|((x, y, i), e)| match is(&level, x, y, i, &rules_cache, Move) {
-                true => Some((x, y, i, e.direction(), true)),
+                true => Some((x, y, i, e.dir, true)),
                 false => None,
             }).collect();
         move_things(&mut level, &rules, m);
@@ -1383,7 +1405,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
         let mut pads = teles.iter().map(|x| x.0).collect::<Vec<(usize, usize)>>();
         pads.dedup();
         if pads.len() > 1 {
-            let mut travelers: HashMap<(usize, usize), Vec<(usize, Entity, (usize, usize))>>
+            let mut travelers: HashMap<(usize, usize), Vec<(usize, LiveEntity, (usize, usize))>>
                 = HashMap::new();
             for ((x, y), _, all) in teles {
                 for i in all {
@@ -1420,7 +1442,7 @@ pub async fn render_diff(path: &str) {
     let (start, good, bad, palette_name, input) = load::<_, Diff>(path).unwrap();
     let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
     let sprites = load_sprite_map();
-    let render = |s, x, y, w, h| render_level(s, &palette, &sprites, &[], &HashMap::new(), Rect::new(x, y, w, h), 20.);
+    let render = |s, x, y, w, h| render_level(s, 0, &palette, &sprites, &[], &HashMap::new(), Rect::new(x, y, w, h), 20.);
     let font_size = 20.;
     let font_color = WHITE;
     loop {
@@ -1529,6 +1551,7 @@ pub async fn replay(path: &str) {
         clear_background(palette.get_pixel(1, 0));
         render_level(
             &screens[i],
+            i as u32,
             &palette,
             &sprites,
             &[],
@@ -1668,7 +1691,7 @@ pub enum LevelResult {
     Enter(LevelName),
 }
 
-pub async fn play_level<P>
+async fn play_level<P>
     (sprites: &SpriteMap, mut last_input: (f64, Option<KeyCode>), level: P, cursor: Option<LevelName>)
     -> (LevelResult, (f64, Option<KeyCode>))
 where
@@ -1680,9 +1703,12 @@ where
         for y in 0..level.len() {
             for x in 0..level[0].len() {
                 for i in 0..level[y][x].len() {
-                    if let Entity::Noun(_, Level(l)) = level[y][x][i] {
+                    if let Entity::Noun(Level(l)) = level[y][x][i].e {
                         if l == at {
-                            level[y][x].push(Entity::Noun(Right, Cursor));
+                            level[y][x].push(LiveEntity {
+                                dir: Right,
+                                e: Entity::Noun(Cursor)
+                            });
                             return true;
                         }
                     }
@@ -1719,7 +1745,7 @@ where
     let mut win_time = None;
     let mut paused = false;
 
-    #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    #[derive_the_basics]
     enum UIInput {
         Control(Input),
         Pause,
@@ -1769,14 +1795,14 @@ where
                 Some(Enter) => {
                     for y in 0..current_state.len() {
                         for x in 0..current_state[0].len() {
-                            if !current_state[y][x].iter().any(|e| match e {
-                                Entity::Noun(_, Cursor) => true,
+                            if !current_state[y][x].iter().any(|e| match e.e {
+                                Entity::Noun(Cursor) => true,
                                 _ => false,
                             }) {
                                 continue;
                             }
                             for e in current_state[y][x].iter() {
-                                if let Entity::Noun(_, Level(l)) = *e {
+                                if let Entity::Noun(Level(l)) = e.e {
                                     return (LevelResult::Enter(l), last_input);
                                 }
                             }
@@ -1796,6 +1822,7 @@ where
             clear_background(palette.get_pixel(1, 0));
             let bounds = render_level(
                 &current_state,
+                history.len() as u32,
                 &palette,
                 &sprites,
                 &backgrounds,
@@ -1846,6 +1873,7 @@ where
 
 fn render_level(
     level: &Level,
+    physics_step: u32,
     palette: &Image,
     sprites: &SpriteMap,
     backgrounds: &[String],
@@ -1905,19 +1933,63 @@ fn render_level(
             let y = offset_y + sq_size * row as f32;
             for (i, e) in level[row][col].iter().enumerate() {
                 let anim_frame = (row + col + i + anim_frame) % 3;
-                let (cx, cy) = match e {
-                    Entity::Noun(_, n) => color_overrides.get(n).copied(),
+                let (cx, cy) = match e.e {
+                    Entity::Noun(n) => color_overrides.get(&n).copied(),
                     _ => None,
-                }.unwrap_or_else(|| e.default_color(
+                }.unwrap_or_else(|| e.e.default_color(
                     active_texts.contains(&(col, row, i)),
                 ));
                 let c = palette.get_pixel(cx, cy);
-                if let Entity::Noun(_, Cursor) = e {
+                if let Entity::Noun(Cursor) = e.e {
                     // draw it at the end so it's on top of everything
                     continue;
                 }
-                draw_sprite(x, y, sq_size, sprites.0[&canon(&e)][anim_frame], c);
-                if let Entity::Noun(_, Level(l)) = e {
+                {
+                    let s = match e.e {
+                        Entity::Noun(Level(_)) => Entity::Noun(Level(LevelName::default())),
+                        _ => e.e,
+                    };
+                    let fuse = |dy, dx| {
+                        let x = col as i16 + dx;
+                        let y = row as i16 + dy;
+                        if x < 0 || x >= level[0].len() as i16 || y < 0 || y >= level.len() as i16 {
+                            return true;
+                        }
+                        for n in &level[y as usize][x as usize] {
+                            if n.e == s {
+                                return true;
+                            }
+                            if let Entity::Noun(Level(_)) = n.e {
+                                if s == Entity::Noun(Line) {
+                                    return true;
+                                }
+                            }
+                        }
+                        false
+                    };
+                    let sprite_state = match s {
+                        Entity::Text(_) => IdleState,
+                        Entity::Noun(n) => match n.sprite_variant() {
+                            Idle => IdleState,
+                            Face => FaceState(e.dir),
+                            Fuse => FuseState(Neighborhood {
+                                above: fuse(-1, 0),
+                                right: fuse(0, 1),
+                                below: fuse(1, 0),
+                                left: fuse(0, -1),
+                            }),
+                            Walk => WalkState(0, e.dir),
+                            Look => LookState(physics_step as u8 % 4, e.dir),
+                            Tick => TickState(physics_step as u8 % 4),
+                        },
+                    };
+                    draw_sprite(
+                        x, y, sq_size,
+                        sprites.0[&(s, sprite_state)][anim_frame],
+                        c,
+                    );
+                }
+                if let Entity::Noun(Level(l)) = e.e {
                     let (x, y, sq) = match l {
                         Extra(_) => (x, y, sq_size),
                         Parent => (x, y, sq_size),
@@ -1929,8 +2001,8 @@ fn render_level(
                         ),
                     };
                     let l = match l {
-                        SubWorld(_, i) => SubWorld(0, *i),
-                        _ => *l,
+                        SubWorld(_, i) => SubWorld(0, i),
+                        _ => l,
                     };
                     draw_sprite(x, y, sq, sprites.1[&l], WHITE);
                 }
@@ -1960,13 +2032,13 @@ fn render_level(
     for row in 0..height {
         for col in 0..width {
             for e in &level[row][col] {
-                if let Entity::Noun(_, Cursor) = e {
-                    let (cx, cy) = e.default_color(false);
+                if let Entity::Noun(Cursor) = e.e {
+                    let (cx, cy) = Cursor.color();
                     let c = palette.get_pixel(cx, cy);
                     let x = offset_x + sq_size * (col as f32 - 0.18);
                     let y = offset_y + sq_size * (row as f32 - 0.18);
                     let sq_size = sq_size * 1.36;
-                    draw_sprite(x, y, sq_size, sprites.0[&e][anim_frame], c);
+                    draw_sprite(x, y, sq_size, sprites.0[&(e.e, IdleState)][anim_frame], c);
                 }
             }
         }
@@ -1977,7 +2049,7 @@ fn render_level(
 }
 
 type SpriteMapT<T> = (
-    HashMap<Entity, [T; 3]>,
+    HashMap<(Entity, SpriteVariantState), [T; 3]>,
     HashMap<LevelName, T>,
     T,
     HashMap<String, [T; 3]>,
@@ -1996,7 +2068,7 @@ fn level_icon_names() -> Vec<String> {
     r
 }
 
-pub fn load_sprite_map() -> SpriteMap {
+fn load_sprite_map() -> SpriteMap {
     type CPUTexture = (u16, u16, Vec<u8>);
 
     fn memo<F: Fn() -> Result<image::DynamicImage>>(key: &str, f: F) -> Result<CPUTexture> {
@@ -2033,62 +2105,52 @@ pub fn load_sprite_map() -> SpriteMap {
         })
     }
 
-    fn load(e: Entity) -> (Entity, [CPUTexture; 3]) {
-        let original_sprite_path = "resources/original/Data/Sprites";
-        let orig = |s| Some(format!("{original_sprite_path}/{s}"));
-        let filename = match match e {
-            Entity::Noun(_, n) => match n {
-                Wall => orig("wall_0".to_string()),
-                Line(x) => orig(format!("line_{x}")),
-                Level(_) => Some("resources/level_0".to_string()),
-                _ => None,
-            },
-            Entity::Text(_, Text::Object(Line(_))) => orig("text_line_0".to_string()),
-            Entity::Text(_, Text::Object(Level(_))) => orig("text_level_0".to_string()),
-            _ => None,
-        } {
-            Some(f) => f,
-            None => {
-                let name = match e {
-                    Entity::Noun(_, Bog) => "water".to_string(),
-                    Entity::Noun(_, Lava) => "water".to_string(),
-                    Entity::Noun(_, n) => format!("{:?}", n),
-                    Entity::Text(_, t) => "text_".to_string() + &(match t {
-                        Text::Adjective(a) => format!("{:?}", a),
-                        Text::Object(Seastar) => "star".to_string(),
-                        Text::Object(o) => format!("{:?}", o),
-                        Text::Is => "is".to_string(),
-                        Text::And => "and".to_string(),
-                        Text::Not => "not".to_string(),
-                        Text::Has => "has".to_string(),
-                        Text::Text => "text".to_string(),
-                    }),
-                }.to_lowercase();
-                let filename = format!(
-                    "{original_sprite_path}/{name}_{}",
-                    match match e { Entity::Noun(d, _) => d, Entity::Text(d, _) => d } {
-                        Right => "0",
-                        Up => "8",
-                        Left => "16",
-                        Down => "24",
-                    }
-                );
-                if std::path::Path::new(&format!("{filename}_1.png")).exists() {
-                    filename
-                } else {
-                    format!("{original_sprite_path}/{name}_0")
-                }
-            },
+    fn load(e: Entity, d: SpriteVariantState) -> ((Entity, SpriteVariantState), [CPUTexture; 3]) {
+        let asset_dir = match e {
+            Entity::Noun(Level(_)) => "resources",
+            _ => "resources/original/Data/Sprites",
         };
-        (
-            e,
-            [
-                load_texture_sync(&format!("{filename}_1.png")).unwrap(),
-                load_texture_sync(&format!("{filename}_2.png")).unwrap(),
-                load_texture_sync(&format!("{filename}_3.png")).unwrap(),
-            ],
-        )
+        let base_name = match e {
+            Entity::Text(t) => "text_".to_string() + match t {
+                Text::Adjective(a) => a.into(),
+                Text::Object(o) => match o {
+                    Level(_) => "level",
+                    Seastar => "star",
+                    _ => o.into(),
+                },
+                _ => t.into(),
+            },
+            Entity::Noun(n) => match n {
+                Bog => "water",
+                Lava => "water",
+                _ => n.into(),
+            }.to_string(),
+        };
+        fn face_ix(d: Direction) -> u8 {
+            match d {
+                Right => 0,
+                Up => 8,
+                Left => 16,
+                Down => 24,
+            }
+        }
+        let variant = match d {
+            IdleState => 0,
+            FaceState(d) => face_ix(d),
+            FuseState(Neighborhood { left, above, right, below }) =>
+                (below as u8) << 3 |
+                (left  as u8) << 2 |
+                (above as u8) << 1 |
+                (right as u8),
+            WalkState(n, d) => face_ix(d) + (n % 4),
+            LookState(n, d) => face_ix(d) + (n as u8 % 4),
+            TickState(n) => n as u8 % 4,
+        };
+        ((e, d), core::array::from_fn(|i|
+            load_texture_sync(
+                &format!("{asset_dir}/{base_name}_{variant}_{}.png", i + 1)).unwrap()))
     }
+
     fn load_level_label(icons: &[String], l: LevelName) -> (LevelName, CPUTexture) {
         let original_sprite_path = "resources/original/Data/Sprites";
         let custom_sprite_path = "resources";
@@ -2145,6 +2207,7 @@ pub fn load_sprite_map() -> SpriteMap {
             Parent => load_texture_sync(
                 &format!("{custom_sprite_path}/up.png")
             ).unwrap(),
+
         })
     }
 
@@ -2162,7 +2225,28 @@ pub fn load_sprite_map() -> SpriteMap {
     let icons = level_icon_names();
 
     let r: SpriteMapT<CPUTexture> = (
-        all_entities().map(load).collect(),
+        all_entities()
+            .flat_map(|e| match match e { Entity::Text(_) => Idle, Entity::Noun(n) => n.sprite_variant() } {
+                Idle => vec![IdleState],
+                Face => Direction::iter().map(FaceState).collect::<Vec<_>>(),
+                Fuse => iproduct!([true, false], [true, false], [true, false], [true, false])
+                    .map(|n| FuseState(Neighborhood {
+                        left: n.0,
+                        above: n.1,
+                        right: n.2,
+                        below: n.3,
+                    }))
+                    .collect::<Vec<_>>(),
+                Walk => iproduct!((0..4), Direction::iter())
+                    .map(|(n, d)| WalkState(n, d))
+                    .collect::<Vec<_>>(),
+                Look => iproduct!((0..4), Direction::iter())
+                    .map(|(n, d)| LookState(n, d))
+                    .collect::<Vec<_>>(),
+                Tick => (0..4).map(|t| TickState(t)).collect::<Vec<_>>(),
+            }.into_iter().map(move |s| (e, s)))
+            .map(|(e, s)| load(e, s))
+            .collect(),
         (0..14).map(move |x| Number(x))
             .chain(('a'..'f').map(move |x| Letter(x)))
             .chain((1..7).map(move |x| Extra(x)))
@@ -2271,3 +2355,11 @@ void main() {
     uv = texcoord;
 }
 ";
+
+pub async fn record_golden(level: &str, output: &str) {
+    let sprites = load_sprite_map();
+    let (result, _) = play_level(&sprites, (0., None), level, None).await;
+    if let LevelResult::Win(history) = result {
+        save(&history, &format!("goldens/{output}.ron.br")).unwrap();
+    }
+}

@@ -19,16 +19,16 @@ palette = factory
    ppp     t   tt           ttttt
   pp ppp        pp    pppppp   tt
      p pp   ppp   𝟝 c  pt  ppp  t
-        pp   p    │  ppptt p pp t
-      ppp  ww  𝟚  𝟏┬𝟞  pp  p  p
-  u    p   www │ 679    pppp  pp
-          wwww 4─58𝟎─𝟜    p  tp
-       gg  ww  3  │       p  tt
-    c   gg     │  𝟛  pp     tttt
-        gg   𝟙─2 g    p      tt
+        pp   p    .  ppptt p pp t
+      ppp  ww  𝟚  𝟏.𝟞  pp  p  p
+  u    p   www . 679    pppp  pp
+          wwww 4.58𝟎.𝟜    p  tp
+       gg  ww  3  .       p  tt
+    c   gg     .  𝟛  pp     tttt
+        gg   𝟙.2 g    p      tt
   c    c   g   1 gg pppp c   t
-          ggg  │
-     l     ggg •─0g g   r    c
+          ggg  .
+     l     ggg •.0g g   r    c
            ggg   ggg  g   c
          g  g   gggg gg
     c          gggg         d

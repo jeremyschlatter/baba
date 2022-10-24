@@ -17,13 +17,13 @@ hhhh     a     c               ha
         bbbbbb   a aaa  a
         bbbbb 𝟑𝟎  a a    a
         pbpbp 76
-    a          │     a         hh
-              ┌┴89𝟏𝟐      j    ha
-hhh       𝟚𝟙─54        j       ha
+    a          .     a         hh
+              ..89𝟏𝟐      j    ha
+hhh       𝟚𝟙.54        j       ha
   h          32               hhh
   h           1         j     h
-  h           │      a        h
-hhhhh   s     │               h
+  h           .      a        h
+hhhhh   s     .               h
     h     s   •        hhhhhhhh
     h              hhhhh      h
     hhhh           haaah      h

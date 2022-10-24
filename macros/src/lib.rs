@@ -2,6 +2,15 @@ use proc_macro::TokenStream;
 use syn::{parse_macro_input, DeriveInput};
 use quote::quote;
 
+#[proc_macro_attribute]
+pub fn derive_the_basics(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let mut result = TokenStream::from(quote!{
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+    });
+    result.extend(item);
+    result
+}
+
 #[proc_macro_derive(BabaProps, attributes(props))]
 pub fn baba_probs_derive(input: TokenStream) -> TokenStream {
     fn get_props(attrs: Vec<syn::Attribute>, ident: &syn::Ident) -> syn::punctuated::Punctuated<syn::NestedMeta, syn::token::Comma> {
