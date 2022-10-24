@@ -20,15 +20,29 @@ enum SpriteVariant {
     Walk, // 2, depends on motion and direction
     Look, // 3, depends on timestep and direction
     Tick, // 4, depends on timestep
+    Diag, // n/a, depends on adjacent & diagonal neighbors
 }
 use SpriteVariant::*;
 
 #[derive_the_basics]
 struct Neighborhood {
-    above: bool,
     right: bool,
-    below: bool,
+    above: bool,
     left: bool,
+    below: bool,
+}
+
+#[derive_the_basics]
+struct NeighborhoodDiag {
+    right: bool,
+    above: bool,
+    left: bool,
+    below: bool,
+
+    above_right: bool,
+    above_left: bool,
+    below_right: bool,
+    below_left: bool,
 }
 
 #[derive_the_basics]
@@ -39,6 +53,7 @@ enum SpriteVariantState {
     WalkState(u8, Direction),
     LookState(u8, Direction),
     TickState(u8),
+    DiagState(NeighborhoodDiag),
 }
 use SpriteVariantState::*;
 
@@ -49,7 +64,7 @@ use SpriteVariantState::*;
 pub enum Noun {
     #[props(0, 3, 4, 0, 4, 1, Walk)] Baba,
     #[props(2, 2, 2, 1, 2, 2, Walk)] Keke,
-    #[props(1, 1, 1, 1, 0, 1, Fuse)] Wall,
+    #[props(1, 1, 1, 1, 0, 1, Diag)] Wall,
     #[props(2, 2, 2, 1, 2, 2, Idle)] Door,
     #[props(2, 4, 6, 1, 2, 4, Idle)] Key,
     #[props(2, 4, 6, 1, 2, 4, Idle)] Flag,
@@ -1442,7 +1457,7 @@ pub async fn render_diff(path: &str) {
     let (start, good, bad, palette_name, input) = load::<_, Diff>(path).unwrap();
     let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
     let sprites = load_sprite_map();
-    let render = |s, x, y, w, h| render_level(s, 0, &palette, &sprites, &[], &HashMap::new(), Rect::new(x, y, w, h), 20.);
+    let render = |s, x, y, w, h| render_level(s, 0, &palette, &sprites, &[], &HashMap::new(), true, Rect::new(x, y, w, h), 20.);
     let font_size = 20.;
     let font_color = WHITE;
     loop {
@@ -1556,6 +1571,7 @@ pub async fn replay(path: &str) {
             &sprites,
             &[],
             &HashMap::new(),
+            true,
             Rect::new(0., 0., screen_width(), screen_height()),
             20.,
         );
@@ -1744,12 +1760,14 @@ where
 
     let mut win_time = None;
     let mut paused = false;
+    let mut seamless = true;
 
     #[derive_the_basics]
     enum UIInput {
         Control(Input),
         Pause,
         Enter,
+        ToggleSeamless,
     }
     use UIInput::*;
 
@@ -1766,10 +1784,12 @@ where
                 (KeyCode::Z, Control(Undo)),
                 (KeyCode::Escape, Pause),
                 (KeyCode::Enter, Enter),
+                (KeyCode::W, ToggleSeamless),
             ],
             |i, t| match i {
                 Control(Undo) => t > 0.075,
                 Pause => false,
+                ToggleSeamless => false,
                 _ => t > 0.15,
             },
         );
@@ -1809,6 +1829,7 @@ where
                         }
                     }
                 },
+                Some(ToggleSeamless) => seamless = !seamless,
             };
             current_state = &history[history.len() - 1];
             if let Some(Control(i)) = current_input {
@@ -1827,6 +1848,7 @@ where
                 &sprites,
                 &backgrounds,
                 &color_overrides,
+                seamless,
                 Rect::new(0., 0., screen_width(), screen_height()),
                 20.,
             );
@@ -1878,6 +1900,7 @@ fn render_level(
     sprites: &SpriteMap,
     backgrounds: &[String],
     color_overrides: &HashMap<Noun, (u32, u32)>,
+    seamless: bool,
     bounds: Rect,
     min_border: f32,
 ) -> Rect {
@@ -1967,20 +1990,33 @@ fn render_level(
                         }
                         false
                     };
+                    let neighborhood = || (fuse(0, 1), fuse(-1, 0), fuse(0, -1), fuse(1, 0));
                     let sprite_state = match s {
                         Entity::Text(_) => IdleState,
                         Entity::Noun(n) => match n.sprite_variant() {
                             Idle => IdleState,
                             Face => FaceState(e.dir),
-                            Fuse => FuseState(Neighborhood {
-                                above: fuse(-1, 0),
-                                right: fuse(0, 1),
-                                below: fuse(1, 0),
-                                left: fuse(0, -1),
-                            }),
+                            Fuse => {
+                                let (right, above, left, below) = neighborhood();
+                                FuseState(Neighborhood { right, above, left, below })
+                            },
                             Walk => WalkState(0, e.dir),
                             Look => LookState(physics_step as u8 % 4, e.dir),
                             Tick => TickState(physics_step as u8 % 4),
+                            Diag => {
+                                let (right, above, left, below) = neighborhood();
+                                DiagState(NeighborhoodDiag {
+                                    right,
+                                    above,
+                                    left,
+                                    below,
+
+                                    above_right: seamless && above && right && fuse(-1, 1),
+                                    above_left: seamless && above && left && fuse(-1, -1),
+                                    below_right: seamless && below && right && fuse(1, 1),
+                                    below_left: seamless && below && left && fuse(1, -1),
+                                })
+                            },
                         },
                     };
                     draw_sprite(
@@ -2106,8 +2142,14 @@ fn load_sprite_map() -> SpriteMap {
     }
 
     fn load(e: Entity, d: SpriteVariantState) -> ((Entity, SpriteVariantState), [CPUTexture; 3]) {
-        let asset_dir = match e {
-            Entity::Noun(Level(_)) => "resources",
+        let asset_dir = match (e, d) {
+            (Entity::Noun(Level(_)), _) => "resources",
+            (_, DiagState(n)) =>
+                if n.above_right || n.above_left || n.below_right || n.below_left {
+                    "resources"
+                } else {
+                    "resources/original/Data/Sprites"
+                }
             _ => "resources/original/Data/Sprites",
         };
         let base_name = match e {
@@ -2145,10 +2187,23 @@ fn load_sprite_map() -> SpriteMap {
             WalkState(n, d) => face_ix(d) + (n % 4),
             LookState(n, d) => face_ix(d) + (n as u8 % 4),
             TickState(n) => n as u8 % 4,
+            DiagState(NeighborhoodDiag {
+                left, above, right, below,
+                below_left, below_right, above_left, above_right,
+            }) =>
+                (below_left  as u8) << 7 |
+                (below_right as u8) << 6 |
+                (above_left  as u8) << 5 |
+                (above_right as u8) << 4 |
+
+                (below as u8) << 3 |
+                (left  as u8) << 2 |
+                (above as u8) << 1 |
+                (right as u8),
         };
-        ((e, d), core::array::from_fn(|i|
+        ((e, d), core::array::from_fn(|i| {
             load_texture_sync(
-                &format!("{asset_dir}/{base_name}_{variant}_{}.png", i + 1)).unwrap()))
+                &format!("{asset_dir}/{base_name}_{variant}_{}.png", i + 1)).unwrap()}))
     }
 
     fn load_level_label(icons: &[String], l: LevelName) -> (LevelName, CPUTexture) {
@@ -2229,13 +2284,18 @@ fn load_sprite_map() -> SpriteMap {
             .flat_map(|e| match match e { Entity::Text(_) => Idle, Entity::Noun(n) => n.sprite_variant() } {
                 Idle => vec![IdleState],
                 Face => Direction::iter().map(FaceState).collect::<Vec<_>>(),
-                Fuse => iproduct!([true, false], [true, false], [true, false], [true, false])
-                    .map(|n| FuseState(Neighborhood {
-                        left: n.0,
-                        above: n.1,
-                        right: n.2,
-                        below: n.3,
-                    }))
+                Fuse => [[true, false]; 4].iter()
+                    .multi_cartesian_product()
+                    .map(|n| {
+                        if let &[r, a, l, b] = &n[..] {
+                            FuseState(Neighborhood {
+                                right: *r,
+                                above: *a,
+                                left: *l,
+                                below: *b,
+                            })
+                        } else { panic!("logic error") }
+                    })
                     .collect::<Vec<_>>(),
                 Walk => iproduct!((0..4), Direction::iter())
                     .map(|(n, d)| WalkState(n, d))
@@ -2244,6 +2304,31 @@ fn load_sprite_map() -> SpriteMap {
                     .map(|(n, d)| LookState(n, d))
                     .collect::<Vec<_>>(),
                 Tick => (0..4).map(|t| TickState(t)).collect::<Vec<_>>(),
+                Diag => [[true, false]; 8].iter()
+                    .multi_cartesian_product()
+                    .filter(|n| {
+                        if let &[r, a, l, b, ar, al, br, bl] = &n[..] {
+                            (!*ar || *a && *r) &&
+                                (!*al || *a && *l) &&
+                                (!*br || *b && *r) &&
+                                (!*bl || *b && *l)
+                        } else { panic!("logic error") }
+                    })
+                    .map(|n| {
+                        if let &[r, a, l, b, ar, al, br, bl] = &n[..] {
+                            DiagState(NeighborhoodDiag {
+                                right: *r,
+                                above: *a,
+                                left: *l,
+                                below: *b,
+                                above_right: *ar,
+                                above_left: *al,
+                                below_right: *br,
+                                below_left: *bl,
+                            })
+                        } else { panic!("logic error") }
+                    })
+                    .collect::<Vec<_>>(),
             }.into_iter().map(move |s| (e, s)))
             .map(|(e, s)| load(e, s))
             .collect(),
