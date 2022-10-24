@@ -1,118 +1,82 @@
 #[macro_use]
 extern crate lazy_static;
 
+use macros::*;
+
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
 use macroquad::prelude::*;
 use miniquad::graphics::*;
 use serde::{Serialize, Deserialize};
-use strum::{EnumCount, EnumIter, EnumProperty, EnumString, IntoEnumIterator};
+use strum::{EnumCount, EnumIter, EnumString, IntoEnumIterator};
 
 use std::{io::{Read, Write}, iter, collections::{HashMap, HashSet, VecDeque}, str::FromStr};
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString, EnumProperty)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString, BabaProps)]
 #[strum(serialize_all = "snake_case")]
+#[props(u32, u32, u32, u32, u32, u32)]
 pub enum Noun {
-    #[strum(props(color = "0 3", text_color = "4 0", text_color_active = "4 1"))]
-    Baba,
-    #[strum(props(color = "2 2", text_color = "2 1", text_color_active = "2 2"))]
-    Keke,
-    #[strum(props(color = "1 1", text_color = "1 1", text_color_active = "0 1"))]
-    Wall,
-    #[strum(props(color = "2 2", text_color = "2 1", text_color_active = "2 2"))]
-    Door,
-    #[strum(props(color = "2 4", text_color = "6 1", text_color_active = "2 4"))]
-    Key,
-    #[strum(props(color = "2 4", text_color = "6 1", text_color_active = "2 4"))]
-    Flag,
-    #[strum(props(color = "6 2", text_color = "6 0", text_color_active = "6 1"))]
-    Rock,
-    #[strum(props(color = "0 0", text_color = "1 1", text_color_active = "0 1"))]
-    Tile,
-    #[strum(props(color = "5 0", text_color = "5 1", text_color_active = "5 3"))]
-    Grass,
-    #[strum(props(color = "1 3", text_color = "1 2", text_color_active = "1 3"))]
-    Water,
-    #[strum(props(color = "2 1", text_color = "2 0", text_color_active = "2 1"))]
-    Skull,
-    #[strum(props(color = "2 3", text_color = "2 2", text_color_active = "2 3"))]
-    Lava,
-    #[strum(props(color = "6 3", text_color = "6 0", text_color_active = "6 1"))]
-    Brick,
-    #[strum(props(color = "3 3", text_color = "3 2", text_color_active = "3 3"))]
-    Flower,
-    #[strum(props(color = "1 2", text_color = "1 2", text_color_active = "1 3"))]
-    Ice,
-    #[strum(props(color = "1 4", text_color = "1 3", text_color_active = "1 4"))]
-    Jelly,
-    #[strum(props(color = "2 2", text_color = "2 1", text_color_active = "2 2"))]
-    Crab,
-    #[strum(props(color = "2 3", text_color = "2 2", text_color_active = "2 3"))]
-    Seastar,
-    #[strum(props(color = "5 2", text_color = "5 0", text_color_active = "5 1"))]
-    Algae,
-    #[strum(props(color = "4 2", text_color = "4 1", text_color_active = "4 2"))]
-    Love,
-    #[strum(props(color = "0 1", text_color = "1 1", text_color_active = "0 1"))]
-    Pillar,
-    #[strum(props(color = "1 4", text_color = "1 3", text_color_active = "1 4"))]
-    Bubble,
-    #[strum(props(color = "5 1", text_color = "5 0", text_color_active = "5 1"))]
-    Hedge,
-    #[strum(props(color = "0 1", text_color = "0 1", text_color_active = "0 2"))]
-    Cog,
-    #[strum(props(color = "1 1", text_color = "1 1", text_color_active = "0 1"))]
-    Pipe,
-    #[strum(props(color = "0 1", text_color = "1 1", text_color_active = "0 1"))]
-    Robot,
-    #[strum(props(color = "2 4", text_color = "2 3", text_color_active = "2 4"))]
-    Bolt,
-    #[strum(props(color = "6 2", text_color = "6 1", text_color_active = "6 2"))]
-    Reed,
-    #[strum(props(color = "5 1", text_color = "5 1", text_color_active = "5 3"))]
-    Bog,
-    #[strum(props(color = "6 2", text_color = "6 0", text_color_active = "6 1"))]
-    Box,
-    #[strum(props(color = "6 1", text_color = "6 0", text_color_active = "6 2"))]
-    Stump,
-    #[strum(props(color = "6 1", text_color = "5 1", text_color_active = "6 1"))]
-    Husk,
-    #[strum(props(color = "5 2", text_color = "5 1", text_color_active = "5 2"))]
-    Tree,
-    #[strum(props(color = "4 2", text_color = "4 1", text_color_active = "4 2"))]
-    Ghost,
-    #[strum(props(color = "6 1", text_color = "6 0", text_color_active = "6 1"))]
-    Fence,
-    #[strum(props(color = "6 0", text_color = "2 2", text_color_active = "2 3"))]
-    Foliage,
-    #[strum(props(color = "2 4", text_color = "6 1", text_color_active = "2 4"))]
-    Leaf,
-    #[strum(props(color = "6 1", text_color = "6 0", text_color_active = "6 2"))]
-    Fungi,
-    #[strum(props(color = "6 1", text_color = "6 0", text_color_active = "6 1"))]
-    Fungus,
-    #[strum(props(color = "4 2", text_color = "2 3", text_color_active = "2 4"))]
-    Cursor,
-    #[strum(props(color = "0 1", text_color = "0 1", text_color_active = "0 2"))]
-    Statue,
-    #[strum(props(color = "2 2", text_color = "2 1", text_color_active = "2 2"))]
-    Fruit,
-    #[strum(props(color = "0 1", text_color = "1 1", text_color_active = "0 1"))]
-    Rocket,
-    #[strum(props(color = "2 4", text_color = "6 1", text_color_active = "2 4"))]
-    Star,
-    #[strum(props(color = "5 2", text_color = "5 1", text_color_active = "5 2"))]
-    Trees,
-    #[strum(props(color = "6 1", text_color = "6 1", text_color_active = "6 2"))]
-    Husks,
-
-    #[strum(props(color = "0 3", text_color = "0 2", text_color_active = "0 3"))]
-    Line(u8),
-
-    #[strum(props(color = "0 0", text_color = "4 0", text_color_active = "4 1"))]
-    Level(LevelName),
+    #[props(0, 3, 4, 0, 4, 1)] Baba,
+    #[props(2, 2, 2, 1, 2, 2)] Keke,
+    #[props(1, 1, 1, 1, 0, 1)] Wall,
+    #[props(2, 2, 2, 1, 2, 2)] Door,
+    #[props(2, 4, 6, 1, 2, 4)] Key,
+    #[props(2, 4, 6, 1, 2, 4)] Flag,
+    #[props(6, 2, 6, 0, 6, 1)] Rock,
+    #[props(0, 0, 1, 1, 0, 1)] Tile,
+    #[props(5, 0, 5, 1, 5, 3)] Grass,
+    #[props(1, 3, 1, 2, 1, 3)] Water,
+    #[props(2, 1, 2, 0, 2, 1)] Skull,
+    #[props(2, 3, 2, 2, 2, 3)] Lava,
+    #[props(6, 3, 6, 0, 6, 1)] Brick,
+    #[props(3, 3, 3, 2, 3, 3)] Flower,
+    #[props(1, 2, 1, 2, 1, 3)] Ice,
+    #[props(1, 4, 1, 3, 1, 4)] Jelly,
+    #[props(2, 2, 2, 1, 2, 2)] Crab,
+    #[props(2, 3, 2, 2, 2, 3)] Seastar,
+    #[props(5, 2, 5, 0, 5, 1)] Algae,
+    #[props(4, 2, 4, 1, 4, 2)] Love,
+    #[props(0, 1, 1, 1, 0, 1)] Pillar,
+    #[props(1, 4, 1, 3, 1, 4)] Bubble,
+    #[props(5, 1, 5, 0, 5, 1)] Hedge,
+    #[props(0, 1, 0, 1, 0, 2)] Cog,
+    #[props(1, 1, 1, 1, 0, 1)] Pipe,
+    #[props(0, 1, 1, 1, 0, 1)] Robot,
+    #[props(2, 4, 2, 3, 2, 4)] Bolt,
+    #[props(6, 2, 6, 1, 6, 2)] Reed,
+    #[props(5, 1, 5, 1, 5, 3)] Bog,
+    #[props(6, 2, 6, 0, 6, 1)] Box,
+    #[props(6, 1, 6, 0, 6, 2)] Stump,
+    #[props(6, 1, 5, 1, 6, 1)] Husk,
+    #[props(5, 2, 5, 1, 5, 2)] Tree,
+    #[props(4, 2, 4, 1, 4, 2)] Ghost,
+    #[props(6, 1, 6, 0, 6, 1)] Fence,
+    #[props(6, 0, 2, 2, 2, 3)] Foliage,
+    #[props(2, 4, 6, 1, 2, 4)] Leaf,
+    #[props(6, 1, 6, 0, 6, 2)] Fungi,
+    #[props(6, 1, 6, 0, 6, 1)] Fungus,
+    #[props(4, 2, 2, 3, 2, 4)] Cursor,
+    #[props(0, 1, 0, 1, 0, 2)] Statue,
+    #[props(2, 2, 2, 1, 2, 2)] Fruit,
+    #[props(0, 1, 1, 1, 0, 1)] Rocket,
+    #[props(2, 4, 6, 1, 2, 4)] Star,
+    #[props(5, 2, 5, 1, 5, 2)] Trees,
+    #[props(6, 1, 6, 1, 6, 2)] Husks,
+    #[props(0, 3, 0, 2, 0, 3)] Line(u8),
+    #[props(0, 0, 4, 0, 4, 1)] Level(LevelName),
 }
 use Noun::*;
+
+impl Noun {
+    fn color(&self) -> (u32, u32) {
+        let p = self.props();
+        (p.0, p.1)
+    }
+    fn text_color(&self, active: bool) -> (u32, u32) {
+        let p = self.props();
+        if active { (p.4, p.5) } else { (p.2, p.3) }
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 pub enum LevelName {
@@ -130,56 +94,50 @@ impl Default for LevelName {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString, EnumProperty, EnumCount)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize, EnumIter, EnumString, EnumCount, BabaProps)]
 #[strum(serialize_all = "snake_case")]
+#[props(u32, u32, u32, u32)]
 pub enum Adjective {
-    #[strum(props(text_color = "4 0", text_color_active = "4 1"))]
-    You,
-    #[strum(props(text_color = "5 0", text_color_active = "5 1"))]
-    Stop,
-    #[strum(props(text_color = "6 0", text_color_active = "6 1"))]
-    Push,
-    #[strum(props(text_color = "6 1", text_color_active = "2 4"))]
-    Win,
-    #[strum(props(text_color = "1 2", text_color_active = "1 3"))]
-    Sink,
-    #[strum(props(text_color = "2 0", text_color_active = "2 1"))]
-    Defeat,
-    #[strum(props(text_color = "2 2", text_color_active = "2 3"))]
-    Hot,
-    #[strum(props(text_color = "1 2", text_color_active = "1 3"))]
-    Melt,
-    #[strum(props(text_color = "5 1", text_color_active = "5 3"))]
-    Move,
-    #[strum(props(text_color = "2 1", text_color_active = "2 2"))]
-    Shut,
-    #[strum(props(text_color = "6 1", text_color_active = "2 4"))]
-    Open,
-    #[strum(props(text_color = "1 2", text_color_active = "1 4"))]
-    Float,
-    #[strum(props(text_color = "1 1", text_color_active = "1 2"))]
-    Weak,
-    #[strum(props(text_color = "1 2", text_color_active = "1 4"))]
-    Tele,
-    #[strum(props(text_color = "6 1", text_color_active = "6 2"))]
-    Pull,
+    #[props(4, 0, 4, 1)] You,
+    #[props(5, 0, 5, 1)] Stop,
+    #[props(6, 0, 6, 1)] Push,
+    #[props(6, 1, 2, 4)] Win,
+    #[props(1, 2, 1, 3)] Sink,
+    #[props(2, 0, 2, 1)] Defeat,
+    #[props(2, 2, 2, 3)] Hot,
+    #[props(1, 2, 1, 3)] Melt,
+    #[props(5, 1, 5, 3)] Move,
+    #[props(2, 1, 2, 2)] Shut,
+    #[props(6, 1, 2, 4)] Open,
+    #[props(1, 2, 1, 4)] Float,
+    #[props(1, 1, 1, 2)] Weak,
+    #[props(1, 2, 1, 4)] Tele,
+    #[props(6, 1, 6, 2)] Pull,
 }
 use Adjective::*;
+impl Adjective {
+    fn color(&self, active: bool) -> (u32, u32) {
+        let p = self.props();
+        if active { (p.2, p.3) } else { (p.0, p.1) }
+    }
+}
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, EnumProperty)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, BabaProps)]
+#[props(u32, u32, u32, u32)]
 pub enum Text {
-    #[strum(props(text_color = "0 1", text_color_active = "0 3"))]
-    Is,
-    #[strum(props(text_color = "0 1", text_color_active = "0 3"))]
-    And,
-    #[strum(props(text_color = "4 0", text_color_active = "4 1"))]
-    Text,
-    #[strum(props(text_color = "0 1", text_color_active = "0 3"))]
-    Has,
-    #[strum(props(text_color = "2 1", text_color_active = "2 2"))]
-    Not,
-    Object(Noun),
-    Adjective(Adjective),
+    #[props(0, 1, 0, 3)] Is,
+    #[props(0, 1, 0, 3)] And,
+    #[props(4, 0, 4, 1)] Text,
+    #[props(0, 1, 0, 3)] Has,
+    #[props(2, 1, 3, 2)] Not,
+    #[props(0, 0, 0, 0)] Object(Noun),
+    #[props(0, 0, 0, 0)] Adjective(Adjective),
+}
+impl Text {
+    fn color(&self, active: bool) -> (u32, u32) {
+        let p = self.props();
+        if active { (p.2, p.3) } else { (p.0, p.1) }
+    }
 }
 impl FromStr for Text {
     type Err = String;
@@ -233,23 +191,16 @@ impl Entity {
             Entity::Text(_, _) => TextOrNoun::Text,
         }
     }
-}
-
-fn default_color(e: Entity, active: bool) -> (u32, u32) {
-    let text_prop = if active { "text_color_active" } else { "text_color" };
-    let ixs = match e {
-        Entity::Noun(_, n) => n.get_str("color"),
-        Entity::Text(_, t) => match t {
-            Text::Object(n) => n.get_str(text_prop),
-            Text::Adjective(a) => a.get_str(text_prop),
-            _ => t.get_str(text_prop),
-        },
-    }.unwrap();
-
-    (
-        ixs[0..1].parse().unwrap(),
-        ixs[2..3].parse().unwrap(),
-    )
+    fn default_color(&self, active: bool) -> (u32, u32) {
+        match self {
+            Entity::Noun(_, n) => n.color(),
+            Entity::Text(_, t) => match t {
+                Text::Object(n) => n.text_color(active),
+                Text::Adjective(a) => a.color(active),
+                _ => t.color(active),
+            },
+        }
+    }
 }
 
 fn all_entities() -> impl Iterator<Item=Entity> {
@@ -1957,8 +1908,8 @@ fn render_level(
                 let (cx, cy) = match e {
                     Entity::Noun(_, n) => color_overrides.get(n).copied(),
                     _ => None,
-                }.unwrap_or_else(|| default_color(
-                    *e, active_texts.contains(&(col, row, i)),
+                }.unwrap_or_else(|| e.default_color(
+                    active_texts.contains(&(col, row, i)),
                 ));
                 let c = palette.get_pixel(cx, cy);
                 if let Entity::Noun(_, Cursor) = e {
@@ -2010,7 +1961,7 @@ fn render_level(
         for col in 0..width {
             for e in &level[row][col] {
                 if let Entity::Noun(_, Cursor) = e {
-                    let (cx, cy) = default_color(*e, false);
+                    let (cx, cy) = e.default_color(false);
                     let c = palette.get_pixel(cx, cy);
                     let x = offset_x + sq_size * (col as f32 - 0.18);
                     let y = offset_y + sq_size * (row as f32 - 0.18);
