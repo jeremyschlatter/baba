@@ -1,7 +1,7 @@
 w = wall
 b = baba
 r = rock
-c = crab
+c = crab left
 f = flag
 j = jelly
 palette = ocean

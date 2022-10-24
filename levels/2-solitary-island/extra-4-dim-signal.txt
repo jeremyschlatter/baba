@@ -2,13 +2,14 @@ p = pipe
 t = tile
 r = reed
 w = bog
-b = baba
+b = baba down
 f = flag
 c = cog
-x = robot
+x = robot down
 o = rock
 i = ice
 palette = factory
++ t = 1,0
 ---
 P=⊘ptp      r  ww        ptt
 pppppp         ww r  pFppptt

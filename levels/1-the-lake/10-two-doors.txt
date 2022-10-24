@@ -5,9 +5,10 @@ d = door
 h = hedge
 t = tile
 s = seastar
-f = flag
+f = flag on tile
 palette = ocean
 right pad = 1
++ t = 1,0
 ---
 
  a                       a

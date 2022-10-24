@@ -1,6 +1,6 @@
 f = flag
 b = baba
-s = skull
+s = skull down
 r = rock
 right pad = 2
 ---

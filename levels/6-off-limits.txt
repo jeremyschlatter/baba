@@ -7,6 +7,7 @@ b = baba
 c = brick
 w = wall
 t = tile
++ t = 1,0
 ---
 R=⊘ rggggg  s        ggg
     r ggp wwswwwwwww  gg

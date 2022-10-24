@@ -4,6 +4,7 @@ t = tile
 f = flag
 b = baba
 right pad = 1
++ t = 1,0
 ---
 
        g

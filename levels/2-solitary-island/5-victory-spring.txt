@@ -1,5 +1,5 @@
 w = water
-b = baba
+b = baba left
 c = cog
 palette = factory
 ---

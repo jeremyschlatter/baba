@@ -6,6 +6,8 @@ w = water
 f = flag
 k = key
 palette = factory
++ t = 1,0
++ g = 3,0
 ---
 gggggg           gg gggg
 gggg         c        gg

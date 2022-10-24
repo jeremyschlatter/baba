@@ -2,9 +2,11 @@ g = grass
 f = flower
 w = wall
 b = baba
-k = keke
+k = keke left
 t = tile
 palette = factory
++ t = 1,0
++ g = 6,3
 ---
                     g          gg
   g       gg      g             g

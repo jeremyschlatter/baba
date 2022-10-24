@@ -1,7 +1,7 @@
 a = algae
 x = skull
 j = jelly
-c = crab
+c = crab down
 s = seastar
 b = baba on tile
 f = flag
@@ -10,6 +10,7 @@ w = wall
 r = rock
 right pad = 1
 palette = ocean
++ t = 1,0
 ---
  a                   aa
 a                        a

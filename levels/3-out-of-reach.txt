@@ -5,6 +5,7 @@ t = tile
 a = water
 f = flag
 r = rock
++ t = 1,0
 ---
 BWw             g
 ==w g  wwwwwwww g

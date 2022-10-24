@@ -1,10 +1,11 @@
 g = grass
 p = pipe
-r = robot
+r = robot down
 f = flag
 w = water
 b = baba
 palette = factory
++ g = 1,0
 ---
  ggggg    p   p   gggggg
   ggg     p ppp      ggg

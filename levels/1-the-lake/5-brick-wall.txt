@@ -5,6 +5,7 @@ w = wall
 f = flag
 c = brick
 palette = ocean
++ t = 1,0
 ---
  a           a
 a  ttttt

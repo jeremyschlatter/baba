@@ -11,6 +11,7 @@ c = brick
 t = tile
 r = rock on brick
 palette = ocean
++ t = 1,0
 ---
                          a
      wwwww   o   wwwww    a

@@ -5,7 +5,9 @@ s = seastar
 w = wall
 b = baba
 c = brick
+t = tile
 palette = ocean
++ t = 1,0
 ---
 F=✓
  a              a p

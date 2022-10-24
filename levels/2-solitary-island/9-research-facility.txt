@@ -4,9 +4,10 @@ k = keke
 w = wall
 b = baba
 z = bolt
-s = skull
+s = skull down
 t = tile
 palette = factory
++ t = 1,0
 ---
    p                  p
 pppp     c            pp

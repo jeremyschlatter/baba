@@ -4,6 +4,7 @@ f = flag
 w = wall
 r = rock
 right pad = 11
++ t = 1,0
 ---
 
 

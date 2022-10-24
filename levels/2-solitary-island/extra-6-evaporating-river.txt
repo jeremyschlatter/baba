@@ -3,7 +3,7 @@ w = water
 l = wall
 c = cog
 f = flag
-s = skull
+s = skull down
 palette = factory
 ---
 B=✥    w lC=↦&⌢

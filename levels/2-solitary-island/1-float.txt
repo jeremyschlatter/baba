@@ -4,7 +4,7 @@ w = wall
 t = tile
 r = rock
 right pad = 6
-palette = factory
++ t = 1,0
 ---
 B=⚲
 
