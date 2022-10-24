@@ -5,6 +5,7 @@ w = wall
 c = brick
 palette = ruins
 right pad = 9
++ w = 2,3
 ---
 
 

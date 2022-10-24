@@ -4,10 +4,12 @@ h = husk
 s = stump
 c = brick
 l = love
-k = keke
+k = keke down
 b = box
 f = flag
 palette = ruins
++ w = 6,0
++ h = 5,1
 ---
               ooooo
    wwwwwwwww  ooooo h     h

@@ -5,10 +5,11 @@ g = grass
 f = flag
 o = tile
 c = brick
-b = baba
+b = baba down
 x = box
 d = door
 palette = ruins
++ o = 1,0
 ---
 K=⧜w        t              g
 wwww     g     gg wwwwwww

@@ -5,10 +5,11 @@ s = stump
 t = tree
 h = water
 b = baba
-k = keke
+k = keke down
 d = door
 f = flag
 palette = ruins
++ w = 6,0
 ---
 ggg g w cccc ccc      s cccc t  t
 ggg   w  c                c    t

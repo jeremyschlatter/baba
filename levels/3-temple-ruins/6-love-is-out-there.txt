@@ -1,7 +1,7 @@
 g = grass
 w = wall
 d = door
-b = baba
+b = baba down
 x = box
 k = key
 l = love

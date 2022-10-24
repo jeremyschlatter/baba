@@ -1,5 +1,5 @@
 w = wall
-s = skull
+s = skull down
 g = grass
 b = baba
 r = rock
