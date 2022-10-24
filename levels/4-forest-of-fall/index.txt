@@ -5,6 +5,10 @@ f = fence
 g = grass
 w = water
 palette = autumn
++ • = 4,1
++ 1,2,3,4,5,6,7,8,9,𝟙 = 2,2
++ 𝟎,𝟏,𝟐,𝟚 = 2,3
++ 𝔸,𝔹,ℂ,𝔻,𝔼,𝟛 = 4,2
 ---
   t t                      fggggg
  t   t       h      t      fggggg
@@ -24,22 +28,3 @@ t   t   h  gg   h  a        fffff
            ggh       a  a   fgggg
           h gg h    a       fgggg
    t          h             fgggg
-+++
-p = pink
-r = red
-y = yellow
----
-
-
-
-
-                   r
-
-                rr r p
-            p   rr
-            pp rrrr
-            pp
-
-             p    y y
-                 yy
-+++
