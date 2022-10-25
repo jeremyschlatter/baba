@@ -464,7 +464,6 @@ where
             let mut color_overrides = HashMap::new();
             for (k, v) in metas.iter() {
                 if k.starts_with("+ ") {
-                    // println!("{v}, {}, {}", v[0..1], v[2);
                     let v: (u32, u32) = (v[0..1].parse().unwrap(), v[2..3].parse().unwrap());
                     for k in k[2..].split(",") {
                         if k != "" {
@@ -582,6 +581,31 @@ mod tests {
         }
     }
 
+    #[derive_the_basics]
+    #[serde(rename(deserialize = "Entity"))]
+    enum OldEntity {
+        Noun(Direction, Noun),
+        Text(Direction, Text),
+    }
+    type OldCell = Vec<OldEntity>;
+    type OldLevel = Vec<Vec<OldCell>>;
+    fn translate(input: Vec<OldLevel>) -> Vec<Level> {
+        input.into_iter()
+            .map(|l| l.into_iter()
+                .map(|row| row.into_iter()
+                    .map(|cell| cell.into_iter()
+                        .map(|e| match e {
+                            OldEntity::Noun(d, n) =>
+                                LiveEntity{ dir: d, e: Entity::Noun(n) },
+                            OldEntity::Text(d, t) =>
+                                LiveEntity{ dir: d, e: Entity::Text(t) },
+                        }).collect::<Cell>()
+                    ).collect::<Vec<Cell>>()
+                ).collect::<Level>()
+            ).collect::<Vec<Level>>()
+    }
+    type OldReplay = (Vec<OldLevel>, Vec<Input>, String);
+
     #[test]
     fn replay_tests() {
         let pool = threadpool::ThreadPool::new(
@@ -600,7 +624,9 @@ mod tests {
         for entry in goldens {
             let tx = tx.clone();
             pool.execute(move|| {
-                let (screens, inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
+                println!("{}", entry.path().display());
+                let (old_screens, inputs, palette_name) = load::<_, OldReplay>(entry.path()).unwrap();
+                let screens = translate(old_screens);
 
                 let mut n = 1;
                 for i in 0..screens.len() - 1 {
