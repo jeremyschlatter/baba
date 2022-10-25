@@ -1892,10 +1892,10 @@ fn render_level(
         .collect::<HashSet<Index>>();
 
     let overridden_texts = {
-        let (_, overridden) = partition_overridden_rules(rules);
-        overridden.into_iter()
-                  .flat_map(|x| x.0)
-                  .collect::<HashSet<Index>>()
+        let (active, overridden) = partition_overridden_rules(rules);
+        overridden.into_iter().flat_map(|x| x.0).collect::<HashSet<Index>>().difference(
+            &active.into_iter().flat_map(|x| x.0).collect::<HashSet<Index>>()
+        ).copied().collect::<HashSet<Index>>()
     };
 
     let anim_frame = (get_time() / 0.15).trunc() as usize % 3;
