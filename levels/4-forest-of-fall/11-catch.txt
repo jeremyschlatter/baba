@@ -1,4 +1,4 @@
-b = baba
+b = baba left
 h = hedge
 u = husk
 t = tree
