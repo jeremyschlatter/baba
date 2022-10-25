@@ -97,10 +97,10 @@ dependencies = [
  "macroquad",
  "macros",
  "oorandom",
+ "rayon",
  "ron",
  "serde",
  "strum",
- "threadpool",
  "walkdir",
 ]
 

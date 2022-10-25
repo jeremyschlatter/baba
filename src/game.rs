@@ -514,6 +514,7 @@ type Rule = (Subject, Negatable<Predicate>);
 
 #[cfg(test)]
 mod tests {
+    use rayon::prelude::*;
     use crate::*;
     #[test]
     fn scan_rules() {
@@ -583,87 +584,56 @@ mod tests {
 
     #[test]
     fn replay_tests() {
-        let pool = threadpool::ThreadPool::new(
-            std::thread::available_parallelism().map(|n| n.get()).unwrap_or(10));
-        let (tx, rx) = std::sync::mpsc::channel::<
-            (String, Result<(), (Diff, Replay)>)
-        >();
-
         let goldens = walkdir::WalkDir::new("goldens")
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| !e.file_type().is_dir())
             .collect::<Vec<_>>();
-        let n = goldens.len();
 
-        for entry in goldens {
-            let tx = tx.clone();
-            pool.execute(move|| {
-                println!("{}", entry.path().display());
-                let (screens, inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
+        assert!(goldens.par_iter().enumerate().all(|(ti, entry)| {
+            println!("{}", entry.path().display());
+            let (screens, inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
 
-                let mut n = 1;
-                for i in 0..screens.len() - 1 {
-                    if inputs[i] == Undo {
-                        if n > 0 { n -= 1 };
-                        continue;
-                    }
-                    let (got, _) = step(&screens[i], inputs[i], n);
-                    n += 1;
-                    if got != screens[i + 1] {
-                        tx.send((
-                            format!("{}", entry.path().display()),
-                            Err((
-                                (
-                                    screens[i].clone(),
-                                    screens[i+1].clone(),
-                                    got.clone(),
-                                    palette_name.to_string(),
-                                    inputs[i],
-                                ),
-                                (
-                                    {
-                                        let mut screens = vec![screens[0].clone()];
-                                        let mut i = 0;
-                                        for input in &inputs {
-                                            if *input == Undo {
-                                                if i > 0 { i -= 1 }
-                                                screens.push(screens[i].clone());
-                                                continue;
-                                            }
-                                            screens.push(step(&screens[i], *input, i as u32).0);
-                                            i = screens.len() - 1;
-                                        }
-                                        screens
-                                    },
-                                    inputs,
-                                    palette_name.to_string(),
-                                ),
-                            ))
-                        )).unwrap();
-                        return;
-                    }
+            let mut n = 1;
+            for i in 0..screens.len() - 1 {
+                if inputs[i] == Undo {
+                    if n > 0 { n -= 1 };
+                    continue;
                 }
-
-                tx.send((format!("{}", entry.path().display()), Ok(()))).unwrap();
-            });
-        }
-
-        let results = rx.into_iter().take(n).collect::<Vec<_>>();
-
-        for r in results {
-            if let (s, Err((diff, replay))) = r {
-                println!("{s}");
-                save::<_, Diff>(&diff, "diff.ron.br").unwrap();
-                save::<_, Replay>(&replay, "replay.ron.br").unwrap();
-                assert!(std::process::Command::new("cargo")
-                    .args(&["run", "render-diff", "diff.ron.br"])
-                    .status()
-                    .unwrap()
-                    .success());
-                assert!(false, "replay mismatch. saved diff and new replay");
+                let (got, _) = step(&screens[i], inputs[i], n);
+                n += 1;
+                if got != screens[i + 1] {
+                    println!("{}", entry.path().display());
+                    save::<_, Diff>(&format!("diff.{ti}.ron.br"), &(
+                        screens[i].clone(),
+                        screens[i+1].clone(),
+                        got.clone(),
+                        palette_name.to_string(),
+                        inputs[i],
+                    )).unwrap();
+                    save::<_, Replay>(&format!("replay.{i}.ron.br"), &(
+                        {
+                            let mut screens = vec![screens[0].clone()];
+                            let mut i = 0;
+                            for input in &inputs {
+                                if *input == Undo {
+                                    if i > 0 { i -= 1 }
+                                    screens.push(screens[i].clone());
+                                    continue;
+                                }
+                                screens.push(step(&screens[i], *input, i as u32).0);
+                                i = screens.len() - 1;
+                            }
+                            screens
+                        },
+                        inputs,
+                        palette_name.to_string(),
+                    )).unwrap();
+                    return false;
+                }
             }
-        }
+            true
+        }), "replay mismatch. saved diff and new replay");
     }
 }
 
@@ -1593,7 +1563,7 @@ where
     Ok(ron::from_str(&scratch)?)
 }
 
-pub fn save<P: AsRef<std::path::Path>, T>(x: &T, path: P) -> Result<()>
+pub fn save<P: AsRef<std::path::Path>, T>(path: P, x: &T) -> Result<()>
 where
     T: ?Sized + Serialize
 {
@@ -2450,6 +2420,6 @@ pub async fn record_golden(level: &str, output: &str) {
     let sprites = load_sprite_map();
     let (result, _) = play_level(&sprites, (0., None), level, None).await;
     if let LevelResult::Win(history) = result {
-        save(&history, &format!("goldens/{output}.ron.br")).unwrap();
+        save(&format!("goldens/{output}.ron.br"), &history).unwrap();
     }
 }
