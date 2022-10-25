@@ -581,37 +581,12 @@ mod tests {
         }
     }
 
-    #[derive_the_basics]
-    #[serde(rename(deserialize = "Entity"))]
-    enum OldEntity {
-        Noun(Direction, Noun),
-        Text(Direction, Text),
-    }
-    type OldCell = Vec<OldEntity>;
-    type OldLevel = Vec<Vec<OldCell>>;
-    fn translate(input: Vec<OldLevel>) -> Vec<Level> {
-        input.into_iter()
-            .map(|l| l.into_iter()
-                .map(|row| row.into_iter()
-                    .map(|cell| cell.into_iter()
-                        .map(|e| match e {
-                            OldEntity::Noun(d, n) =>
-                                LiveEntity{ dir: d, e: Entity::Noun(n) },
-                            OldEntity::Text(d, t) =>
-                                LiveEntity{ dir: d, e: Entity::Text(t) },
-                        }).collect::<Cell>()
-                    ).collect::<Vec<Cell>>()
-                ).collect::<Level>()
-            ).collect::<Vec<Level>>()
-    }
-    type OldReplay = (Vec<OldLevel>, Vec<Input>, String);
-
     #[test]
     fn replay_tests() {
         let pool = threadpool::ThreadPool::new(
             std::thread::available_parallelism().map(|n| n.get()).unwrap_or(10));
         let (tx, rx) = std::sync::mpsc::channel::<
-            (String, Result<Option<Replay>, (Diff, Replay)>)
+            (String, Result<(), (Diff, Replay)>)
         >();
 
         let goldens = walkdir::WalkDir::new("goldens")
@@ -625,15 +600,7 @@ mod tests {
             let tx = tx.clone();
             pool.execute(move|| {
                 println!("{}", entry.path().display());
-                let (migrate, (screens, inputs, palette_name)) =
-                    match load::<_, Replay>(entry.path()) {
-                        Ok(x) => (false, x),
-                        Err(_) => {
-                            let (old_screens, inputs, palette_name) =
-                                load::<_, OldReplay>(entry.path()).unwrap();
-                            (true, (translate(old_screens), inputs, palette_name))
-                        }
-                    };
+                let (screens, inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
 
                 let mut n = 1;
                 for i in 0..screens.len() - 1 {
@@ -678,35 +645,23 @@ mod tests {
                     }
                 }
 
-                let result =
-                    if migrate {
-                        Some((screens, inputs, palette_name))
-                    } else {
-                        None
-                    };
-                tx.send((format!("{}", entry.path().display()), Ok(result))).unwrap();
+                tx.send((format!("{}", entry.path().display()), Ok(()))).unwrap();
             });
         }
 
         let results = rx.into_iter().take(n).collect::<Vec<_>>();
 
         for r in results {
-            match r {
-                (s, Err((diff, replay))) => {
-                    println!("{s}");
-                    save::<_, Diff>(&diff, "diff.ron.br").unwrap();
-                    save::<_, Replay>(&replay, "replay.ron.br").unwrap();
-                    assert!(std::process::Command::new("cargo")
-                        .args(&["run", "render-diff", "diff.ron.br"])
-                        .status()
-                        .unwrap()
-                        .success());
-                    assert!(false, "replay mismatch. saved diff and new replay");
-                },
-                (s, Ok(r)) => if let Some(replay) = r {
-                    println!("overwriting {s}");
-                    save(&replay, s).unwrap();
-                },
+            if let (s, Err((diff, replay))) = r {
+                println!("{s}");
+                save::<_, Diff>(&diff, "diff.ron.br").unwrap();
+                save::<_, Replay>(&replay, "replay.ron.br").unwrap();
+                assert!(std::process::Command::new("cargo")
+                    .args(&["run", "render-diff", "diff.ron.br"])
+                    .status()
+                    .unwrap()
+                    .success());
+                assert!(false, "replay mismatch. saved diff and new replay");
             }
         }
     }
