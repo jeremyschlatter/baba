@@ -611,7 +611,7 @@ mod tests {
         let pool = threadpool::ThreadPool::new(
             std::thread::available_parallelism().map(|n| n.get()).unwrap_or(10));
         let (tx, rx) = std::sync::mpsc::channel::<
-            (String, Result<(), (Diff, Replay)>)
+            (String, Result<Option<Replay>, (Diff, Replay)>)
         >();
 
         let goldens = walkdir::WalkDir::new("goldens")
@@ -625,8 +625,15 @@ mod tests {
             let tx = tx.clone();
             pool.execute(move|| {
                 println!("{}", entry.path().display());
-                let (old_screens, inputs, palette_name) = load::<_, OldReplay>(entry.path()).unwrap();
-                let screens = translate(old_screens);
+                let (migrate, (screens, inputs, palette_name)) =
+                    match load::<_, Replay>(entry.path()) {
+                        Ok(x) => (false, x),
+                        Err(_) => {
+                            let (old_screens, inputs, palette_name) =
+                                load::<_, OldReplay>(entry.path()).unwrap();
+                            (true, (translate(old_screens), inputs, palette_name))
+                        }
+                    };
 
                 let mut n = 1;
                 for i in 0..screens.len() - 1 {
@@ -671,23 +678,35 @@ mod tests {
                     }
                 }
 
-                tx.send((format!("{}", entry.path().display()), Ok(()))).unwrap();
+                let result =
+                    if migrate {
+                        Some((screens, inputs, palette_name))
+                    } else {
+                        None
+                    };
+                tx.send((format!("{}", entry.path().display()), Ok(result))).unwrap();
             });
         }
 
         let results = rx.into_iter().take(n).collect::<Vec<_>>();
 
         for r in results {
-            if let (s, Err((diff, replay))) = r {
-                println!("{s}");
-                save::<_, Diff>(&diff, "diff.ron.br").unwrap();
-                save::<_, Replay>(&replay, "replay.ron.br").unwrap();
-                assert!(std::process::Command::new("cargo")
-                    .args(&["run", "render-diff", "diff.ron.br"])
-                    .status()
-                    .unwrap()
-                    .success());
-                assert!(false, "replay mismatch. saved diff and new replay");
+            match r {
+                (s, Err((diff, replay))) => {
+                    println!("{s}");
+                    save::<_, Diff>(&diff, "diff.ron.br").unwrap();
+                    save::<_, Replay>(&replay, "replay.ron.br").unwrap();
+                    assert!(std::process::Command::new("cargo")
+                        .args(&["run", "render-diff", "diff.ron.br"])
+                        .status()
+                        .unwrap()
+                        .success());
+                    assert!(false, "replay mismatch. saved diff and new replay");
+                },
+                (s, Ok(r)) => if let Some(replay) = r {
+                    println!("overwriting {s}");
+                    save(&replay, s).unwrap();
+                },
             }
         }
     }
