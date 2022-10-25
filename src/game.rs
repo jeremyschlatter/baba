@@ -406,6 +406,12 @@ where
                 '𝟏' => Level(Number(11)),
                 '𝟐' => Level(Number(12)),
                 '𝟑' => Level(Number(13)),
+                '𝟒' => Level(Number(14)),
+                '𝟓' => Level(Number(15)),
+                '𝟔' => Level(Number(16)),
+                '𝟕' => Level(Number(17)),
+                '𝟖' => Level(Number(18)),
+                '𝟗' => Level(Number(19)),
 
                 '•' => Level(Parent),
 
@@ -2309,7 +2315,7 @@ fn load_sprite_map() -> SpriteMap {
             }.into_iter().map(move |s| (e, s)))
             .map(|(e, s)| load(e, s))
             .collect(),
-        (0..14).map(move |x| Number(x))
+        (0..20).map(move |x| Number(x))
             .chain(('a'..'f').map(move |x| Letter(x)))
             .chain((1..7).map(move |x| Extra(x)))
             .chain((0..icons.len()).map(|x| SubWorld(0, x)))
