@@ -109,6 +109,8 @@ pub enum Noun {
     #[props(5, 2, 5, 1, 5, 2, Idle)] Trees,
     #[props(6, 1, 6, 1, 6, 2, Idle)] Husks,
     #[props(0, 3, 0, 2, 0, 3, Fuse)] Line,
+    #[props(3, 1, 3, 0, 3, 1, Walk)] Me,
+
     #[props(0, 0, 4, 0, 4, 1, Idle)] Level(LevelName),
 }
 use Noun::*;
