@@ -230,6 +230,7 @@ impl Direction {
 #[derive_the_basics]
 pub struct LiveEntity {
     dir: Direction,
+    id: u64,
     e: Entity,
 }
 
@@ -299,6 +300,8 @@ where
     }
     let icons = level_icon_names();
     use LegendValue::*;
+    let mut id = 0;
+    let mut next_id = || -> u64 { id += 1; id };
     let legend: HashMap<String, LegendValue> =
         metas.iter()
              .filter(|(&k, _)| k.chars().count() == 1)
@@ -321,6 +324,7 @@ where
                                      let icon = icons.iter().position(|i| i == icon).unwrap();
                                      LiveEntity {
                                          dir: Right,
+                                         id: next_id(),
                                          e: Entity::Noun(Noun::Level(SubWorld(n, icon))),
                                     }
                                  } else {
@@ -329,6 +333,7 @@ where
                                          .unwrap_or(Right);
                                      LiveEntity {
                                          dir: d,
+                                         id: next_id(),
                                          e: Entity::Noun(Noun::from_str(n).expect(n)),
                                     }
                                 }
@@ -351,7 +356,8 @@ where
     use Thing::*;
     use self::Text::*;
 
-    fn to_cell(legend: &HashMap<String, LegendValue>, c: char) -> Vec<LiveEntity> {
+    fn to_cell(id: &mut u64, legend: &HashMap<String, LegendValue>, c: char) -> Vec<LiveEntity> {
+        let mut make_cell = |e| { *id += 1; vec![LiveEntity{ dir: Right, id: *id, e}] };
         match (
             legend.get(c.to_string().to_lowercase().as_str())
             , match c {
@@ -420,7 +426,7 @@ where
         {
             (Some(FullCell(cell)), _) => if c.is_uppercase() {
                 if let Entity::Noun(n) = cell[cell.len() - 1].e {
-                    vec![LiveEntity { dir: Right, e: Entity::Text(Object(n)) }]
+                    make_cell(Entity::Text(Object(n)))
                 } else {
                     vec![]
                 }
@@ -428,14 +434,14 @@ where
                 cell.clone()
             }
             (Some(Abbreviation(noun)), _) => if c.is_uppercase() {
-                vec![LiveEntity { dir: Right, e: Entity::Text(Object(*noun)) }]
+                make_cell(Entity::Text(Object(*noun)))
             } else {
-                vec![LiveEntity { dir: Right, e: Entity::Noun(*noun) }]
+                make_cell(Entity::Noun(*noun))
             }
-            (_, Adj(adj)) => vec![LiveEntity { dir: Right, e: Entity::Text(Adjective(adj)) }],
-            (_, Txt(txt)) => vec![LiveEntity { dir: Right, e: Entity::Text(txt) }],
-            (_, Line) => vec![LiveEntity { dir: Right, e: Entity::Noun(Noun::Line) }],
-            (_, Level(x)) => vec![LiveEntity { dir: Right, e: Entity::Noun(Noun::Level(x)) }],
+            (_, Adj(adj)) => make_cell(Entity::Text(Adjective(adj))),
+            (_, Txt(txt)) => make_cell(Entity::Text(txt)),
+            (_, Line) => make_cell(Entity::Noun(Noun::Line)),
+            (_, Level(x)) => make_cell(Entity::Noun(Noun::Level(x))),
             (_, Blank) => vec![],
         }
     }
@@ -444,7 +450,7 @@ where
     let level = map.split(|s| *s == "---")
         .map(|layer| layer.iter().map(
             |line| line.chars()
-                .map(|c| to_cell(&legend, c))
+                .map(|c| to_cell(&mut id, &legend, c))
                 .chain(iter::repeat(vec![]))
                 .take(max)
                 .collect::<Vec<Vec<LiveEntity>>>()).collect::<Vec<Vec<Vec<LiveEntity>>>>())
@@ -475,7 +481,7 @@ where
                     let v: (u32, u32) = (v[0..1].parse().unwrap(), v[2..3].parse().unwrap());
                     for k in k[2..].split(",") {
                         if k != "" {
-                            let c = to_cell(&legend, k.chars().next().unwrap());
+                            let c = to_cell(&mut id, &legend, k.chars().next().unwrap());
                             if let Entity::Noun(n) = c[0].e {
                                 color_overrides.insert(n, v);
                             }
@@ -566,6 +572,7 @@ mod tests {
 
         ];
         for (input, output) in tests {
+            let mut id = 0;
             let mut result = vec![];
             let input_ =
                 input.iter()
@@ -577,7 +584,11 @@ mod tests {
                          _ => panic!("unrecognized word: '{}'", s),
                      })
                      .map(|t| t.iter()
-                               .map(|t| LiveEntity { dir: Right, e: Entity::Text(*t) })
+                               .map(|t| LiveEntity {
+                                   dir: Right,
+                                   id: { id += 1; id },
+                                   e: Entity::Text(*t)
+                               })
                                .collect::<Vec<LiveEntity>>())
                      .map(|c| ((0, 0), c))
                      .collect::<Vec<((usize, usize), Vec<LiveEntity>)>>();
@@ -894,12 +905,22 @@ pub enum Input {
 }
 use Input::*;
 
+fn max_id(level: &Level) -> u64 {
+    level.iter()
+        .flat_map(|row| row.iter()
+            .flat_map(|cell| cell.iter().map(|e| e.id)))
+        .max()
+        .unwrap_or(0)
+}
+
 fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
     let mut level = l.clone();
     let rules = scan_rules_no_index(&level);
 
     let width = level[0].len();
     let height = level.len();
+
+    let mut id = max_id(&level);
 
     fn delta(level: &Level, d: Direction, x: usize, y: usize) -> (usize, usize) {
         let width = level[0].len();
@@ -973,7 +994,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
         yes && !no
     }
 
-    fn is_or_has(level: &Level, x: usize, y: usize, i: usize, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> Vec<LiveEntity> {
+    fn is_or_has(id: &mut u64, level: &Level, x: usize, y: usize, i: usize, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> Vec<LiveEntity> {
         let [yes, no] = array_map_ref(&rules,
             |v| v.iter()
                  .filter(|(s, _)| subject_match(level, x, y, i, s))
@@ -988,6 +1009,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
           .iter()
           .map(|x| LiveEntity {
               dir: e.dir,
+              id: {*id += 1; *id},
               e: match x {
                   TextOrNoun::Noun(n) => Entity::Noun(*n),
                   TextOrNoun::Text => Entity::Text(match e.e {
@@ -999,12 +1021,12 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
           .collect()
     }
 
-    fn has(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<LiveEntity> {
-        is_or_has(level, x, y, i, &rules.1)
+    fn has(id: &mut u64, level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<LiveEntity> {
+        is_or_has(id, level, x, y, i, &rules.1)
     }
 
-    fn is_noun(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<LiveEntity> {
-        let v = is_or_has(level, x, y, i, &rules.2);
+    fn is_noun(id: &mut u64, level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<LiveEntity> {
+        let v = is_or_has(id, level, x, y, i, &rules.2);
         if v.contains(&level[y][x][i]) {
             vec![] // x is x
         } else {
@@ -1013,7 +1035,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
     }
 
     // move things
-    fn move_things(level: &mut Level, rules: &Vec<Rule>, movers: Vec<(usize, usize, usize, Direction, bool)>) {
+    fn move_things(id: &mut u64, level: &mut Level, rules: &Vec<Rule>, movers: Vec<(usize, usize, usize, Direction, bool)>) {
         let rules_cache = cache_rules(rules);
         let width = level[0].len();
         let height = level.len();
@@ -1206,7 +1228,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                     for (i, (r, _)) in removals[y][x].iter().enumerate() {
                         let ix = n_inserts + r - i;
                         let inserts = if tombstones.contains(&(x, y, ix)) {
-                            has(&level, x, y, ix, &rules_cache)
+                            has(id, &level, x, y, ix, &rules_cache)
                         } else { vec![] };
                         level[y][x].remove(ix);
                         for e in &inserts {
@@ -1223,7 +1245,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                     for &(_, o) in cell {
                         if let Some((e, d)) = o {
                             let (x, y) = delta(&level, d, x, y);
-                            level[y][x].push(LiveEntity { dir: d, e: e.e, });
+                            level[y][x].push(LiveEntity { dir: d, id: e.id, e: e.e, });
                         }
                     }
                 }
@@ -1240,7 +1262,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                 true => Some((x, y, i, d, false)),
                 false => None,
             }).collect();
-        move_things(&mut level, &rules, m);
+        move_things(&mut id, &mut level, &rules, m);
     }
 
     // move cursor
@@ -1254,9 +1276,10 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                         for j in 0..level[y][x].len() {
                             if let Entity::Noun(n) = level[y][x][j].e {
                                 if match n { Line => true, Level(_) => true, _ => false } {
-                                    level[col][row].remove(i);
+                                    let c = level[col][row].remove(i);
                                     level[y][x].push(LiveEntity {
                                         dir: d,
+                                        id: c.id,
                                         e: Entity::Noun(Noun::Cursor)
                                     });
                                     break 'top;
@@ -1276,7 +1299,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                 true => Some((x, y, i, e.dir, true)),
                 false => None,
             }).collect();
-        move_things(&mut level, &rules, m);
+        move_things(&mut id, &mut level, &rules, m);
     }
 
     type SelectT = ((usize, usize), Vec<usize>, Vec<usize>);
@@ -1317,7 +1340,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
     for x in 0..width {
         for y in 0..height {
             for i in (0..level[y][x].len()).rev() {
-                let changed = is_noun(&level, x, y, i, &rules_cache);
+                let changed = is_noun(&mut id, &level, x, y, i, &rules_cache);
                 if changed.len() > 0 {
                     level[y][x].remove(i);
                     for new in changed.into_iter().rev() {
@@ -1374,7 +1397,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                 let mut n_inserts = 0;
                 for i in 0..d.len() {
                     let ix = n_inserts + d[i] - i;
-                    let inserts = has(&level, x, y, ix, &rules_cache);
+                    let inserts = has(&mut id, &level, x, y, ix, &rules_cache);
                     level[y][x].remove(ix);
                     for e in &inserts {
                         level[y][x].insert(ix, *e)
@@ -1694,6 +1717,7 @@ where
     let (mut level, palette_name, backgrounds, color_overrides) = parse_level(level);
 
     fn place_cursor(level: &mut Level, at: LevelName) -> bool {
+        let id = max_id(&level) + 1;
         for y in 0..level.len() {
             for x in 0..level[0].len() {
                 for i in 0..level[y][x].len() {
@@ -1701,6 +1725,7 @@ where
                         if l == at {
                             level[y][x].push(LiveEntity {
                                 dir: Right,
+                                id,
                                 e: Entity::Noun(Cursor)
                             });
                             return true;
@@ -2058,6 +2083,27 @@ fn render_level(
         }
     }
     gl_use_default_material();
+
+    if false {
+        for row in 0..height {
+            for col in 0..width {
+                let x = offset_x + sq_size * col as f32;
+                let y = offset_y + sq_size * row as f32;
+                let l = level[row][col].len();
+                if l > 0 {
+                    draw_rectangle(
+                        x + sq_size * 0.2, y + sq_size * 0.25,
+                        sq_size * 0.6, sq_size * 0.5, BLACK,
+                    );
+                    draw_text(
+                        &format!("{:02}", level[row][col][l - 1].id),
+                        x + sq_size * 0.25, y + sq_size * 0.6,
+                        sq_size * 0.5, WHITE,
+                    );
+                }
+            }
+        }
+    }
 
     Rect::new(offset_x, offset_y, game_width, game_height)
 }
