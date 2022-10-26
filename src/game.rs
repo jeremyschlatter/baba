@@ -110,6 +110,7 @@ pub enum Noun {
     #[props(6, 1, 6, 1, 6, 2, Idle)] Husks,
     #[props(0, 3, 0, 2, 0, 3, Fuse)] Line,
     #[props(3, 1, 3, 0, 3, 1, Walk)] Me,
+    #[props(1, 2, 1, 2, 1, 3, Look)] Belt,
 
     #[props(0, 0, 4, 0, 4, 1, Idle)] Level(LevelName),
 }
@@ -165,6 +166,7 @@ pub enum Adjective {
     #[props(1, 1, 1, 2)] Weak,
     #[props(1, 2, 1, 4)] Tele,
     #[props(6, 1, 6, 2)] Pull,
+    #[props(1, 2, 1, 3)] Shift,
 }
 use Adjective::*;
 impl Adjective {
