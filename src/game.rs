@@ -603,6 +603,33 @@ mod tests {
         }
     }
 
+    #[derive_the_basics]
+    #[serde(rename(deserialize = "LiveEntity"))]
+    struct OldEntity {
+        dir: Direction,
+        e: Entity,
+    }
+    type OldCell = Vec<OldEntity>;
+    type OldLevel = Vec<Vec<OldCell>>;
+    fn translate(input: Vec<OldLevel>) -> Vec<Level> {
+        input.into_iter()
+            .map(|l| {
+                let mut id = 0;
+                l.into_iter()
+                    .map(|row| row.into_iter()
+                        .map(|cell| cell.into_iter()
+                            .map(|e| LiveEntity {
+                                dir: e.dir,
+                                id: { id += 1; id },
+                                e: e.e,
+                            }).collect::<Cell>()
+                        ).collect::<Vec<Cell>>()
+                    ).collect::<Level>()
+                }
+            ).collect::<Vec<Level>>()
+    }
+    type OldReplay = (Vec<OldLevel>, Vec<Input>, String);
+
     #[test]
     fn replay_tests() {
         let goldens = walkdir::WalkDir::new("goldens")
@@ -611,50 +638,113 @@ mod tests {
             .filter(|e| !e.file_type().is_dir())
             .collect::<Vec<_>>();
 
-        assert!(goldens.par_iter().enumerate().all(|(ti, entry)| {
-            println!("{}", entry.path().display());
-            let (screens, inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
+        enum Failure {
+            ReplayMismatch(Diff, Replay),
+            EarlyWin,
+            NoWin,
+        }
+        use Failure::*;
 
-            let mut n = 1;
-            for i in 0..screens.len() - 1 {
-                if inputs[i] == Undo {
-                    if n > 0 { n -= 1 };
-                    continue;
+        let first_failure = goldens.par_iter().find_map_any(|entry| {
+            println!("{}", entry.path().display());
+            let (migrate, (screens, inputs, palette_name)) =
+                match load::<_, Replay>(entry.path()) {
+                    Ok(x) => (false, x),
+                    Err(_) => {
+                        println!("migrating");
+                        let (old_screens, inputs, palette_name) =
+                            load::<_, OldReplay>(entry.path()).unwrap();
+                        (true, (translate(old_screens), inputs, palette_name))
+                    }
+                };
+            let got_screens = {
+                let mut screens = vec![screens[0].clone()];
+                let mut history = vec![screens[0].clone()];
+                for (i, input) in inputs.iter().enumerate() {
+                    if *input == Undo {
+                        if history.len() > 1 {
+                            history.pop();
+                        }
+                    } else {
+                        let (screen, win) = step(
+                            &history[history.len()-1], *input, history.len() as u32);
+                        if i < inputs.len() - 1 && win {
+                            return Some(EarlyWin)
+                        }
+                        if i == inputs.len() - 1 && !win {
+                            return Some(NoWin)
+                        }
+                        history.push(screen);
+                    }
+                    screens.push(history[history.len()-1].clone());
                 }
-                let (got, _) = step(&screens[i], inputs[i], n);
-                n += 1;
-                if got != screens[i + 1] {
+                screens
+            };
+            for i in 0..screens.len() - 1 {
+                fn eq_old(migrate: bool, a: &Level, b: &Level) -> bool {
+                    if !migrate {
+                        return a == b
+                    }
+                    if a.len() != b.len() {
+                        return false
+                    }
+                    if a[0].len() != b[0].len() {
+                        return false
+                    }
+                    for row in 0..a.len() {
+                        for cell in 0..a[0].len() {
+                            if a[row][cell].len() != b[row][cell].len() {
+                                return false
+                            }
+                            for i in 0..a[row][cell].len() {
+                                let a = a[row][cell][i];
+                                let b = b[row][cell][i];
+                                if a.dir != b.dir || a.e != b.e {
+                                    return false
+                                }
+                            }
+                        }
+                    }
+                    true
+                }
+                if !eq_old(migrate, &got_screens[i + 1], &screens[i + 1]) {
                     println!("{}", entry.path().display());
-                    save::<_, Diff>(&format!("diff.{ti}.ron.br"), &(
+                    return Some(ReplayMismatch((
                         screens[i].clone(),
                         screens[i+1].clone(),
-                        got.clone(),
+                        got_screens[i+1].clone(),
                         palette_name.to_string(),
                         inputs[i],
-                    )).unwrap();
-                    save::<_, Replay>(&format!("replay.{i}.ron.br"), &(
-                        {
-                            let mut screens = vec![screens[0].clone()];
-                            let mut i = 0;
-                            for input in &inputs {
-                                if *input == Undo {
-                                    if i > 0 { i -= 1 }
-                                    screens.push(screens[i].clone());
-                                    continue;
-                                }
-                                screens.push(step(&screens[i], *input, i as u32).0);
-                                i = screens.len() - 1;
-                            }
-                            screens
-                        },
+                    ), (
+                        got_screens,
                         inputs,
                         palette_name.to_string(),
-                    )).unwrap();
-                    return false;
+                    )));
                 }
             }
-            true
-        }), "replay mismatch. saved diff and new replay");
+            if migrate {
+                println!("overwriting {}", entry.path().display());
+                save::<_, Replay>(entry.path(), &(got_screens, inputs, palette_name)).unwrap();
+            }
+            None
+        });
+
+        if let Some(failure) = first_failure {
+            match failure {
+                ReplayMismatch(diff, replay) => {
+                    save::<_, Diff>("diff.ron.br", &diff).unwrap();
+                    save::<_, Replay>("replay.ron.br", &replay).unwrap();
+                    assert!(std::process::Command::new("cargo")
+                        .args(&["run", "render-diff", "diff.ron.br"])
+                        .status()
+                        .unwrap()
+                        .success());
+                    assert!(false, "replay mismatch. saved diff and replay");
+                },
+                EarlyWin => assert!(false, "early win"),
+                NoWin => assert!(false, "no win"),
+            }
+        }
     }
 }
 
@@ -1543,7 +1633,7 @@ pub async fn render_diff(path: &str) {
 }
 
 pub async fn replay(path: &str) {
-    let (screens, _, palette_name) = load::<_, Replay>(path).unwrap();
+    let (screens, inputs, palette_name) = load::<_, Replay>(path).unwrap();
     let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
     let sprites = load_sprite_map();
 
@@ -1576,8 +1666,27 @@ pub async fn replay(path: &str) {
             &HashMap::new(),
             true,
             Rect::new(0., 0., screen_width(), screen_height()),
-            20.,
+            40.,
         );
+
+        if i > 0 {
+            draw_text(
+                &format!("{:?}", inputs[i-1]),
+                screen_width() * 0.05,
+                screen_height() * 0.93,
+                screen_width() * 0.03,
+                GRAY,
+            );
+        }
+        if i < inputs.len() {
+            draw_text(
+                &format!("{:?}", inputs[i]),
+                screen_width() * 0.85,
+                screen_height() * 0.93,
+                screen_width() * 0.03,
+                WHITE,
+            );
+        }
 
         next_frame().await
     }
@@ -2086,7 +2195,7 @@ fn render_level(
     }
     gl_use_default_material();
 
-    if false {
+    if true {
         for row in 0..height {
             for col in 0..width {
                 let x = offset_x + sq_size * col as f32;
