@@ -603,33 +603,6 @@ mod tests {
         }
     }
 
-    #[derive_the_basics]
-    #[serde(rename(deserialize = "LiveEntity"))]
-    struct OldEntity {
-        dir: Direction,
-        e: Entity,
-    }
-    type OldCell = Vec<OldEntity>;
-    type OldLevel = Vec<Vec<OldCell>>;
-    fn translate(input: Vec<OldLevel>) -> Vec<Level> {
-        input.into_iter()
-            .map(|l| {
-                let mut id = 0;
-                l.into_iter()
-                    .map(|row| row.into_iter()
-                        .map(|cell| cell.into_iter()
-                            .map(|e| LiveEntity {
-                                dir: e.dir,
-                                id: { id += 1; id },
-                                e: e.e,
-                            }).collect::<Cell>()
-                        ).collect::<Vec<Cell>>()
-                    ).collect::<Level>()
-                }
-            ).collect::<Vec<Level>>()
-    }
-    type OldReplay = (Vec<OldLevel>, Vec<Input>, String);
-
     #[test]
     fn replay_tests() {
         let goldens = walkdir::WalkDir::new("goldens")
@@ -647,16 +620,7 @@ mod tests {
 
         let first_failure = goldens.par_iter().find_map_any(|entry| {
             println!("{}", entry.path().display());
-            let (migrate, (screens, inputs, palette_name)) =
-                match load::<_, Replay>(entry.path()) {
-                    Ok(x) => (false, x),
-                    Err(_) => {
-                        println!("migrating");
-                        let (old_screens, inputs, palette_name) =
-                            load::<_, OldReplay>(entry.path()).unwrap();
-                        (true, (translate(old_screens), inputs, palette_name))
-                    }
-                };
+            let (screens, inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
             let got_screens = {
                 let mut screens = vec![screens[0].clone()];
                 let mut history = vec![screens[0].clone()];
@@ -681,33 +645,7 @@ mod tests {
                 screens
             };
             for i in 0..screens.len() - 1 {
-                fn eq_old(migrate: bool, a: &Level, b: &Level) -> bool {
-                    if !migrate {
-                        return a == b
-                    }
-                    if a.len() != b.len() {
-                        return false
-                    }
-                    if a[0].len() != b[0].len() {
-                        return false
-                    }
-                    for row in 0..a.len() {
-                        for cell in 0..a[0].len() {
-                            if a[row][cell].len() != b[row][cell].len() {
-                                return false
-                            }
-                            for i in 0..a[row][cell].len() {
-                                let a = a[row][cell][i];
-                                let b = b[row][cell][i];
-                                if a.dir != b.dir || a.e != b.e {
-                                    return false
-                                }
-                            }
-                        }
-                    }
-                    true
-                }
-                if !eq_old(migrate, &got_screens[i + 1], &screens[i + 1]) {
+                if got_screens[i + 1] != screens[i + 1] {
                     println!("{}", entry.path().display());
                     return Some(ReplayMismatch((
                         screens[i].clone(),
@@ -721,10 +659,6 @@ mod tests {
                         palette_name.to_string(),
                     )));
                 }
-            }
-            if migrate {
-                println!("overwriting {}", entry.path().display());
-                save::<_, Replay>(entry.path(), &(got_screens, inputs, palette_name)).unwrap();
             }
             None
         });
