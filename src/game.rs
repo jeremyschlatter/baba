@@ -2195,7 +2195,7 @@ fn render_level(
     }
     gl_use_default_material();
 
-    if true {
+    if false {
         for row in 0..height {
             for col in 0..width {
                 let x = offset_x + sq_size * col as f32;
