@@ -1484,7 +1484,18 @@ pub async fn render_diff(path: &str) {
     let (start, good, bad, palette_name, input) = load::<_, Diff>(path).unwrap();
     let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
     let sprites = load_sprite_map();
-    let render = |s, x, y, w, h| render_level(s, 0, &palette, &sprites, &[], &HashMap::new(), true, Rect::new(x, y, w, h), 20.);
+    let render = |s, x, y, w, h| render_level(
+        s,
+        &AnimationState::zero(),
+        0,
+        &palette,
+        &sprites,
+        &[],
+        &HashMap::new(),
+        true,
+        Rect::new(x, y, w, h),
+        20.,
+    );
     let font_size = 20.;
     let font_color = WHITE;
     loop {
@@ -1566,6 +1577,49 @@ pub async fn render_diff(path: &str) {
     }
 }
 
+struct AnimationState {
+    movements: HashMap<u64, u8>,
+}
+impl AnimationState {
+    fn zero() -> Self {
+        AnimationState { movements: HashMap::new() }
+    }
+    fn from_level(l: &Level) -> Self {
+        step_animation(&AnimationState::zero(), &l, &l)
+    }
+}
+
+fn step_animation(s: &AnimationState, prev: &Level, new: &Level) -> AnimationState {
+    fn locations(l: &Level) -> HashMap<u64, (usize, usize)> {
+        let mut r = HashMap::new();
+        for row in 0..l.len() {
+            for cell in 0..l[0].len() {
+                for i in 0..l[row][cell].len() {
+                    r.insert(l[row][cell][i].id, (cell, row));
+                }
+            }
+        }
+        r
+    }
+    let prev = locations(prev);
+    let new = locations(new);
+    let mut r = AnimationState{
+        movements: s.movements.iter()
+            .filter(|(id, _)| new.contains_key(id))
+            .map(|(&k, &v)| (k, v))
+            .collect()
+    };
+    for (id, loc) in new {
+        r.movements.entry(id)
+            .and_modify(|n| if prev[&id] != loc { *n += 1})
+            .or_insert(0);
+    }
+    for v in r.movements.values_mut() {
+        *v %= 4;
+    }
+    r
+}
+
 pub async fn replay(path: &str) {
     let (screens, inputs, palette_name) = load::<_, Replay>(path).unwrap();
     let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
@@ -1573,6 +1627,8 @@ pub async fn replay(path: &str) {
 
     let mut last_input: (f64, Option<KeyCode>) = (0., None);
     let mut i = 0;
+
+    let zero = AnimationState::zero();
 
     loop {
         // update
@@ -1593,6 +1649,7 @@ pub async fn replay(path: &str) {
         clear_background(palette.get_pixel(1, 0));
         render_level(
             &screens[i],
+            &zero,
             i as u32,
             &palette,
             &sprites,
@@ -1797,6 +1854,7 @@ where
 
     let mut history = vec![level.clone()];
     let mut current_state = &history[0];
+    let mut anim_states = vec![AnimationState::from_level(&level)];
 
     let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
 
@@ -1850,12 +1908,14 @@ where
                 None => (),
                 Some(Control(Undo)) => if history.len() > 1 {
                     history.pop();
+                    anim_states.pop();
                 },
                 Some(Control(i)) => {
                     let (next, win) = step(&current_state, i, history.len() as u32);
                     if win && win_time.is_none() {
                         win_time = Some(get_time());
                     }
+                    anim_states.push(step_animation(&anim_states[anim_states.len() - 1], &history[history.len() - 1], &next));
                     history.push(next);
                 },
                 Some(Pause) => return (LevelResult::Exit, last_input),
@@ -1891,6 +1951,7 @@ where
             clear_background(palette.get_pixel(1, 0));
             let bounds = render_level(
                 &current_state,
+                &anim_states[anim_states.len() - 1],
                 history.len() as u32,
                 &palette,
                 &sprites,
@@ -1943,6 +2004,7 @@ where
 
 fn render_level(
     level: &Level,
+    anim_state: &AnimationState,
     physics_step: u32,
     palette: &Image,
     sprites: &SpriteMap,
@@ -2048,7 +2110,7 @@ fn render_level(
                                 let (right, above, left, below) = neighborhood();
                                 FuseState(Neighborhood { right, above, left, below })
                             },
-                            Walk => WalkState(0, e.dir),
+                            Walk => WalkState(*anim_state.movements.get(&e.id).unwrap_or(&0), e.dir),
                             Look => LookState(physics_step as u8 % 4, e.dir),
                             Tick => TickState(physics_step as u8 % 4),
                             Diag => {
