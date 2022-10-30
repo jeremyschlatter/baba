@@ -1924,8 +1924,15 @@ where
                     if win && win_time.is_none() {
                         win_time = Some(get_time());
                     }
-                    anim_states.push(step_animation(&anim_states[anim_states.len() - 1], &history[history.len() - 1], &next));
-                    history.push(next);
+                    if &next != current_state {
+                        anim_states.push(
+                            step_animation(
+                                &anim_states[anim_states.len() - 1],
+                                &history[history.len() - 1],
+                                &next,
+                            ));
+                        history.push(next);
+                    }
                 },
                 Some(Pause) => return (LevelResult::Exit, last_input),
                 // Some(Pause) => paused = !paused,
