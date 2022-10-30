@@ -1875,14 +1875,15 @@ where
 
     let mut win_time = None;
     let mut paused = false;
-    let mut seamless = true;
+    let mut render_mods = true;
+    let mut input_count = 0;
 
     #[derive_the_basics]
     enum UIInput {
         Control(Input),
         Pause,
         Enter,
-        ToggleSeamless,
+        ToggleRenderMods,
     }
     use UIInput::*;
 
@@ -1899,12 +1900,12 @@ where
                 (KeyCode::Z, Control(Undo)),
                 (KeyCode::Escape, Pause),
                 (KeyCode::Enter, Enter),
-                (KeyCode::W, ToggleSeamless),
+                (KeyCode::W, ToggleRenderMods),
             ],
             |i, t| match i {
                 Control(Undo) => t > 0.075,
                 Pause => false,
-                ToggleSeamless => false,
+                ToggleRenderMods => false,
                 _ => t > 0.15,
             },
         );
@@ -1915,9 +1916,12 @@ where
         } else if win_time.is_none() {
             match current_input {
                 None => (),
-                Some(Control(Undo)) => if history.len() > 1 {
-                    history.pop();
-                    anim_states.pop();
+                Some(Control(Undo)) => {
+                    input_count += 1;
+                    if history.len() > 1 {
+                        history.pop();
+                        anim_states.pop();
+                    }
                 },
                 Some(Control(i)) => {
                     let (next, win) = step(&current_state, i, history.len() as u32);
@@ -1933,6 +1937,7 @@ where
                             ));
                         history.push(next);
                     }
+                    input_count += 1;
                 },
                 Some(Pause) => return (LevelResult::Exit, last_input),
                 // Some(Pause) => paused = !paused,
@@ -1953,7 +1958,7 @@ where
                         }
                     }
                 },
-                Some(ToggleSeamless) => seamless = !seamless,
+                Some(ToggleRenderMods) => render_mods = !render_mods,
             };
             current_state = &history[history.len() - 1];
             if let Some(Control(i)) = current_input {
@@ -1968,12 +1973,12 @@ where
             let bounds = render_level(
                 &current_state,
                 &anim_states[anim_states.len() - 1],
-                history.len() as u32,
+                if render_mods { history.len() as u32 } else { input_count },
                 &palette,
                 &sprites,
                 &backgrounds,
                 &color_overrides,
-                seamless,
+                render_mods,
                 Rect::new(0., 0., screen_width(), screen_height()),
                 20.,
             );
