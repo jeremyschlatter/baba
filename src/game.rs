@@ -1062,7 +1062,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
 
     fn is_noun(id: &mut u64, level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<LiveEntity> {
         let v = is_or_has(id, level, x, y, i, &rules.2);
-        if v.contains(&level[y][x][i]) {
+        if v.iter().any(|e| e.e == level[y][x][i].e) {
             vec![] // x is x
         } else {
             v
