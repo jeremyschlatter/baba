@@ -111,6 +111,8 @@ pub enum Noun {
     #[props(0, 3, 0, 2, 0, 3, Fuse)] Line,
     #[props(3, 1, 3, 0, 3, 1, Walk)] Me,
     #[props(1, 2, 1, 2, 1, 3, Look)] Belt,
+    #[props(2, 2, 2, 1, 2, 2, Idle)] Rose,
+    #[props(3, 3, 3, 2, 3, 3, Idle)] Violet,
 
     #[props(0, 0, 4, 0, 4, 1, Idle)] Level(LevelName),
 }
@@ -167,6 +169,9 @@ pub enum Adjective {
     #[props(1, 2, 1, 4)] Tele,
     #[props(6, 1, 6, 2)] Pull,
     #[props(1, 2, 1, 3)] Shift,
+
+    #[props(2, 1, 2, 2)] Red,
+    #[props(3, 2, 3, 3)] Blue,
 }
 use Adjective::*;
 impl Adjective {
@@ -203,7 +208,9 @@ impl FromStr for Text {
             "and" => Ok(Text::And),
             "has" => Ok(Text::Has),
             "not" => Ok(Text::Not),
-            _ => Err(format!("can't parse this as Text: '{s}'")),
+            _ => Noun::from_str(s).map(Text::Object)
+                  .or(Adjective::from_str(s).map(Text::Adjective))
+                  .or(Err(format!("can't parse this as Text: '{s}'"))),
         }
     }
 }
@@ -320,6 +327,7 @@ where
                              .map(|s| {
                                  let mut x = s.split(" ");
                                  let n = x.next().unwrap();
+                                 let unquoted = n.trim_matches('"');
                                  if n == "map" {
                                      let n = x.next().unwrap().parse().unwrap();
                                      let icon = x.next().unwrap();
@@ -328,7 +336,13 @@ where
                                          dir: Right,
                                          id: next_id(),
                                          e: Entity::Noun(Noun::Level(SubWorld(n, icon))),
-                                    }
+                                     }
+                                 } else if unquoted != n {
+                                     LiveEntity {
+                                         dir: Right,
+                                         id: next_id(),
+                                         e: Entity::Text(unquoted.parse().unwrap()),
+                                     }
                                  } else {
                                      let d = x.next()
                                          .and_then(|s| Direction::from_str(s).ok())
@@ -337,7 +351,7 @@ where
                                          dir: d,
                                          id: next_id(),
                                          e: Entity::Noun(Noun::from_str(n).expect(n)),
-                                    }
+                                     }
                                 }
                              })
                              .collect()
@@ -578,11 +592,9 @@ mod tests {
             let mut result = vec![];
             let input_ =
                 input.iter()
-                     .map(|s| match (s, Text::from_str(s), Noun::from_str(s), Adjective::from_str(s)) {
-                         (&"", _, _, _)    => vec![],
-                         (_, Ok(t), _, _) => vec![t],
-                         (_, _, Ok(n), _) => vec![Text::Object(n)],
-                         (_, _, _, Ok(a)) => vec![Text::Adjective(a)],
+                     .map(|s| match (s, Text::from_str(s)) {
+                         (&"", _)   => vec![],
+                         (_, Ok(t)) => vec![t],
                          _ => panic!("unrecognized word: '{}'", s),
                      })
                      .map(|t| t.iter()
@@ -939,6 +951,50 @@ fn max_id(level: &Level) -> u64 {
         .unwrap_or(0)
 }
 
+fn array_map_ref<T, F: Fn(&T) -> U, U>(a: &[T; 2], f: F) -> [U; 2] {
+    [f(&a[0]), f(&a[1])]
+}
+
+type RulesCache = (
+    [[Vec<Subject>; 2]; Adjective::COUNT], // is adjective
+    [Vec<(Subject, TextOrNoun)>; 2], // has noun
+    [Vec<(Subject, TextOrNoun)>; 2], // is noun
+);
+
+fn cache_rules(rules: &Vec<Rule>) -> RulesCache {
+    let mut result: RulesCache = (
+        core::array::from_fn(|_| [vec![], vec![]]),
+        [vec![], vec![]],
+        [vec![], vec![]],
+    );
+    result.0[Push as usize][0].push(Yes(TextOrNoun::Text));
+    for (s, p) in rules {
+        let (yes, p) = p.elim();
+        let ix = !yes as usize;
+        match p {
+            IsAdjective(adj) => result.0[adj as usize][ix].push(*s),
+            HasNoun(n) => result.1[ix].push((*s, n)),
+            IsNoun(n) => result.2[ix].push((*s, n)),
+        }
+    }
+    result
+}
+
+fn subject_match(level: &Level, x: usize, y: usize, i: usize, s: &Subject) -> bool {
+    let t_or_n = level[y][x][i].e.to_text_or_noun();
+    match (*s, t_or_n) {
+        (Yes(y), _) => y == t_or_n,
+        (No(n), TextOrNoun::Noun(_)) => n != t_or_n,
+        (No(_), TextOrNoun::Text) => false,
+    }
+}
+
+fn is(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache, quality: Adjective) -> bool {
+    let [yes, no] = array_map_ref(&rules.0[quality as usize],
+        |v: &Vec<Subject>| v.iter().any(|s| subject_match(level, x, y, i, s)));
+    yes && !no
+}
+
 fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
     let mut level = l.clone();
     let rules = scan_rules_no_index(&level);
@@ -971,53 +1027,6 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                         cell.iter()
                             .enumerate()
                             .map(move |(i, e)| ((x, y, i), *e))))
-    }
-
-    type RulesCache = (
-        [[Vec<Subject>; 2]; Adjective::COUNT], // is adjective
-        [Vec<(Subject, TextOrNoun)>; 2], // has noun
-        [Vec<(Subject, TextOrNoun)>; 2], // is noun
-    );
-
-    fn cache_rules(rules: &Vec<Rule>) -> RulesCache {
-        let mut result: RulesCache = (
-            core::array::from_fn(|_| [vec![], vec![]]),
-            [vec![], vec![]],
-            [vec![], vec![]],
-        );
-        result.0[Push as usize][0].push(Yes(TextOrNoun::Text));
-        for (s, p) in rules {
-            let (yes, p) = p.elim();
-            let ix = !yes as usize;
-            match p {
-                IsAdjective(adj) => result.0[adj as usize][ix].push(*s),
-                HasNoun(n) => result.1[ix].push((*s, n)),
-                IsNoun(n) => result.2[ix].push((*s, n)),
-            }
-        }
-        result
-    }
-
-    fn subject_match(level: &Level, x: usize, y: usize, i: usize, s: &Subject) -> bool {
-        let t_or_n = level[y][x][i].e.to_text_or_noun();
-        match (*s, t_or_n) {
-            (Yes(y), _) => y == t_or_n,
-            (No(n), TextOrNoun::Noun(_)) => n != t_or_n,
-            (No(_), TextOrNoun::Text) => false,
-        }
-    }
-
-    fn array_map_ref<T, F, U>(a: &[T; 2], f: F) -> [U; 2]
-    where
-        F: Fn(&T) -> U
-    {
-        [f(&a[0]), f(&a[1])]
-    }
-
-    fn is(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache, quality: Adjective) -> bool {
-        let [yes, no] = array_map_ref(&rules.0[quality as usize],
-            |v: &Vec<Subject>| v.iter().any(|s| subject_match(level, x, y, i, s)));
-        yes && !no
     }
 
     fn is_or_has(id: &mut u64, level: &Level, x: usize, y: usize, i: usize, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> Vec<LiveEntity> {
@@ -2029,12 +2038,15 @@ fn render_level(
         .flat_map(|x| x.0.clone())
         .collect::<HashSet<Index>>();
 
+    let (active_rules, overridden_rules) = partition_overridden_rules(rules);
+
     let overridden_texts = {
-        let (active, overridden) = partition_overridden_rules(rules);
-        overridden.into_iter().flat_map(|x| x.0).collect::<HashSet<Index>>().difference(
-            &active.into_iter().flat_map(|x| x.0).collect::<HashSet<Index>>()
+        overridden_rules.into_iter().flat_map(|x| x.0).collect::<HashSet<Index>>().difference(
+            &active_rules.iter().flat_map(|x| x.0.clone()).collect::<HashSet<Index>>()
         ).copied().collect::<HashSet<Index>>()
     };
+
+    let rules_cache = cache_rules(&active_rules.into_iter().map(|x| x.1).collect());
 
     let anim_frame = (get_time() / 0.15).trunc() as usize % 3;
 
@@ -2066,8 +2078,16 @@ fn render_level(
             let y = offset_y + sq_size * row as f32;
             for (i, e) in level[row][col].iter().enumerate() {
                 let anim_frame = (row + col + i + anim_frame) % 3;
-                let (cx, cy) = match e.e {
-                    Entity::Noun(n) => color_overrides.get(&n).copied(),
+                let cs = [
+                    (Red, (2, 2)),
+                    (Blue, (3, 2)),
+                ].into_iter()
+                    .filter(|c| is(&level, col, row, i, &rules_cache, c.0))
+                    .map(|c| c.1)
+                    .next();
+                let (cx, cy) = match (cs, e.e) {
+                    (Some(ix), _) => Some(ix),
+                    (None, Entity::Noun(n)) => color_overrides.get(&n).copied(),
                     _ => None,
                 }.unwrap_or_else(|| e.e.default_color(
                     active_texts.contains(&(col, row, i)),
@@ -2281,6 +2301,7 @@ fn load_sprite_map() -> SpriteMap {
                 } else {
                     "resources/original/Data/Sprites"
                 }
+            (Entity::Text(Text::Object(Violet)), _) => "resources/original/Data/Worlds/baba/Sprites",
             _ => "resources/original/Data/Sprites",
         };
         let base_name = match e {
@@ -2296,6 +2317,7 @@ fn load_sprite_map() -> SpriteMap {
             Entity::Noun(n) => match n {
                 Bog => "water",
                 Lava => "water",
+                Violet => "flower",
                 _ => n.into(),
             }.to_string(),
         };
