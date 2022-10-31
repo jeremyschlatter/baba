@@ -285,7 +285,13 @@ fn all_entities() -> impl Iterator<Item=Entity> {
 type Cell = Vec<LiveEntity>;
 type Level = Vec<Vec<Cell>>;
 
-pub fn parse_level<P>(name: P) -> (Level, String, Vec<String>, HashMap<Noun, (u32, u32)>)
+pub fn parse_level<P>(name: P) -> (
+    Level,
+    String,
+    Vec<String>,
+    HashMap<Noun, (u32, u32)>,
+    HashMap<Text, [(u32, u32); 2]>,
+)
 where
     P: AsRef<std::path::Path>
 {
@@ -498,7 +504,7 @@ where
         {
             let mut color_overrides = HashMap::new();
             for (k, v) in metas.iter() {
-                if k.starts_with("+ ") {
+                if k.starts_with("+ ") && !k.contains('"') {
                     let v: (u32, u32) = (v[0..1].parse().unwrap(), v[2..3].parse().unwrap());
                     for k in k[2..].split(",") {
                         if k != "" {
@@ -511,7 +517,29 @@ where
                 }
             }
             color_overrides
-        }
+        },
+        {
+            let mut text_color_overrides = HashMap::new();
+            for (k, v) in metas.iter() {
+                if k.starts_with("+ ") && k.contains('"') {
+                    let v: [u32; 4] = [0..1, 2..3, 4..5, 6..7].map(
+                        |x| v[x].parse().unwrap());
+                    for k in k[2..].split(",") {
+                        let k = k.trim_matches('"');
+                        if k != "" {
+                            let c = to_cell(&mut id, &legend, k.chars().next().unwrap());
+                            if let Entity::Noun(n) = c[0].e {
+                                text_color_overrides.insert(
+                                    crate::Text::Object(n),
+                                    [(v[0], v[1]), (v[2], v[3])],
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            text_color_overrides
+        },
     )
 }
 
@@ -1530,6 +1558,7 @@ pub async fn render_diff(path: &str) {
         &sprites,
         &[],
         &HashMap::new(),
+        &HashMap::new(),
         true,
         Rect::new(x, y, w, h),
         20.,
@@ -1693,6 +1722,7 @@ pub async fn replay(path: &str) {
             &sprites,
             &[],
             &HashMap::new(),
+            &HashMap::new(),
             true,
             Rect::new(0., 0., screen_width(), screen_height()),
             40.,
@@ -1854,7 +1884,8 @@ async fn play_level<P>
 where
     P: AsRef<std::path::Path>
 {
-    let (mut level, palette_name, backgrounds, color_overrides) = parse_level(level);
+    let (mut level, palette_name, backgrounds, color_overrides, text_color_overrides) =
+        parse_level(level);
 
     fn place_cursor(level: &mut Level, at: LevelName) -> bool {
         let id = max_id(&level) + 1;
@@ -2007,6 +2038,7 @@ where
                 &sprites,
                 &backgrounds,
                 &color_overrides,
+                &text_color_overrides,
                 render_mods,
                 Rect::new(0., 0., screen_width(), screen_height()),
                 20.,
@@ -2060,6 +2092,7 @@ fn render_level(
     sprites: &SpriteMap,
     backgrounds: &[String],
     color_overrides: &HashMap<Noun, (u32, u32)>,
+    text_color_overrides: &HashMap<Text, [(u32, u32); 2]>,
     seamless: bool,
     bounds: Rect,
     min_border: f32,
@@ -2126,13 +2159,13 @@ fn render_level(
                     .filter(|c| is(&level, col, row, i, &rules_cache, c.0))
                     .map(|c| c.1)
                     .next();
+                let active = active_texts.contains(&(col, row, i));
                 let (cx, cy) = match (cs, e.e) {
                     (Some(ix), _) => Some(ix),
                     (None, Entity::Noun(n)) => color_overrides.get(&n).copied(),
-                    _ => None,
-                }.unwrap_or_else(|| e.e.default_color(
-                    active_texts.contains(&(col, row, i)),
-                ));
+                    (None, Entity::Text(t)) => text_color_overrides.get(&t)
+                        .map(|x| x[active as usize]),
+                }.unwrap_or_else(|| e.e.default_color(active));
                 let c = palette.get_pixel(cx, cy);
                 if let Entity::Noun(Cursor) = e.e {
                     // draw it at the end so it's on top of everything

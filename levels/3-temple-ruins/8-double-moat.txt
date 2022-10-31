@@ -10,6 +10,7 @@ d = door
 f = flag
 palette = ruins
 + w = 6,0
++ "w" = 6,1 6,2
 ---
 ggg g w cccc ccc      s cccc t  t
 ggg   w  c                c    t
