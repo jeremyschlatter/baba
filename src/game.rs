@@ -113,6 +113,7 @@ pub enum Noun {
     #[props(1, 2, 1, 2, 1, 3, Look)] Belt,
     #[props(2, 2, 2, 1, 2, 2, Idle)] Rose,
     #[props(3, 3, 3, 2, 3, 3, Idle)] Violet,
+    #[props(6, 2, 6, 0, 6, 2, Face)] Bug,
 
     #[props(0, 0, 4, 0, 4, 1, Idle)] Level(LevelName),
 }
@@ -1377,7 +1378,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                     if i == s || n > 0 && *i != shifts[0] {
                         continue;
                     }
-                    movers.push((x, y, *i, level[y][x][*i].dir, false));
+                    movers.push((x, y, *i, level[y][x][*s].dir, false));
                 }
             }
         }
