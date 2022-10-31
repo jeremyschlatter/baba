@@ -392,6 +392,7 @@ where
                 '_' => Adj(Weak),
                 '*' => Adj(Tele),
                 '↣' => Adj(Pull),
+                '^' => Adj(Shift),
 
                 '=' => Txt(Is),
                 '¬' => Txt(Not),
@@ -1365,6 +1366,22 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
             }
         }
         result
+    }
+
+    // move shift
+    {
+        let mut movers = vec![];
+        for ((x, y), shifts, all) in select(&level, &rules_cache, Shift, None) {
+            for (n, s) in shifts.iter().enumerate() {
+                for i in &all {
+                    if i == s || n > 0 && *i != shifts[0] {
+                        continue;
+                    }
+                    movers.push((x, y, *i, level[y][x][*i].dir, false));
+                }
+            }
+        }
+        move_things(&mut id, &mut level, &rules, movers);
     }
 
     // rescan since we might have just moved some new rules into place
