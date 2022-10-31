@@ -5,6 +5,7 @@ l = belt
 g = ghost down
 f = flag
 palette = ruins
++ l = 1,1
 ---
   v                       v
      hhhhhhhhh    hhhhhh   v

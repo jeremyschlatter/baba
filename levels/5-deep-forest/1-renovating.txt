@@ -7,6 +7,7 @@ v = flower
 k = keke down
 b = belt down
 palette = ruins
++ b = 1,1
 ---
 hh              g      www   gggh
 h       wwwww  ggg       ww    gg

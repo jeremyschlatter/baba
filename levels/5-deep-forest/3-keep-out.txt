@@ -8,6 +8,7 @@ r = reed
 t = tree
 k = keke
 palette = ruins
++ b = 1,1
 ---
 gghghN~FhU=⩍hhh N      hghgg
 gghghhhhhhhhhhh =      hghhh

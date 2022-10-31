@@ -9,6 +9,7 @@ b = baba down
 l = belt down
 u = belt up
 palette = ruins
++ l = 1,1
 ---
     t       v    D=⊘
   v  hhhhhhhhhhhhhhh
