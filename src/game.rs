@@ -171,6 +171,8 @@ pub enum Adjective {
     #[props(6, 1, 6, 2)] Pull,
     #[props(1, 2, 1, 3)] Shift,
 
+    #[props(1, 3, 1, 4)] Up,
+
     #[props(2, 1, 2, 2)] Red,
     #[props(3, 2, 3, 3)] Blue,
 }
@@ -225,14 +227,14 @@ pub enum Direction {
     Left,
     Right,
 }
-use Direction::*;
+type Dir = Direction;
 impl Direction {
     fn reverse(&self) -> Direction {
         match self {
-            Up => Down,
-            Down => Up,
-            Left => Right,
-            Right => Left,
+            Dir::Up => Dir::Down,
+            Dir::Down => Dir::Up,
+            Dir::Left => Dir::Right,
+            Dir::Right => Dir::Left,
         }
     }
 }
@@ -334,20 +336,20 @@ where
                                      let icon = x.next().unwrap();
                                      let icon = icons.iter().position(|i| i == icon).unwrap();
                                      LiveEntity {
-                                         dir: Right,
+                                         dir: Dir::Right,
                                          id: next_id(),
                                          e: Entity::Noun(Noun::Level(SubWorld(n, icon))),
                                      }
                                  } else if unquoted != n {
                                      LiveEntity {
-                                         dir: Right,
+                                         dir: Dir::Right,
                                          id: next_id(),
                                          e: Entity::Text(unquoted.parse().unwrap()),
                                      }
                                  } else {
                                      let d = x.next()
                                          .and_then(|s| Direction::from_str(s).ok())
-                                         .unwrap_or(Right);
+                                         .unwrap_or(Dir::Right);
                                      LiveEntity {
                                          dir: d,
                                          id: next_id(),
@@ -374,7 +376,7 @@ where
     use self::Text::*;
 
     fn to_cell(id: &mut u64, legend: &HashMap<String, LegendValue>, c: char) -> Vec<LiveEntity> {
-        let mut make_cell = |e| { *id += 1; vec![LiveEntity{ dir: Right, id: *id, e}] };
+        let mut make_cell = |e| { *id += 1; vec![LiveEntity{ dir: Dir::Right, id: *id, e}] };
         match (
             legend.get(c.to_string().to_lowercase().as_str())
             , match c {
@@ -394,6 +396,7 @@ where
                 '*' => Adj(Tele),
                 '↣' => Adj(Pull),
                 '^' => Adj(Shift),
+                '⇧' => Adj(Up),
 
                 '=' => Txt(Is),
                 '¬' => Txt(Not),
@@ -601,7 +604,7 @@ mod tests {
                      })
                      .map(|t| t.iter()
                                .map(|t| LiveEntity {
-                                   dir: Right,
+                                   dir: Dir::Right,
                                    id: { id += 1; id },
                                    e: Entity::Text(*t)
                                })
@@ -1010,10 +1013,10 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
         let width = level[0].len();
         let height = level.len();
         let (dx, dy) = match d {
-            Up    => (0, -1),
-            Down  => (0,  1),
-            Left  => (-1, 0),
-            Right => ( 1, 0),
+            Dir::Up    => (0, -1),
+            Dir::Down  => (0,  1),
+            Dir::Left  => (-1, 0),
+            Dir::Right => ( 1, 0),
         };
         (0.max(x as i16 + dx).min(width as i16 - 1) as usize,
          0.max(y as i16 + dy).min(height as i16 - 1) as usize)
@@ -1204,12 +1207,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                         continue;
                     }
                     if a.is_move && !flipped {
-                        a.dir = match a.dir {
-                            Left  => Right,
-                            Right => Left,
-                            Up    => Down,
-                            Down  => Up,
-                        };
+                        a.dir = a.dir.reverse();
                         a.status = Status::Pending { flipped: true };
                         queue.push_back((x, y, i));
                     } else {
@@ -1389,6 +1387,19 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
     let rules = scan_rules_no_index(&level);
     let rules_cache = cache_rules(&rules);
 
+    // rotate things
+    for x in 0..width {
+        for y in 0..height {
+            for i in 0..level[y][x].len() {
+                for dir in [(Up, Dir::Up)] {
+                    if is(&level, x, y, i, &rules_cache, dir.0) {
+                        level[y][x][i].dir = dir.1;
+                    }
+                }
+            }
+        }
+    }
+
     // change things into other things
     for x in 0..width {
         for y in 0..height {
@@ -1543,10 +1554,10 @@ pub async fn render_diff(path: &str) {
                 let bounds = render(&start, 0., 0., width / 2., height);
                 draw_text(
                     &format!("input: {}", match input {
-                        Go(Down) => "down",
-                        Go(Up) => "up",
-                        Go(Left) => "left",
-                        Go(Right) => "right",
+                        Go(Dir::Down) => "down",
+                        Go(Dir::Up) => "up",
+                        Go(Dir::Left) => "left",
+                        Go(Dir::Right) => "right",
                         Wait => "wait",
                         Undo => "undo",
                     }),
@@ -1662,13 +1673,13 @@ pub async fn replay(path: &str) {
         match debounce(
             &mut last_input,
             &[
-                (KeyCode::Right, Right),
-                (KeyCode::Left, Left),
+                (KeyCode::Right, Dir::Right),
+                (KeyCode::Left, Dir::Left),
             ],
             |_, t| t > 0.15,
         ) {
-            Some(Right) => if i + 1 < screens.len() { i += 1 },
-            Some(Left) => if i > 0 { i -= 1 },
+            Some(Dir::Right) => if i + 1 < screens.len() { i += 1 },
+            Some(Dir::Left) => if i > 0 { i -= 1 },
             _ => (),
         }
 
@@ -1853,7 +1864,7 @@ where
                     if let Entity::Noun(Level(l)) = level[y][x][i].e {
                         if l == at {
                             level[y][x].push(LiveEntity {
-                                dir: Right,
+                                dir: Dir::Right,
                                 id,
                                 e: Entity::Noun(Cursor)
                             });
@@ -1910,10 +1921,10 @@ where
         let current_input = debounce(
             &mut last_input,
             &[
-                (KeyCode::Right, Control(Go(Right))),
-                (KeyCode::Left, Control(Go(Left))),
-                (KeyCode::Up, Control(Go(Up))),
-                (KeyCode::Down, Control(Go(Down))),
+                (KeyCode::Right, Control(Go(Dir::Right))),
+                (KeyCode::Left, Control(Go(Dir::Left))),
+                (KeyCode::Up, Control(Go(Dir::Up))),
+                (KeyCode::Down, Control(Go(Dir::Down))),
                 (KeyCode::Space, Control(Wait)),
                 (KeyCode::Z, Control(Undo)),
                 (KeyCode::Escape, Pause),
@@ -2353,10 +2364,10 @@ fn load_sprite_map() -> SpriteMap {
         };
         fn face_ix(d: Direction) -> u8 {
             match d {
-                Right => 0,
-                Up => 8,
-                Left => 16,
-                Down => 24,
+                Dir::Right => 0,
+                Dir::Up => 8,
+                Dir::Left => 16,
+                Dir::Down => 24,
             }
         }
         let variant = match d {
