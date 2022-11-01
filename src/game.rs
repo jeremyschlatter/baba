@@ -172,6 +172,9 @@ pub enum Adjective {
     #[props(1, 2, 1, 3)] Shift,
 
     #[props(1, 3, 1, 4)] Up,
+    #[props(1, 3, 1, 4)] Down,
+    #[props(1, 3, 1, 4)] Right,
+    #[props(1, 3, 1, 4)] Left,
 
     #[props(2, 1, 2, 2)] Red,
     #[props(3, 2, 3, 3)] Blue,
@@ -402,7 +405,11 @@ where
                 '*' => Adj(Tele),
                 '↣' => Adj(Pull),
                 '^' => Adj(Shift),
+
                 '⇧' => Adj(Up),
+                '⇩' => Adj(Down),
+                '⇨' => Adj(Right),
+                '⇦' => Adj(Left),
 
                 '=' => Txt(Is),
                 '¬' => Txt(Not),
@@ -1419,7 +1426,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
     for x in 0..width {
         for y in 0..height {
             for i in 0..level[y][x].len() {
-                for dir in [(Up, Dir::Up)] {
+                for dir in [(Up, Dir::Up), (Down, Dir::Down), (Left, Dir::Left), (Right, Dir::Right)] {
                     if is(&level, x, y, i, &rules_cache, dir.0) {
                         level[y][x][i].dir = dir.1;
                     }
