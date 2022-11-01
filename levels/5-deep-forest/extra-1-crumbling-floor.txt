@@ -7,17 +7,17 @@ l = bug left
 u = bug up
 f = flag
 palette = ruins
-right pad = 2
+right pad = 3
 + t = 1,1
 ---
 
-      hhhhhhhhhh   T=^
-      h        hh
-    hhh      h  h  K=✥
-    h     =  hh hh
-    h       lttt h H=⊘
-    h k f f  h  hh
-    h        h hh  U=⩍
+      hhhhhhhhhh  T=^
+      h        h
+    hhh      h h  K=✥
+    h        h hh
+    h       ltt h H=⊘
+    h k f f  h hh
+    h        h hh U=⩍
     h F=↦   ltt h
     h     u  h hhhhh
     h hhhhdhhh h  Bh
