@@ -1411,6 +1411,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                     if i == s || n > 0 && *i != shifts[0] {
                         continue;
                     }
+                    level[y][x][*i].dir = level[y][x][*s].dir;
                     movers.push((x, y, *i, level[y][x][*s].dir, false));
                 }
             }
