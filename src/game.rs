@@ -665,14 +665,37 @@ mod tests {
 
         enum Failure {
             ReplayMismatch(Diff, Replay),
-            EarlyWin,
-            NoWin,
+            EarlyWin(Replay),
+            NoWin(Replay),
         }
         use Failure::*;
 
         let first_failure = goldens.par_iter().find_map_any(|entry| {
             println!("{}", entry.path().display());
-            let (screens, inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
+            let (mut screens, mut inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
+            // delete undos of no-ops
+            {
+                assert!(screens.len() == inputs.len() + 1);
+                let mut i = 0;
+                let mut diff = false;
+                loop {
+                    if i >= inputs.len() {
+                        break;
+                    }
+                    if inputs[i] == Undo && screens[i] == screens[i+1] {
+                        inputs.remove(i);
+                        screens.remove(i+1);
+                        diff = true;
+                    } else {
+                        i += 1;
+                    }
+                }
+                if diff {
+                    save::<_, Replay>(entry.path(), &(screens.clone(), inputs.clone(), palette_name.clone())).unwrap();
+                }
+            }
+            let screens = screens; // drop mut
+            let inputs = inputs;
             let got_screens = {
                 let mut screens = vec![screens[0].clone()];
                 let mut history = vec![screens[0].clone()];
@@ -685,12 +708,14 @@ mod tests {
                         let (screen, win) = step(
                             &history[history.len()-1], *input, history.len() as u32);
                         if i < inputs.len() - 1 && win {
-                            return Some(EarlyWin)
+                            return Some((entry.path(), EarlyWin((screens, inputs[..i+1].to_vec(), palette_name.to_string()))))
                         }
                         if i == inputs.len() - 1 && !win {
-                            return Some(NoWin)
+                            return Some((entry.path(), NoWin((screens, inputs, palette_name.to_string()))))
                         }
-                        history.push(screen);
+                        if screen != history[history.len()-1] {
+                            history.push(screen);
+                        }
                     }
                     screens.push(history[history.len()-1].clone());
                 }
@@ -699,7 +724,7 @@ mod tests {
             for i in 0..screens.len() - 1 {
                 if got_screens[i + 1] != screens[i + 1] {
                     println!("{}", entry.path().display());
-                    return Some(ReplayMismatch((
+                    return Some((entry.path(), ReplayMismatch((
                         screens[i].clone(),
                         screens[i+1].clone(),
                         got_screens[i+1].clone(),
@@ -709,13 +734,14 @@ mod tests {
                         got_screens,
                         inputs,
                         palette_name.to_string(),
-                    )));
+                    ))));
                 }
             }
             None
         });
 
-        if let Some(failure) = first_failure {
+        if let Some((test, failure)) = first_failure {
+            println!("{test:?} failed");
             match failure {
                 ReplayMismatch(diff, replay) => {
                     save::<_, Diff>("diff.ron.br", &diff).unwrap();
@@ -727,8 +753,14 @@ mod tests {
                         .success());
                     assert!(false, "replay mismatch. saved diff and replay");
                 },
-                EarlyWin => assert!(false, "early win"),
-                NoWin => assert!(false, "no win"),
+                EarlyWin(replay) => {
+                    save::<_, Replay>("replay.ron.br", &replay).unwrap();
+                    assert!(false, "early win");
+                },
+                NoWin(replay) => {
+                    save::<_, Replay>("replay.ron.br", &replay).unwrap();
+                    assert!(false, "no win");
+                }
             }
         }
     }
