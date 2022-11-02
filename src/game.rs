@@ -672,30 +672,7 @@ mod tests {
 
         let first_failure = goldens.par_iter().find_map_any(|entry| {
             println!("{}", entry.path().display());
-            let (mut screens, mut inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
-            // delete undos of no-ops
-            {
-                assert!(screens.len() == inputs.len() + 1);
-                let mut i = 0;
-                let mut diff = false;
-                loop {
-                    if i >= inputs.len() {
-                        break;
-                    }
-                    if inputs[i] == Undo && screens[i] == screens[i+1] {
-                        inputs.remove(i);
-                        screens.remove(i+1);
-                        diff = true;
-                    } else {
-                        i += 1;
-                    }
-                }
-                if diff {
-                    save::<_, Replay>(entry.path(), &(screens.clone(), inputs.clone(), palette_name.clone())).unwrap();
-                }
-            }
-            let screens = screens; // drop mut
-            let inputs = inputs;
+            let (screens, inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
             let got_screens = {
                 let mut screens = vec![screens[0].clone()];
                 let mut history = vec![screens[0].clone()];
