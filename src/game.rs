@@ -718,27 +718,28 @@ mod tests {
         });
 
         if let Some((test, failure)) = first_failure {
-            println!("{test:?} failed");
-            match failure {
+            let (args, msg) = match failure {
                 ReplayMismatch(diff, replay) => {
                     save::<_, Diff>("diff.ron.br", &diff).unwrap();
                     save::<_, Replay>("replay.ron.br", &replay).unwrap();
-                    assert!(std::process::Command::new("cargo")
-                        .args(&["run", "render-diff", "diff.ron.br"])
-                        .status()
-                        .unwrap()
-                        .success());
-                    assert!(false, "replay mismatch. saved diff and replay");
+                    (&["run", "render-diff", "diff.ron.br"], "replay mismatch. saved diff and replay")
                 },
                 EarlyWin(replay) => {
                     save::<_, Replay>("replay.ron.br", &replay).unwrap();
-                    assert!(false, "early win");
+                    (&["run", "replay", "replay.ron.br"], "early win")
                 },
                 NoWin(replay) => {
                     save::<_, Replay>("replay.ron.br", &replay).unwrap();
-                    assert!(false, "no win");
+                    (&["run", "replay", "replay.ron.br"], "no win")
                 }
-            }
+            };
+            println!("{} failed: {msg}", test.display());
+            assert!(std::process::Command::new("cargo")
+                .args(args)
+                .status()
+                .unwrap()
+                .success());
+            assert!(false, "{}", msg)
         }
     }
 }
