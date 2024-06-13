@@ -114,8 +114,13 @@ pub enum Noun {
     #[props(2, 2, 2, 1, 2, 2, Idle)] Rose,
     #[props(3, 3, 3, 2, 3, 3, Idle)] Violet,
     #[props(6, 2, 6, 0, 6, 2, Face)] Bug,
+    #[props(6, 2, 6, 2, 2, 4, Idle)] Dust,
+    #[props(2, 4, 6, 1, 2, 4, Idle)] Moon,
+    #[props(1, 4, 1, 3, 1, 4, Fuse)] Cloud,
 
     #[props(0, 0, 4, 0, 4, 1, Idle)] Level(LevelName),
+
+    #[props(6, 2, 6, 1, 6, 2, Face)] Anni,
 }
 use Noun::*;
 
@@ -170,6 +175,7 @@ pub enum Adjective {
     #[props(1, 2, 1, 4)] Tele,
     #[props(6, 1, 6, 2)] Pull,
     #[props(1, 2, 1, 3)] Shift,
+    #[props(3, 0, 3, 1)] Swap,  // TODO
 
     #[props(1, 3, 1, 4)] Up,
     #[props(1, 3, 1, 4)] Down,
@@ -178,6 +184,8 @@ pub enum Adjective {
 
     #[props(2, 1, 2, 2)] Red,
     #[props(3, 2, 3, 3)] Blue,
+
+    #[props(2, 3, 2, 4)] Best,  // TODO
 }
 use Adjective::*;
 impl Adjective {
@@ -195,6 +203,7 @@ pub enum Text {
     #[props(0, 1, 0, 3)] Is,
     #[props(0, 1, 0, 3)] And,
     #[props(4, 0, 4, 1)] Text,
+    #[props(0, 1, 0, 3)] Empty,  // TODO
     #[props(0, 1, 0, 3)] Has,
     #[props(2, 1, 3, 2)] Not,
     #[props(0, 0, 0, 0)] Object(Noun),
@@ -281,6 +290,7 @@ fn all_entities() -> impl Iterator<Item=Entity> {
     .chain(iter::once(Entity::Text(Text::And)))
     .chain(iter::once(Entity::Text(Text::Has)))
     .chain(iter::once(Entity::Text(Text::Text)))
+    .chain(iter::once(Entity::Text(Text::Empty)))
     .chain(Noun::iter().map(move |n| Entity::Text(Text::Object(n))))
     .chain(Adjective::iter().map(move |a| Entity::Text(Text::Adjective(a))))
 }
@@ -405,6 +415,7 @@ where
                 '*' => Adj(Tele),
                 '↣' => Adj(Pull),
                 '^' => Adj(Shift),
+                '↔' => Adj(Swap),
 
                 '⇧' => Adj(Up),
                 '⇩' => Adj(Down),
@@ -416,6 +427,7 @@ where
                 '&' => Txt(And),
                 '~' => Txt(Has),
                 '@' => Txt(Text),
+                '?' => Txt(Empty),
 
                 '.' => Line,
 
@@ -2385,7 +2397,14 @@ fn load_sprite_map() -> SpriteMap {
     }
 
     fn load(e: Entity, d: SpriteVariantState) -> ((Entity, SpriteVariantState), [CPUTexture; 3]) {
+        let d = match (e, d) {
+            (Entity::Noun(Anni), FaceState(Dir::Left)) => FaceState(Dir::Right),
+            (Entity::Noun(Anni), FaceState(Dir::Up)) => FaceState(Dir::Down),
+            _ => d,
+        };
         let asset_dir = match (e, d) {
+            (Entity::Noun(Anni), _) => "resources/original/Data/Worlds/baba/Sprites",
+            (Entity::Text(Text::Object(Anni)), _) => "resources/original/Data/Worlds/baba/Sprites",
             (Entity::Noun(Level(_)), _) => "resources",
             (_, DiagState(n)) =>
                 if n.above_right || n.above_left || n.below_right || n.below_left {

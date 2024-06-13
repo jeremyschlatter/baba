@@ -5,6 +5,7 @@ i = map 2 island
 r = map 3 ruins
 a = map 4 fall
 f = map 5 forest
+k = map 6 space
 t = trees
 z = rocket up
 m = fungi
@@ -20,6 +21,7 @@ background = island island_decor
 + a = 6,1
 + r = 6,2
 + f = 5,3
++ k = 3,2
 ---
 
 
@@ -38,7 +40,7 @@ background = island island_decor
                              s
 
          o         z
-               o   o
+               o   k
           oo. m.tm .t
             .....r..ft
             . wm .  t
