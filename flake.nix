@@ -5,7 +5,7 @@
     let
       scripts = {
         "check" = "cargo test";
-        "run" = "cargo run";
+        "run" = "cargo run -- $@";
       };
     in {
       devShell = stdenvNoCC.mkDerivation {
