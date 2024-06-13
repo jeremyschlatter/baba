@@ -3,7 +3,10 @@
     flake-utils.lib.eachDefaultSystem (system:
     with nixpkgs.legacyPackages.${system};
     let
-      scripts = {};
+      scripts = {
+        "check" = "cargo test";
+        "run" = "cargo run";
+      };
     in {
       devShell = stdenvNoCC.mkDerivation {
         name = "shell";
