@@ -6,6 +6,7 @@
       scripts = {
         "check" = "cargo test";
         "run" = ''
+          set -eu
           cargo build
           cd $PROJECT_ROOT
           ln -sf target/debug 'Baba Is Clone.app'
