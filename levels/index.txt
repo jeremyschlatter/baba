@@ -9,7 +9,9 @@ k = map 6 space
 t = trees
 z = rocket up
 m = fungi
+ṃ = fungi on line
 h = husks
+ḥ = husks on line
 w = flower
 s = star
 background = island island_decor
@@ -23,33 +25,19 @@ background = island island_decor
 + f = 5,3
 + k = 3,2
 ---
-
-
-
-
-
-                m  m
-
-
-
-
-
-
-                   h
----
                              s
 
          o         z
                o   k
           oo. m.tm .t
-            .....r..ft
+            ....ṃr.ṃft
             . wm .  t
            wo    .
             w  ..i..
                l   .   o
                .   .  h
           57....   . h
-          246    h .a
+          246    h ḥa
           13...o     h
           .
          0.               o   B=✥

@@ -1,4 +1,5 @@
 w = water
+o = "win" on water
 b = baba left
 c = cog
 palette = factory
@@ -7,13 +8,7 @@ W=≉   B=✥   C=↦
 
 
       www    c
- @=⚲  www  b
+ @=⚲  wow  b
       www   c
 
 
----
-
-
-
-
-       ✓
