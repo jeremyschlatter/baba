@@ -5,7 +5,22 @@
     let
       scripts = {
         "check" = "cargo test";
-        "run" = "cargo run -- $@";
+        "run" = ''
+          cargo build
+          cd $PROJECT_ROOT
+          ln -sf target/debug 'Baba Is Clone.app'
+          cat << EOF > target/debug/info.plist
+          <plist version="1.0">
+            <dict>
+              <key>CFBundleExecutable</key>
+              <string>baba_is_clone</string>
+            </dict>
+          </plist>
+          EOF
+          'Baba Is Clone.app'/baba_is_clone $@
+          rm target/debug/info.plist
+          rm 'Baba Is Clone.app'
+        '';
       };
     in {
       devShell = stdenvNoCC.mkDerivation {
