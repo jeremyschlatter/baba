@@ -1949,7 +1949,7 @@ where
     // pops from history and pushes onto views.
     let mut views: Vec<Level> = vec![level.clone()];
 
-    let congrats = sprites.2;
+    let congrats = &sprites.2;
 
     let mut history = vec![level.clone()];
     let mut current_state = &history[0];
@@ -2086,14 +2086,14 @@ where
                     if (get_time() - anim_start) > anim_time + 0.5 {
                         return (LevelResult::Win((views, inputs, palette_name.to_string())), last_input);
                     }
-                    gl_use_material(*MASK_MATERIAL);
+                    gl_use_material(&MASK_MATERIAL);
                     MASK_MATERIAL.set_uniform(
                         "radius",
                         (((get_time() - anim_start) / anim_time) as f32).min(0.5_f32.sqrt()),
                     );
                     let scale = (bounds.w * 0.65) / congrats.width();
                     draw_texture_ex(
-                        congrats,
+                        &congrats,
                         bounds.x + (bounds.w - congrats.width() * scale) / 2.,
                         bounds.y + (bounds.h - congrats.height() * scale) / 2.,
                         WHITE,
@@ -2168,14 +2168,14 @@ fn render_level(
 
     for b in backgrounds {
         draw_texture_ex(
-            sprites.3[b][anim_frame], offset_x, offset_y, WHITE, DrawTextureParams {
+            &sprites.3[b][anim_frame], offset_x, offset_y, WHITE, DrawTextureParams {
                 dest_size: Some(Vec2{x: game_width, y: game_height}),
                 ..Default::default()
             },
         );
     }
 
-    gl_use_material(*SPRITES_MATERIAL);
+    gl_use_material(&SPRITES_MATERIAL);
     for row in 0..height {
         for col in 0..width {
             let x = offset_x + sq_size * col as f32;
@@ -2255,7 +2255,7 @@ fn render_level(
                     };
                     draw_sprite(
                         x, y, sq_size,
-                        sprites.0[&(s, sprite_state)][anim_frame],
+                        &sprites.0[&(s, sprite_state)][anim_frame],
                         c,
                     );
                 }
@@ -2274,7 +2274,7 @@ fn render_level(
                         SubWorld(_, i) => SubWorld(0, i),
                         _ => l,
                     };
-                    draw_sprite(x, y, sq, sprites.1[&l], WHITE);
+                    draw_sprite(x, y, sq, &sprites.1[&l], WHITE);
                 }
                 if overridden_texts.contains(&(col, row, i)) {
                     let c = palette.get_pixel(2, 1);
@@ -2308,7 +2308,7 @@ fn render_level(
                     let x = offset_x + sq_size * (col as f32 - 0.18);
                     let y = offset_y + sq_size * (row as f32 - 0.18);
                     let sq_size = sq_size * 1.36;
-                    draw_sprite(x, y, sq_size, sprites.0[&(e.e, IdleState)][anim_frame], c);
+                    draw_sprite(x, y, sq_size, &sprites.0[&(e.e, IdleState)][anim_frame], c);
                 }
             }
         }
@@ -2638,8 +2638,10 @@ lazy_static! {
     );
 
     static ref SPRITES_MATERIAL: Material = load_material(
-        DEFAULT_VERTEX_SHADER,
-        SPRITE_FRAGMENT_SHADER,
+        ShaderSource::Glsl {
+            vertex: DEFAULT_VERTEX_SHADER,
+            fragment: SPRITE_FRAGMENT_SHADER,
+        },
         MaterialParams {
             uniforms: vec![("color".to_string(), UniformType::Float3)],
             pipeline_params: PipelineParams {
@@ -2651,8 +2653,10 @@ lazy_static! {
     ).unwrap();
 
     static ref MASK_MATERIAL: Material = load_material(
-        DEFAULT_VERTEX_SHADER,
-        MASK_FRAGMENT_SHADER,
+        ShaderSource::Glsl {
+            vertex: DEFAULT_VERTEX_SHADER,
+            fragment: MASK_FRAGMENT_SHADER,
+        },
         MaterialParams {
             uniforms: vec![("radius".to_string(), UniformType::Float1)],
             pipeline_params: PipelineParams {
