@@ -2449,8 +2449,8 @@ fn load_sprite_map() -> SpriteMap {
                 (above as u8) << 1 |
                 (right as u8),
             WalkState(n, d) => face_ix(d) + (n % 4),
-            LookState(n, d) => face_ix(d) + (n as u8 % 4),
-            TickState(n) => n as u8 % 4,
+            LookState(n, d) => face_ix(d) + (n % 4),
+            TickState(n) => n % 4,
             DiagState(NeighborhoodDiag {
                 left, above, right, below,
                 below_left, below_right, above_left, above_right,
