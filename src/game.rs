@@ -2433,11 +2433,11 @@ fn load_sprite_map() -> SpriteMap {
             }.to_string(),
         };
         fn face_ix(d: Direction) -> u8 {
-            match d {
+            8 * match d {
                 Dir::Right => 0,
-                Dir::Up => 8,
-                Dir::Left => 16,
-                Dir::Down => 24,
+                Dir::Up => 1,
+                Dir::Left => 2,
+                Dir::Down => 3,
             }
         }
         let variant = match d {
