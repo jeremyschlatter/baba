@@ -161,7 +161,7 @@ struct Boop {
     coords: (usize, usize),
 }
 
-fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
+fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
     let mut level = l.clone();
     let rules = scan_rules_no_index(&level);
     let rules_cache = cache_rules(&rules);
@@ -212,7 +212,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
     };
 
     let delta = |e, dir| d(e, dir).map(|(y, x)|
-        level[y][x].iter().map(|e| Boop {e: *e, dir: e.dir, coords: (y, x) })
+        level[y][x].iter().map(move |e| Boop {e: *e, dir: e.dir, coords: (y, x) })
     );
 
     fn is_or_has(id: &mut u64, e: &LiveEntity, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> Vec<LiveEntity> {
@@ -250,7 +250,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
         props_by_entity[&e.e.id][prop as usize]
     };
 
-    let remove_from_cell = |e: Boop|
+    let mut remove_from_cell = |e: Boop|
         for (i, x) in level[e.coords.0][e.coords.1].iter().enumerate() {
             if *x == e.e {
                 level[e.coords.0][e.coords.1].remove(i);
@@ -258,8 +258,8 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
             }
         };
 
-    let delete = |e: Boop| {
-        let mut cell = level[e.coords.0][e.coords.1];
+    let mut delete = |e: Boop| {
+        let cell = &mut level[e.coords.0][e.coords.1];
         remove_from_cell(e);
         for x in has(&mut id, &e.e, &rules_cache) {
             cell.push(x);
