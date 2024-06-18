@@ -10,7 +10,7 @@ use miniquad::graphics::*;
 use serde::{Serialize, Deserialize};
 use strum::{EnumCount, EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
 
-use std::{io::{Read, Write}, iter, collections::{HashMap, HashSet, VecDeque}, str::FromStr};
+use std::{io::{Read, Write}, iter, collections::{HashMap, HashSet}, str::FromStr};
 
 #[derive_the_basics]
 enum SpriteVariant {
@@ -155,37 +155,393 @@ impl Default for LevelName {
 }
 
 #[derive_the_basics]
+struct Boop {
+    e: LiveEntity,
+    dir: Direction,
+    coords: (usize, usize),
+}
+
+fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
+    let mut level = l.clone();
+    let rules = scan_rules_no_index(&level);
+    let rules_cache = cache_rules(&rules);
+
+    let mut id = max_id(&level);
+
+    let entities_by_prop: [_; Adjective::COUNT] = core::array::from_fn(|_| vec![]);
+    let props_by_entity: HashMap<u64, _> = HashMap::new();
+    for (y, row) in level.iter().enumerate() {
+        for (x, cell) in row.iter().enumerate() {
+            for e in cell {
+                let t_or_n = e.e.to_text_or_noun();
+                let e_props = [false; Adjective::COUNT];
+                // let mut e_props = vec![];
+                for a in Adjective::iter() {
+                    if is(t_or_n, &rules_cache, a) {
+                        entities_by_prop[a as usize].push(Boop {
+                            e: *e,
+                            dir: e.dir,
+                            coords: (y, x),
+                        });
+                        e_props[a as usize] = true;
+                        // e_props.push(a);
+                    }
+                }
+                props_by_entity[&e.id] = e_props;
+            }
+        }
+    }
+    // is(live entity) -> entities
+    // has(live entity) -> entities
+
+    let height = level.len();
+    let width = level[0].len();
+
+    let d = |e: Boop, dir| -> Option<(usize, usize)> {
+        let (y_, x_) = e.coords;
+        let (dy, dx) = match dir {
+            Dir::Up    => (-1, 0),
+            Dir::Down  => (1,  0),
+            Dir::Left  => (0, -1),
+            Dir::Right => (0, 1),
+        };
+        let (y, x) = (y_ as i32 + dy, x_ as i32 + dx);
+        if y < 0 || x < 0 || y >= height as i32 || x >= width as i32 {
+            None
+        } else { Some((y as usize, x as usize)) }
+    };
+
+    let delta = |e, dir| d(e, dir).map(|(y, x)|
+        level[y][x].iter().map(|e| Boop {e: *e, dir: e.dir, coords: (y, x) })
+    );
+
+    fn is_or_has(id: &mut u64, e: &LiveEntity, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> Vec<LiveEntity> {
+        let t_or_n = e.e.to_text_or_noun();
+        let [yes, no] = array_map_ref(&rules,
+            |v| v.iter()
+                 .filter(|(s, _)| subject_match(t_or_n, s))
+                 .map(|(_, e)| e)
+                 .copied()
+                 .collect::<HashSet<TextOrNoun>>());
+
+        let mut result = yes.difference(&no).copied().collect::<Vec<TextOrNoun>>();
+        result.sort();
+        result
+          .iter()
+          .map(|x| LiveEntity {
+              dir: e.dir,
+              id: {*id += 1; *id},
+              e: match x {
+                  TextOrNoun::Noun(n) => Entity::Noun(*n),
+                  TextOrNoun::Text => Entity::Text(match e.e {
+                      Entity::Noun(n) => Text::Object(n),
+                      Entity::Text(_) => Text::Text,
+                  }),
+              }
+          })
+          .collect()
+    }
+
+    fn has(id: &mut u64, e: &LiveEntity, rules: &RulesCache) -> Vec<LiveEntity> {
+        is_or_has(id, e, &rules.1)
+    }
+
+    let is_prop = |e: &Boop, prop: Adjective| -> bool {
+        props_by_entity[&e.e.id][prop as usize]
+    };
+
+    let remove_from_cell = |e: Boop|
+        for (i, x) in level[e.coords.0][e.coords.1].iter().enumerate() {
+            if *x == e.e {
+                level[e.coords.0][e.coords.1].remove(i);
+                return
+            }
+        };
+
+    let delete = |e: Boop| {
+        let mut cell = level[e.coords.0][e.coords.1];
+        remove_from_cell(e);
+        for x in has(&mut id, &e.e, &rules_cache) {
+            cell.push(x);
+        }
+    };
+
+    let move_ = fix_fn::fix_fn!(|move_, e: Boop, dir: Direction| -> bool {
+        let moved = 'moved: {
+            if let Some(new_cell) = delta(e, dir) {
+                for x in new_cell {
+                    let e_props = props_by_entity[&x.e.id];
+                    for prop in Adjective::iter() {
+                        if e_props[prop as usize] && !incoming(x, e, move_, prop) {
+                            break 'moved false;
+                        }
+                    }
+                }
+                remove_from_cell(e);
+                level[e.coords.0][e.coords.1].push(e.e);
+                true
+            } else { false }
+        };
+        let exited =
+            if !moved && props_by_entity[&e.e.id][Weak as usize] {
+                delete(e);
+                true
+            } else { moved };
+        if exited {
+            if let Some(away_cell) = delta(e, dir.reverse()) {
+                for x in away_cell {
+                    if is_prop(&x, Pull) {
+                        move_(x, dir);
+                    }
+                }
+            }
+        }
+        exited
+    });
+
+    fn cellmates(level: &Level, e: Boop) -> &mut dyn Iterator<Item = Boop> {
+        &mut level[e.coords.0][e.coords.1]
+            .iter()
+            .filter(|x| **x == e.e)
+            .map(|x| Boop{e: *x, dir: x.dir, coords: e.coords})
+    }
+
+    let intersect_for = |level: &Level, e: Boop| -> &dyn Fn(Option<Adjective>) -> Vec<Boop> {
+        &|adj: Option<Adjective>|
+            cellmates(level, e).filter(|x| if let Some(a) = adj { is_prop(x, a) } else { true }).collect()
+    };
+
+//     fn intersect_for<F> (level: &Level, e: Boop) -> &dyn Fn(Option<Adjective>) -> Vec<Boop> {
+//         &|adj: Option<Adjective>|
+//             cellmates(level, e).filter(|x| if let Some(a) = adj { is_prop(x, a) } else { true }).collect()
+
+//             let mut result = vec![];
+//             for x in cellmates(e) {
+//                 if let Some(a) = adj {
+//                     if !is(x, adj) {
+//                         continue
+//                     }
+//                 }
+//                 result.push(x)
+//             }
+//             result
+
+    let props = vec![
+        You,
+        // Stop,
+        // Push,
+        // Win,
+        Sink,
+        Defeat,
+        Hot,
+        // Melt,
+        Move,
+        Shut,
+        // Open,
+        // Float,
+        Weak,
+        // Tele, TODO
+        // Pull
+        Shift,
+        Swap,
+        Up,
+        Down,
+        Right,
+        Left,
+
+        // Red,
+        // Blue,
+        // Best,
+    ];
+
+    for prop in props {
+        for e in entities_by_prop[prop as usize] {
+            do_prop(e, prop, input, move_, intersect_for(&level, e), delete)
+        }
+    }
+
+    // TODO: Win
+    return (level, false);
+}
+
+fn incoming<M>(this: Boop, x: Boop, move_: M, prop: Adjective) -> bool
+where
+    M: FnMut(Boop, Direction) -> bool
+{
+    match prop {
+        Stop => false,
+        Push => move_(this, x.dir),
+        Swap => { move_(this, x.dir.reverse()); true },
+        _ => true,
+    }
+}
+
+
+fn do_prop<M, I, D>(
+    this: Boop,
+    prop: Adjective,
+    input: Input,
+    move_: M,
+    intersect_: I,
+    delete: D,
+) where
+    M: FnMut(Boop, Direction) -> bool,
+    I: Fn(Option<Adjective>) -> Vec<Boop>,
+    D: FnMut(Boop),
+{
+    let intersect = |adj| intersect_(Some(adj));
+    let intersect_any = || intersect_(None);
+    match prop {
+        You => if let Go(d) = input { move_(this, d); },
+        Sink =>
+            for x in intersect_any() {
+                delete(x);
+                delete(this);
+                break;
+            },
+        Defeat => for x in intersect(You) { delete(x); },
+        Hot => for x in intersect(Melt) { delete(x); },
+        Move =>
+            if !move_(this, this.dir) {
+                this.dir = this.dir.reverse();
+                move_(this, this.dir);
+            },
+        Shut =>
+            for x in intersect(Open) {
+                delete(x);
+                delete(this);
+                break;
+            },
+        Weak =>
+            for x in intersect_any() {
+                delete(this);
+                break;
+            },
+        // Tele =>
+        //     for x in intersect_any() {
+        //         tele(x, this);
+        //     },
+        Shift =>
+            for x in intersect_any() {
+                move_(x, this.dir);
+            },
+        Up => this.dir = Dir::Up,
+        Down => this.dir = Dir::Down,
+        Right => this.dir = Dir::Right,
+        Left => this.dir = Dir::Left,
+        _ => {},
+    }
+}
+
+#[derive_the_basics]
 #[derive(EnumIter, EnumString, EnumCount, IntoStaticStr, BabaProps)]
 #[strum(serialize_all = "snake_case")]
 #[props(u32, u32, u32, u32)]
+// TODO: Adjective -> Property(?)
 pub enum Adjective {
-    #[props(4, 0, 4, 1)] You,
-    #[props(5, 0, 5, 1)] Stop,
-    #[props(6, 0, 6, 1)] Push,
-    #[props(6, 1, 2, 4)] Win,
-    #[props(1, 2, 1, 3)] Sink,
-    #[props(2, 0, 2, 1)] Defeat,
-    #[props(2, 2, 2, 3)] Hot,
-    #[props(1, 2, 1, 3)] Melt,
-    #[props(5, 1, 5, 3)] Move,
-    #[props(2, 1, 2, 2)] Shut,
-    #[props(6, 1, 2, 4)] Open,
-    #[props(1, 2, 1, 4)] Float,
-    #[props(1, 1, 1, 2)] Weak,
-    #[props(1, 2, 1, 4)] Tele,
-    #[props(6, 1, 6, 2)] Pull,
-    #[props(1, 2, 1, 3)] Shift,
-    #[props(3, 0, 3, 1)] Swap,  // TODO
 
-    #[props(1, 3, 1, 4)] Up,
-    #[props(1, 3, 1, 4)] Down,
-    #[props(1, 3, 1, 4)] Right,
-    #[props(1, 3, 1, 4)] Left,
+    // move (direction)
+    //   stop
+    //      if stopped
+    //   moves into -> thing(s?)
+    //   moves away from -> thing(s?)
+    // input() -> direction
+    // intersect (maybe prop, prop) -> thing(s?)
+    // delete(thing)
+    // tele (start place)
+    //
+    // float
+    // win
 
-    #[props(2, 1, 2, 2)] Red,
-    #[props(3, 2, 3, 3)] Blue,
+    // if let Go(d) = input {
+    //   move(this, d)
+    // }
+    #[props(4, 0, 4, 1)] You,  // you move in the input direction
+    // for x in incoming() {
+    //   stop(x)
+    // }
+    #[props(5, 0, 5, 1)] Stop, // if something moves into stop, stop that thing
+    // for x in incoming() {
+    //   if !move(this, x.dir) {
+    //     stop(x)
+    //   }
+    //   break
+    // }
+    #[props(6, 0, 6, 1)] Push, // if something moves into push, push moves in the same direction.
+                               // if push can't move it stops the input move
+    #[props(6, 1, 2, 4)] Win,  // if you intersect win, then win
+    // for x in intersect_any() {
+    //   delete(x)
+    //   delete(this)
+    //   break
+    // }
+    #[props(1, 2, 1, 3)] Sink, // if anything intersects sink, that thing and sink get deleted
+    // for x in intersect(You) {
+    //   delete(x)
+    // }
+    #[props(2, 0, 2, 1)] Defeat, // if you intersect defeat, you get deleted
+    // for x in intersect(Melt) {
+    //   delete(x)
+    // }
+    #[props(2, 2, 2, 3)] Hot, // if melt intersects hot, melt gets deleted
+    #[props(1, 2, 1, 3)] Melt, // ""
+    // if !move(this, this.dir) {
+    //   this.dir = this.dir.reverse()
+    //   move(this, this.dir)
+    // }
+    #[props(5, 1, 5, 3)] Move, // move moves in its current direction. if it cannot move, its
+                               // direction gets reversed and then it moves that way if it can
+    // for x in intersect(Open) {
+    //   delete(x)
+    //   delete(this)
+    //   break
+    // }
+    #[props(2, 1, 2, 2)] Shut, // if open intersects shut, both open and shut get deleted
+    #[props(6, 1, 2, 4)] Open, // ""
+    #[props(1, 2, 1, 4)] Float, // float things are on a separate dimension for all game logic
+    // onStop(|| delete(this))
+    // for x in intersect_any() {
+    //   delete(this)
+    //   break
+    // }
+    #[props(1, 1, 1, 2)] Weak, // if weak gets stopped or weak intersects anything, weak gets
+                               // deleted
+    // for x in intersect_any() {
+    //   tele(x, this)
+    // }
+    #[props(1, 2, 1, 4)] Tele, // if anything intersects tele, that thing moves to a random other
+                               // tele
+    // for x in outgoing() {
+    //   move(this, x.dir)
+    //   break
+    // }
+    #[props(6, 1, 6, 2)] Pull, // if something adjacent to pull moves away from it, pull moves in
+                               // the same direction
+    // for x in intersect_any() {
+    //   move(x, this.dir)
+    // }
+    #[props(1, 2, 1, 3)] Shift, // if anything intersects shift, that thing moves in the direction
+                                // of shift
+    // for x in incoming() {
+    //   move(this, x.dir.reverse())
+    //   break
+    // }
+    #[props(3, 0, 3, 1)] Swap,  // if something moves into swap, swap moves in the opposite
+                                // direction
 
-    #[props(2, 3, 2, 4)] Best,  // TODO
+    // this.dir = Dir::Up
+    #[props(1, 3, 1, 4)] Up, // up's direction is set to up
+    // this.dir = Dir::Down
+    #[props(1, 3, 1, 4)] Down, // down's direction is set to down
+    // this.dir = Dir::Right
+    #[props(1, 3, 1, 4)] Right, // right's direction is set to right
+    // this.dir = Dir::Left
+    #[props(1, 3, 1, 4)] Left, // left's direction is set to left
+
+    // rendering properties
+    #[props(2, 1, 2, 2)] Red, // red is colored red
+    #[props(3, 2, 3, 3)] Blue, // blue is colored blue
+    #[props(2, 3, 2, 4)] Best,  // best sparkles
 }
 use Adjective::*;
 impl Adjective {
@@ -1018,6 +1374,7 @@ fn array_map_ref<T, F: Fn(&T) -> U, U>(a: &[T; 2], f: F) -> [U; 2] {
 }
 
 type RulesCache = (
+    // 2 dimension is [yes, no]
     [[Vec<Subject>; 2]; Adjective::COUNT], // is adjective
     [Vec<(Subject, TextOrNoun)>; 2], // has noun
     [Vec<(Subject, TextOrNoun)>; 2], // is noun
@@ -1042,8 +1399,7 @@ fn cache_rules(rules: &Vec<Rule>) -> RulesCache {
     result
 }
 
-fn subject_match(level: &Level, x: usize, y: usize, i: usize, s: &Subject) -> bool {
-    let t_or_n = level[y][x][i].e.to_text_or_noun();
+fn subject_match(t_or_n: TextOrNoun, s: &Subject) -> bool {
     match (*s, t_or_n) {
         (Yes(y), _) => y == t_or_n,
         (No(n), TextOrNoun::Noun(_)) => n != t_or_n,
@@ -1051,528 +1407,529 @@ fn subject_match(level: &Level, x: usize, y: usize, i: usize, s: &Subject) -> bo
     }
 }
 
-fn is(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache, quality: Adjective) -> bool {
+fn is(t_or_n: TextOrNoun, rules: &RulesCache, quality: Adjective) -> bool {
+    // let t_or_n = level[y][x][i].e.to_text_or_noun();
     let [yes, no] = array_map_ref(&rules.0[quality as usize],
-        |v: &Vec<Subject>| v.iter().any(|s| subject_match(level, x, y, i, s)));
+        |v: &Vec<Subject>| v.iter().any(|s| subject_match(t_or_n, s)));
     yes && !no
 }
 
-fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
-    let mut level = l.clone();
-    let rules = scan_rules_no_index(&level);
+// fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
+//     let mut level = l.clone();
+//     let rules = scan_rules_no_index(&level);
 
-    let width = level[0].len();
-    let height = level.len();
+//     let width = level[0].len();
+//     let height = level.len();
 
-    let mut id = max_id(&level);
+//     let mut id = max_id(&level);
 
-    fn delta(level: &Level, d: Direction, x: usize, y: usize) -> (usize, usize) {
-        let width = level[0].len();
-        let height = level.len();
-        let (dx, dy) = match d {
-            Dir::Up    => (0, -1),
-            Dir::Down  => (0,  1),
-            Dir::Left  => (-1, 0),
-            Dir::Right => ( 1, 0),
-        };
-        (0.max(x as i16 + dx).min(width as i16 - 1) as usize,
-         0.max(y as i16 + dy).min(height as i16 - 1) as usize)
-    }
+//     fn delta(level: &Level, d: Direction, x: usize, y: usize) -> (usize, usize) {
+//         let width = level[0].len();
+//         let height = level.len();
+//         let (dx, dy) = match d {
+//             Dir::Up    => (0, -1),
+//             Dir::Down  => (0,  1),
+//             Dir::Left  => (-1, 0),
+//             Dir::Right => ( 1, 0),
+//         };
+//         (0.max(x as i16 + dx).min(width as i16 - 1) as usize,
+//          0.max(y as i16 + dy).min(height as i16 - 1) as usize)
+//     }
 
-    fn entities(level: &Level) -> impl Iterator<Item=((usize, usize, usize), LiveEntity)> + '_ {
-        level.iter()
-             .enumerate()
-             .flat_map(move |(y, row)|
-                 row.iter()
-                    .enumerate()
-                    .flat_map(move |(x, cell)|
-                        cell.iter()
-                            .enumerate()
-                            .map(move |(i, e)| ((x, y, i), *e))))
-    }
+//     fn entities(level: &Level) -> impl Iterator<Item=((usize, usize, usize), LiveEntity)> + '_ {
+//         level.iter()
+//              .enumerate()
+//              .flat_map(move |(y, row)|
+//                  row.iter()
+//                     .enumerate()
+//                     .flat_map(move |(x, cell)|
+//                         cell.iter()
+//                             .enumerate()
+//                             .map(move |(i, e)| ((x, y, i), *e))))
+//     }
 
-    fn is_or_has(id: &mut u64, level: &Level, x: usize, y: usize, i: usize, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> Vec<LiveEntity> {
-        let [yes, no] = array_map_ref(&rules,
-            |v| v.iter()
-                 .filter(|(s, _)| subject_match(level, x, y, i, s))
-                 .map(|(_, e)| e)
-                 .copied()
-                 .collect::<HashSet<TextOrNoun>>());
+//     fn is_or_has(id: &mut u64, level: &Level, x: usize, y: usize, i: usize, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> Vec<LiveEntity> {
+//         let [yes, no] = array_map_ref(&rules,
+//             |v| v.iter()
+//                  .filter(|(s, _)| subject_match(level, x, y, i, s))
+//                  .map(|(_, e)| e)
+//                  .copied()
+//                  .collect::<HashSet<TextOrNoun>>());
 
-        let mut result = yes.difference(&no).copied().collect::<Vec<TextOrNoun>>();
-        result.sort();
-        let e = level[y][x][i];
-        result
-          .iter()
-          .map(|x| LiveEntity {
-              dir: e.dir,
-              id: {*id += 1; *id},
-              e: match x {
-                  TextOrNoun::Noun(n) => Entity::Noun(*n),
-                  TextOrNoun::Text => Entity::Text(match e.e {
-                      Entity::Noun(n) => Text::Object(n),
-                      Entity::Text(_) => Text::Text,
-                  }),
-              }
-          })
-          .collect()
-    }
+//         let mut result = yes.difference(&no).copied().collect::<Vec<TextOrNoun>>();
+//         result.sort();
+//         let e = level[y][x][i];
+//         result
+//           .iter()
+//           .map(|x| LiveEntity {
+//               dir: e.dir,
+//               id: {*id += 1; *id},
+//               e: match x {
+//                   TextOrNoun::Noun(n) => Entity::Noun(*n),
+//                   TextOrNoun::Text => Entity::Text(match e.e {
+//                       Entity::Noun(n) => Text::Object(n),
+//                       Entity::Text(_) => Text::Text,
+//                   }),
+//               }
+//           })
+//           .collect()
+//     }
 
-    fn has(id: &mut u64, level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<LiveEntity> {
-        is_or_has(id, level, x, y, i, &rules.1)
-    }
+//     fn has(id: &mut u64, level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<LiveEntity> {
+//         is_or_has(id, level, x, y, i, &rules.1)
+//     }
 
-    fn is_noun(id: &mut u64, level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<LiveEntity> {
-        let v = is_or_has(id, level, x, y, i, &rules.2);
-        if v.iter().any(|e| e.e == level[y][x][i].e) {
-            vec![] // x is x
-        } else {
-            v
-        }
-    }
+//     fn is_noun(id: &mut u64, level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<LiveEntity> {
+//         let v = is_or_has(id, level, x, y, i, &rules.2);
+//         if v.iter().any(|e| e.e == level[y][x][i].e) {
+//             vec![] // x is x
+//         } else {
+//             v
+//         }
+//     }
 
-    // move things
-    fn move_things(id: &mut u64, level: &mut Level, rules: &Vec<Rule>, movers: Vec<(usize, usize, usize, Direction, bool)>) {
-        let rules_cache = cache_rules(rules);
-        let width = level[0].len();
-        let height = level.len();
+//     // move things
+//     fn move_things(id: &mut u64, level: &mut Level, rules: &Vec<Rule>, movers: Vec<(usize, usize, usize, Direction, bool)>) {
+//         let rules_cache = cache_rules(rules);
+//         let width = level[0].len();
+//         let height = level.len();
 
-        #[derive(PartialEq, Eq, Hash)]
-        enum Status {
-            Pending { flipped: bool },
-            Resolved { moving: bool },
-        }
-        #[derive(PartialEq, Eq, Hash)]
-        struct Arrow {
-            dir: Direction,
-            status: Status,
-            is_move: bool,
-        }
+//         #[derive(PartialEq, Eq, Hash)]
+//         enum Status {
+//             Pending { flipped: bool },
+//             Resolved { moving: bool },
+//         }
+//         #[derive(PartialEq, Eq, Hash)]
+//         struct Arrow {
+//             dir: Direction,
+//             status: Status,
+//             is_move: bool,
+//         }
 
-        let try_move = |queue: &mut VecDeque<(usize, usize, usize)>, movements: &mut HashMap<(usize, usize, usize), Arrow>, x, y, i, d, m| {
-            let arrow = Arrow {
-                dir: d,
-                status: Status::Pending { flipped: false },
-                is_move: m,
-            };
-            queue.push_back((x, y, i));
-            movements.insert((x, y, i), arrow);
-        };
-        let mut queue = VecDeque::new();
-        let mut movements = HashMap::new();
-        let mut tombstones = HashSet::new();
-        let is = |x, y, i, q| is(&level, x, y, i, &rules_cache, q);
+//         let try_move = |queue: &mut VecDeque<(usize, usize, usize)>, movements: &mut HashMap<(usize, usize, usize), Arrow>, x, y, i, d, m| {
+//             let arrow = Arrow {
+//                 dir: d,
+//                 status: Status::Pending { flipped: false },
+//                 is_move: m,
+//             };
+//             queue.push_back((x, y, i));
+//             movements.insert((x, y, i), arrow);
+//         };
+//         let mut queue = VecDeque::new();
+//         let mut movements = HashMap::new();
+//         let mut tombstones = HashSet::new();
+//         let is = |x, y, i, q| is(&level, x, y, i, &rules_cache, q);
 
-        for (x, y, i, d, b) in movers {
-            try_move(&mut queue, &mut movements, x, y, i, d, b);
-        }
+//         for (x, y, i, d, b) in movers {
+//             try_move(&mut queue, &mut movements, x, y, i, d, b);
+//         }
 
-        // until the queue is empty:
-        //   pull arrow from queue
-        //   match (can move to adjacent cell):
-        //     Yes => mark resolved yes
-        //     No => mark resolved no (or delete it?)
-        //     Depends On arrows => throw it to the back of the queue
-        //                    // proof of termination:
-        //                    // arrows must be in queue since they are unresolved
-        //                    // so will process them before we return to this one
-        //                    // they cannot depend on this one because can only
-        //                    // depend on arrows in front moving same direction.
-        while let Some((x, y, i)) = queue.pop_front() {
-            if tombstones.contains(&(x, y, i)) {
-                continue;
-            }
+//         // until the queue is empty:
+//         //   pull arrow from queue
+//         //   match (can move to adjacent cell):
+//         //     Yes => mark resolved yes
+//         //     No => mark resolved no (or delete it?)
+//         //     Depends On arrows => throw it to the back of the queue
+//         //                    // proof of termination:
+//         //                    // arrows must be in queue since they are unresolved
+//         //                    // so will process them before we return to this one
+//         //                    // they cannot depend on this one because can only
+//         //                    // depend on arrows in front moving same direction.
+//         while let Some((x, y, i)) = queue.pop_front() {
+//             if tombstones.contains(&(x, y, i)) {
+//                 continue;
+//             }
 
-            // check for push
-            {
-                let a = &movements[&(x, y, i)];
-                let (x_, y_) = delta(&level, a.dir, x, y);
-                if !(x == x_ && y == y_) {
-                    let d = a.dir;
-                    let mut pushed = false;
-                    for i in 0..level[y_][x_].len() {
-                        if tombstones.contains(&(x_, y_, i)) {
-                            continue;
-                        }
-                        if is(x_, y_, i, Push) {
-                            if !movements.contains_key(&(x_, y_, i)) {
-                                try_move(&mut queue, &mut movements, x_, y_, i, d, false);
-                                pushed = true;
-                            }
-                        }
-                    }
-                    if pushed {
-                        queue.push_back((x, y, i));
-                        continue;
-                    }
-                }
-            }
+//             // check for push
+//             {
+//                 let a = &movements[&(x, y, i)];
+//                 let (x_, y_) = delta(&level, a.dir, x, y);
+//                 if !(x == x_ && y == y_) {
+//                     let d = a.dir;
+//                     let mut pushed = false;
+//                     for i in 0..level[y_][x_].len() {
+//                         if tombstones.contains(&(x_, y_, i)) {
+//                             continue;
+//                         }
+//                         if is(x_, y_, i, Push) {
+//                             if !movements.contains_key(&(x_, y_, i)) {
+//                                 try_move(&mut queue, &mut movements, x_, y_, i, d, false);
+//                                 pushed = true;
+//                             }
+//                         }
+//                     }
+//                     if pushed {
+//                         queue.push_back((x, y, i));
+//                         continue;
+//                     }
+//                 }
+//             }
 
-            let a = &movements[&(x, y, i)];
+//             let a = &movements[&(x, y, i)];
 
-            let (x_, y_) = delta(&level, a.dir, x, y);
+//             let (x_, y_) = delta(&level, a.dir, x, y);
 
-            let at_unmoving_stop = {
-                let mut result = Some(false);
-                if x == x_ && y == y_ {
-                    // at edge
-                    result = Some(true);
-                }
-                for j in 0..level[y_][x_].len() {
-                    if tombstones.contains(&(x_, y_, j)) {
-                        continue;
-                    }
-                    let open = is(x_, y_, j, Open) && is(x, y, i, Shut)
-                            || is(x_, y_, j, Shut) && is(x, y, i, Open);
-                    if open {
-                        // add tombstones to both
-                        tombstones.insert((x, y, i));
-                        tombstones.insert((x_, y_, j));
-                        continue;
-                    }
-                    let stop = is(x_, y_, j, Stop);
-                    let push = is(x_, y_, j, Push);
-                    let pull = is(x_, y_, j, Pull);
-                    let weak = is(x_, y_, j, Weak);
-                    if weak || result == Some(true) || !push && !stop && !pull {
-                        continue;
-                    }
-                    result = match movements.get(&(x_, y_, j)) {
-                        Some(b) if a.dir == b.dir => match b.status {
-                            Status::Resolved { moving } =>
-                                if moving { result } else { Some(true) },
-                            _ => None,
-                        },
-                        _ => if stop || pull { Some(true) } else { result },
-                    }
-                }
-                result
-            };
+//             let at_unmoving_stop = {
+//                 let mut result = Some(false);
+//                 if x == x_ && y == y_ {
+//                     // at edge
+//                     result = Some(true);
+//                 }
+//                 for j in 0..level[y_][x_].len() {
+//                     if tombstones.contains(&(x_, y_, j)) {
+//                         continue;
+//                     }
+//                     let open = is(x_, y_, j, Open) && is(x, y, i, Shut)
+//                             || is(x_, y_, j, Shut) && is(x, y, i, Open);
+//                     if open {
+//                         // add tombstones to both
+//                         tombstones.insert((x, y, i));
+//                         tombstones.insert((x_, y_, j));
+//                         continue;
+//                     }
+//                     let stop = is(x_, y_, j, Stop);
+//                     let push = is(x_, y_, j, Push);
+//                     let pull = is(x_, y_, j, Pull);
+//                     let weak = is(x_, y_, j, Weak);
+//                     if weak || result == Some(true) || !push && !stop && !pull {
+//                         continue;
+//                     }
+//                     result = match movements.get(&(x_, y_, j)) {
+//                         Some(b) if a.dir == b.dir => match b.status {
+//                             Status::Resolved { moving } =>
+//                                 if moving { result } else { Some(true) },
+//                             _ => None,
+//                         },
+//                         _ => if stop || pull { Some(true) } else { result },
+//                     }
+//                 }
+//                 result
+//             };
 
-            let flipped =
-                if let Status::Pending { flipped } = a.status {
-                    flipped
-                } else {
-                    continue; // should be impossible
-                };
+//             let flipped =
+//                 if let Status::Pending { flipped } = a.status {
+//                     flipped
+//                 } else {
+//                     continue; // should be impossible
+//                 };
 
-            match at_unmoving_stop {
-                Some(true) => {
-                    let a = movements.get_mut(&(x, y, i)).unwrap();
-                    if is(x, y, i, Weak) && !a.is_move {
-                        tombstones.insert((x, y, i));
-                        continue;
-                    }
-                    if a.is_move && !flipped {
-                        a.dir = a.dir.reverse();
-                        a.status = Status::Pending { flipped: true };
-                        queue.push_back((x, y, i));
-                    } else {
-                        a.status = Status::Resolved { moving: false };
-                    }
-                    continue;
-                },
-                None => {
-                    queue.push_back((x, y, i));
-                    continue;
-                },
-                Some(false) => (),
-            }
+//             match at_unmoving_stop {
+//                 Some(true) => {
+//                     let a = movements.get_mut(&(x, y, i)).unwrap();
+//                     if is(x, y, i, Weak) && !a.is_move {
+//                         tombstones.insert((x, y, i));
+//                         continue;
+//                     }
+//                     if a.is_move && !flipped {
+//                         a.dir = a.dir.reverse();
+//                         a.status = Status::Pending { flipped: true };
+//                         queue.push_back((x, y, i));
+//                     } else {
+//                         a.status = Status::Resolved { moving: false };
+//                     }
+//                     continue;
+//                 },
+//                 None => {
+//                     queue.push_back((x, y, i));
+//                     continue;
+//                 },
+//                 Some(false) => (),
+//             }
 
-            // check for pull
-            {
-                let dir = movements.get(&(x, y, i)).unwrap().dir;
-                let (x_, y_) = delta(&level, dir.reverse(), x, y);
-                if !(x == x_ && y == y_) {
-                    for i in 0..level[y_][x_].len() {
-                        if is(x_, y_, i, Pull) {
-                            if !movements.contains_key(&(x_, y_, i)) {
-                                try_move(&mut queue, &mut movements, x_, y_, i, dir, false);
-                            }
-                        }
-                    }
-                }
-            }
+//             // check for pull
+//             {
+//                 let dir = movements.get(&(x, y, i)).unwrap().dir;
+//                 let (x_, y_) = delta(&level, dir.reverse(), x, y);
+//                 if !(x == x_ && y == y_) {
+//                     for i in 0..level[y_][x_].len() {
+//                         if is(x_, y_, i, Pull) {
+//                             if !movements.contains_key(&(x_, y_, i)) {
+//                                 try_move(&mut queue, &mut movements, x_, y_, i, dir, false);
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
 
-            let a = movements.get_mut(&(x, y, i)).unwrap();
-            a.status = Status::Resolved { moving: true };
-        }
+//             let a = movements.get_mut(&(x, y, i)).unwrap();
+//             a.status = Status::Resolved { moving: true };
+//         }
 
-        // flush movements along with the deletions and insertions they generated
-        {
-            // remove all movers from their current position
-            // and remove all tombstoned things
-            let mut removals = vec![vec![vec![]; width]; height];
-            for &(x, y, i) in tombstones.iter() {
-                removals[y][x].push((i, None));
-            }
-            for (&(x, y, i), a) in movements.iter() {
-                if !tombstones.contains(&(x, y, i)) {
-                    if a.status == (Status::Resolved { moving: true }) {
-                        removals[y][x].push((i, Some((level[y][x][i], a.dir))));
-                    }
-                }
-            }
-            for x in 0..width {
-                for y in 0..height {
-                    removals[y][x].sort_by(|a, b| a.0.cmp(&b.0));
-                    let mut n_inserts = 0;
-                    for (i, (r, _)) in removals[y][x].iter().enumerate() {
-                        let ix = n_inserts + r - i;
-                        let inserts = if tombstones.contains(&(x, y, ix)) {
-                            has(id, &level, x, y, ix, &rules_cache)
-                        } else { vec![] };
-                        level[y][x].remove(ix);
-                        for e in &inserts {
-                            level[y][x].insert(ix, *e)
-                        }
-                        n_inserts += inserts.len();
-                    }
-                }
-            }
+//         // flush movements along with the deletions and insertions they generated
+//         {
+//             // remove all movers from their current position
+//             // and remove all tombstoned things
+//             let mut removals = vec![vec![vec![]; width]; height];
+//             for &(x, y, i) in tombstones.iter() {
+//                 removals[y][x].push((i, None));
+//             }
+//             for (&(x, y, i), a) in movements.iter() {
+//                 if !tombstones.contains(&(x, y, i)) {
+//                     if a.status == (Status::Resolved { moving: true }) {
+//                         removals[y][x].push((i, Some((level[y][x][i], a.dir))));
+//                     }
+//                 }
+//             }
+//             for x in 0..width {
+//                 for y in 0..height {
+//                     removals[y][x].sort_by(|a, b| a.0.cmp(&b.0));
+//                     let mut n_inserts = 0;
+//                     for (i, (r, _)) in removals[y][x].iter().enumerate() {
+//                         let ix = n_inserts + r - i;
+//                         let inserts = if tombstones.contains(&(x, y, ix)) {
+//                             has(id, &level, x, y, ix, &rules_cache)
+//                         } else { vec![] };
+//                         level[y][x].remove(ix);
+//                         for e in &inserts {
+//                             level[y][x].insert(ix, *e)
+//                         }
+//                         n_inserts += inserts.len();
+//                     }
+//                 }
+//             }
 
-            // add them to their new position
-            for (y, row) in removals.iter().enumerate() {
-                for (x, cell) in row.iter().enumerate() {
-                    for &(_, o) in cell {
-                        if let Some((e, d)) = o {
-                            let (x, y) = delta(&level, d, x, y);
-                            level[y][x].push(LiveEntity { dir: d, id: e.id, e: e.e, });
-                        }
-                    }
-                }
-            }
-        }
-    }
+//             // add them to their new position
+//             for (y, row) in removals.iter().enumerate() {
+//                 for (x, cell) in row.iter().enumerate() {
+//                     for &(_, o) in cell {
+//                         if let Some((e, d)) = o {
+//                             let (x, y) = delta(&level, d, x, y);
+//                             level[y][x].push(LiveEntity { dir: d, id: e.id, e: e.e, });
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
 
-    let rules_cache = cache_rules(&rules);
+//     let rules_cache = cache_rules(&rules);
 
-    // move you
-    if let Go(d) = input {
-        let m = entities(&level)
-            .filter_map(|((x, y, i), _)| match is(&level, x, y, i, &rules_cache, You) {
-                true => Some((x, y, i, d, false)),
-                false => None,
-            }).collect();
-        move_things(&mut id, &mut level, &rules, m);
-    }
+//     // move you
+//     if let Go(d) = input {
+//         let m = entities(&level)
+//             .filter_map(|((x, y, i), _)| match is(&level, x, y, i, &rules_cache, You) {
+//                 true => Some((x, y, i, d, false)),
+//                 false => None,
+//             }).collect();
+//         move_things(&mut id, &mut level, &rules, m);
+//     }
 
-    // move cursor
-    if let Go(d) = input {
-        'top:
-        for col in 0..level.len() {
-            for row in 0..level[0].len() {
-                for i in 0..level[col][row].len() {
-                    if let Entity::Noun(Noun::Cursor) = level[col][row][i].e {
-                        let (x, y) = delta(&level, d, row, col);
-                        for j in 0..level[y][x].len() {
-                            if let Entity::Noun(n) = level[y][x][j].e {
-                                if match n { Line => true, Level(_) => true, _ => false } {
-                                    let c = level[col][row].remove(i);
-                                    level[y][x].push(LiveEntity {
-                                        dir: d,
-                                        id: c.id,
-                                        e: Entity::Noun(Noun::Cursor)
-                                    });
-                                    break 'top;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+//     // move cursor
+//     if let Go(d) = input {
+//         'top:
+//         for col in 0..level.len() {
+//             for row in 0..level[0].len() {
+//                 for i in 0..level[col][row].len() {
+//                     if let Entity::Noun(Noun::Cursor) = level[col][row][i].e {
+//                         let (x, y) = delta(&level, d, row, col);
+//                         for j in 0..level[y][x].len() {
+//                             if let Entity::Noun(n) = level[y][x][j].e {
+//                                 if match n { Line => true, Level(_) => true, _ => false } {
+//                                     let c = level[col][row].remove(i);
+//                                     level[y][x].push(LiveEntity {
+//                                         dir: d,
+//                                         id: c.id,
+//                                         e: Entity::Noun(Noun::Cursor)
+//                                     });
+//                                     break 'top;
+//                                 }
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
 
-    // move move
-    {
-        let m = entities(&level)
-            .filter_map(|((x, y, i), e)| match is(&level, x, y, i, &rules_cache, Move) {
-                true => Some((x, y, i, e.dir, true)),
-                false => None,
-            }).collect();
-        move_things(&mut id, &mut level, &rules, m);
-    }
+//     // move move
+//     {
+//         let m = entities(&level)
+//             .filter_map(|((x, y, i), e)| match is(&level, x, y, i, &rules_cache, Move) {
+//                 true => Some((x, y, i, e.dir, true)),
+//                 false => None,
+//             }).collect();
+//         move_things(&mut id, &mut level, &rules, m);
+//     }
 
-    type SelectT = ((usize, usize), Vec<usize>, Vec<usize>);
-    fn select(
-        level: &Level, rules_cache: &RulesCache, a: Adjective, b: Option<Adjective>,
-    ) -> Vec<SelectT> {
-        let mut result = vec![];
-        let is = |x, y, i, q| is(&level, x, y, i, rules_cache, q);
-        for y in 0..level.len() {
-            for x in 0..level[0].len() {
-                for float in [true, false] {
-                    let mut as_ = vec![];
-                    let mut bs = vec![];
-                    for i in 0..level[y][x].len() {
-                        if is(x, y, i, Float) == float {
-                            if is(x, y, i, a) {
-                                as_.push(i);
-                            }
-                            if b.map(|b| is(x, y, i, b)).unwrap_or(true) {
-                                bs.push(i);
-                            }
-                        }
-                    }
-                    if as_.len() > 0 && bs.len() > 0 {
-                        result.push(((x, y), as_, bs));
-                    }
-                }
-            }
-        }
-        result
-    }
+//     type SelectT = ((usize, usize), Vec<usize>, Vec<usize>);
+//     fn select(
+//         level: &Level, rules_cache: &RulesCache, a: Adjective, b: Option<Adjective>,
+//     ) -> Vec<SelectT> {
+//         let mut result = vec![];
+//         let is = |x, y, i, q| is(&level, x, y, i, rules_cache, q);
+//         for y in 0..level.len() {
+//             for x in 0..level[0].len() {
+//                 for float in [true, false] {
+//                     let mut as_ = vec![];
+//                     let mut bs = vec![];
+//                     for i in 0..level[y][x].len() {
+//                         if is(x, y, i, Float) == float {
+//                             if is(x, y, i, a) {
+//                                 as_.push(i);
+//                             }
+//                             if b.map(|b| is(x, y, i, b)).unwrap_or(true) {
+//                                 bs.push(i);
+//                             }
+//                         }
+//                     }
+//                     if as_.len() > 0 && bs.len() > 0 {
+//                         result.push(((x, y), as_, bs));
+//                     }
+//                 }
+//             }
+//         }
+//         result
+//     }
 
-    // move shift
-    {
-        let mut movers = vec![];
-        for ((x, y), shifts, all) in select(&level, &rules_cache, Shift, None) {
-            for (n, s) in shifts.iter().enumerate() {
-                for i in &all {
-                    if i == s || n > 0 && *i != shifts[0] {
-                        continue;
-                    }
-                    level[y][x][*i].dir = level[y][x][*s].dir;
-                    movers.push((x, y, *i, level[y][x][*s].dir, false));
-                }
-            }
-        }
-        move_things(&mut id, &mut level, &rules, movers);
-    }
+//     // move shift
+//     {
+//         let mut movers = vec![];
+//         for ((x, y), shifts, all) in select(&level, &rules_cache, Shift, None) {
+//             for (n, s) in shifts.iter().enumerate() {
+//                 for i in &all {
+//                     if i == s || n > 0 && *i != shifts[0] {
+//                         continue;
+//                     }
+//                     level[y][x][*i].dir = level[y][x][*s].dir;
+//                     movers.push((x, y, *i, level[y][x][*s].dir, false));
+//                 }
+//             }
+//         }
+//         move_things(&mut id, &mut level, &rules, movers);
+//     }
 
-    // rescan since we might have just moved some new rules into place
-    let rules = scan_rules_no_index(&level);
-    let rules_cache = cache_rules(&rules);
+//     // rescan since we might have just moved some new rules into place
+//     let rules = scan_rules_no_index(&level);
+//     let rules_cache = cache_rules(&rules);
 
-    // rotate things
-    for x in 0..width {
-        for y in 0..height {
-            for i in 0..level[y][x].len() {
-                for dir in [(Up, Dir::Up), (Down, Dir::Down), (Left, Dir::Left), (Right, Dir::Right)] {
-                    if is(&level, x, y, i, &rules_cache, dir.0) {
-                        level[y][x][i].dir = dir.1;
-                    }
-                }
-            }
-        }
-    }
+//     // rotate things
+//     for x in 0..width {
+//         for y in 0..height {
+//             for i in 0..level[y][x].len() {
+//                 for dir in [(Up, Dir::Up), (Down, Dir::Down), (Left, Dir::Left), (Right, Dir::Right)] {
+//                     if is(&level, x, y, i, &rules_cache, dir.0) {
+//                         level[y][x][i].dir = dir.1;
+//                     }
+//                 }
+//             }
+//         }
+//     }
 
-    // change things into other things
-    for x in 0..width {
-        for y in 0..height {
-            for i in (0..level[y][x].len()).rev() {
-                let changed = is_noun(&mut id, &level, x, y, i, &rules_cache);
-                if changed.len() > 0 {
-                    level[y][x].remove(i);
-                    for new in changed.into_iter().rev() {
-                        level[y][x].insert(i, new);
-                    }
-                }
-            }
-        }
-    }
+//     // change things into other things
+//     for x in 0..width {
+//         for y in 0..height {
+//             for i in (0..level[y][x].len()).rev() {
+//                 let changed = is_noun(&mut id, &level, x, y, i, &rules_cache);
+//                 if changed.len() > 0 {
+//                     level[y][x].remove(i);
+//                     for new in changed.into_iter().rev() {
+//                         level[y][x].insert(i, new);
+//                     }
+//                 }
+//             }
+//         }
+//     }
 
-    // delete things
-    {
-        let mut deletions: Vec<Vec<Vec<usize>>> = vec![vec![vec![]; width]; height];
-        let mut delete_all = |(x, y): (usize, usize), ixs: Vec<usize>| {
-            for i in ixs {
-                if !deletions[y][x].contains(&i) {
-                    deletions[y][x].push(i);
-                }
-            }
-        };
-        let select_occupied = |a| {
-            let mut r = select(&level, &rules_cache, a, None);
-            r.retain(|(_, _, bs)| bs.len() > 1);
-            r
-        };
-        let select_intersecting = |a, b| select(&level, &rules_cache, a, Some(b));
+//     // delete things
+//     {
+//         let mut deletions: Vec<Vec<Vec<usize>>> = vec![vec![vec![]; width]; height];
+//         let mut delete_all = |(x, y): (usize, usize), ixs: Vec<usize>| {
+//             for i in ixs {
+//                 if !deletions[y][x].contains(&i) {
+//                     deletions[y][x].push(i);
+//                 }
+//             }
+//         };
+//         let select_occupied = |a| {
+//             let mut r = select(&level, &rules_cache, a, None);
+//             r.retain(|(_, _, bs)| bs.len() > 1);
+//             r
+//         };
+//         let select_intersecting = |a, b| select(&level, &rules_cache, a, Some(b));
 
-        // sink
-        for (xy, _, ixs) in select_occupied(Sink) { delete_all(xy, ixs) }
+//         // sink
+//         for (xy, _, ixs) in select_occupied(Sink) { delete_all(xy, ixs) }
 
-        // defeat
-        for (xy, _, yous) in select_intersecting(Defeat, You) { delete_all(xy, yous) }
+//         // defeat
+//         for (xy, _, yous) in select_intersecting(Defeat, You) { delete_all(xy, yous) }
 
-        // melt
-        for (xy, _, melts) in select_intersecting(Hot, Melt) { delete_all(xy, melts) }
+//         // melt
+//         for (xy, _, melts) in select_intersecting(Hot, Melt) { delete_all(xy, melts) }
 
-        // open and shut
-        for (xy, mut opens, mut shuts) in select_intersecting(Open, Shut) {
-            let n = opens.len().min(shuts.len());
-            opens.truncate(n);
-            shuts.truncate(n);
-            delete_all(xy, opens);
-            delete_all(xy, shuts);
-        }
+//         // open and shut
+//         for (xy, mut opens, mut shuts) in select_intersecting(Open, Shut) {
+//             let n = opens.len().min(shuts.len());
+//             opens.truncate(n);
+//             shuts.truncate(n);
+//             delete_all(xy, opens);
+//             delete_all(xy, shuts);
+//         }
 
-        // weak
-        for (xy, weaks, _) in select_occupied(Weak) { delete_all(xy, weaks) }
+//         // weak
+//         for (xy, weaks, _) in select_occupied(Weak) { delete_all(xy, weaks) }
 
-        // flush deletions
-        for y in 0..height {
-            for x in 0..width {
-                let d = &mut deletions[y][x];
-                d.sort();
-                let mut n_inserts = 0;
-                for i in 0..d.len() {
-                    let ix = n_inserts + d[i] - i;
-                    let inserts = has(&mut id, &level, x, y, ix, &rules_cache);
-                    level[y][x].remove(ix);
-                    for e in &inserts {
-                        level[y][x].insert(ix, *e)
-                    }
-                    n_inserts += inserts.len();
-                }
-            }
-        }
-    }
+//         // flush deletions
+//         for y in 0..height {
+//             for x in 0..width {
+//                 let d = &mut deletions[y][x];
+//                 d.sort();
+//                 let mut n_inserts = 0;
+//                 for i in 0..d.len() {
+//                     let ix = n_inserts + d[i] - i;
+//                     let inserts = has(&mut id, &level, x, y, ix, &rules_cache);
+//                     level[y][x].remove(ix);
+//                     for e in &inserts {
+//                         level[y][x].insert(ix, *e)
+//                     }
+//                     n_inserts += inserts.len();
+//                 }
+//             }
+//         }
+//     }
 
-    // teleport things
-    {
-        let mut rng = oorandom::Rand32::new(n as u64);
-        fn tele_dest(rng: &mut oorandom::Rand32, pads: &Vec<(usize, usize)>, x: usize, y: usize) -> (usize, usize) {
-            let dests = pads.iter()
-                .filter(|xy| **xy != (x, y))
-                .collect::<Vec<_>>();
-            *dests[rng.rand_range(0..dests.len() as u32) as usize]
-        }
-        let teles = select(&level, &rules_cache, Tele, None);
-        let mut pads = teles.iter().map(|x| x.0).collect::<Vec<(usize, usize)>>();
-        pads.dedup();
-        if pads.len() > 1 {
-            let mut travelers: HashMap<(usize, usize), Vec<(usize, LiveEntity, (usize, usize))>>
-                = HashMap::new();
-            for ((x, y), _, all) in teles {
-                for i in all {
-                    if !is(&level, x, y, i, &rules_cache, Tele) {
-                        travelers.entry((x, y)).or_insert(vec![]).push((
-                            i, level[y][x][i],
-                            tele_dest(&mut rng, &pads, x, y),
-                        ));
-                    }
-                }
-            }
-            for ((x, y), ts) in travelers.iter_mut() {
-                ts.sort_by(|a, b| a.0.cmp(&b.0));
-                for i in 0..ts.len() {
-                    level[*y][*x].remove(ts[i].0 - i);
-                }
-            }
-            for (_, ts) in travelers.into_iter() {
-                for (_, e, (x, y)) in ts {
-                    level[y][x].push(e);
-                }
-            }
-        }
-    }
+//     // teleport things
+//     {
+//         let mut rng = oorandom::Rand32::new(n as u64);
+//         fn tele_dest(rng: &mut oorandom::Rand32, pads: &Vec<(usize, usize)>, x: usize, y: usize) -> (usize, usize) {
+//             let dests = pads.iter()
+//                 .filter(|xy| **xy != (x, y))
+//                 .collect::<Vec<_>>();
+//             *dests[rng.rand_range(0..dests.len() as u32) as usize]
+//         }
+//         let teles = select(&level, &rules_cache, Tele, None);
+//         let mut pads = teles.iter().map(|x| x.0).collect::<Vec<(usize, usize)>>();
+//         pads.dedup();
+//         if pads.len() > 1 {
+//             let mut travelers: HashMap<(usize, usize), Vec<(usize, LiveEntity, (usize, usize))>>
+//                 = HashMap::new();
+//             for ((x, y), _, all) in teles {
+//                 for i in all {
+//                     if !is(&level, x, y, i, &rules_cache, Tele) {
+//                         travelers.entry((x, y)).or_insert(vec![]).push((
+//                             i, level[y][x][i],
+//                             tele_dest(&mut rng, &pads, x, y),
+//                         ));
+//                     }
+//                 }
+//             }
+//             for ((x, y), ts) in travelers.iter_mut() {
+//                 ts.sort_by(|a, b| a.0.cmp(&b.0));
+//                 for i in 0..ts.len() {
+//                     level[*y][*x].remove(ts[i].0 - i);
+//                 }
+//             }
+//             for (_, ts) in travelers.into_iter() {
+//                 for (_, e, (x, y)) in ts {
+//                     level[y][x].push(e);
+//                 }
+//             }
+//         }
+//     }
 
-    // check for win
-    let win = select(&level, &rules_cache, You, Some(Win)).len() > 0;
-    (level, win)
-}
+//     // check for win
+//     let win = select(&level, &rules_cache, You, Some(Win)).len() > 0;
+//     (level, win)
+// }
 
 type Diff = (Level, Level, Level, String, Input);
 
@@ -2186,7 +2543,7 @@ fn render_level(
                     (Red, (2, 2)),
                     (Blue, (3, 2)),
                 ].into_iter()
-                    .filter(|c| is(&level, col, row, i, &rules_cache, c.0))
+                    .filter(|c| is(e.e.to_text_or_noun(), &rules_cache, c.0))
                     .map(|c| c.1)
                     .next();
                 let active = active_texts.contains(&(col, row, i));
