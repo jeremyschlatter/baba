@@ -354,7 +354,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                     for x in new_cell {
                         let x_props = self.props_by_entity[&x.e.id];
                         for prop in Adjective::iter() {
-                            if x_props[prop as usize] && !incoming(self, x, e, prop) {
+                            if x_props[prop as usize] && !incoming(self, x, dir, prop) {
                                 break 'moved None;
                             }
                         }
@@ -452,11 +452,11 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
     return (state.level, false);
 }
 
-fn incoming(l: &mut impl Logic, this: Boop, x: Boop, prop: Adjective) -> bool {
+fn incoming(l: &mut impl Logic, this: Boop, dir: Direction, prop: Adjective) -> bool {
     match prop {
         Stop => false,
-        Push => l.move_(this, x.dir),
-        Swap => { l.move_(this, x.dir.reverse()); true },
+        Push => l.move_(this, dir),
+        Swap => { l.move_(this, dir.reverse()); true },
         _ => true,
     }
 }
