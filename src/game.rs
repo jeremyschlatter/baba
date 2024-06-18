@@ -180,6 +180,8 @@ trait Logic {
     fn intersect(&self, prop: Adjective) -> Vec<Boop>;
     fn intersect_any(&self) -> Vec<Boop>;
 
+    fn win(&mut self);
+
     fn dir(&self, e: LogicEntity) -> Direction; // TODO design so it can't crash?
     fn set_dir(&mut self, e: LogicEntity, d: Direction); // TODO: same
 
@@ -195,6 +197,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
         height: usize,
         width: usize,
         intersector: Option<Boop>,
+        win: bool,
     }
 
     impl State {
@@ -232,6 +235,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                     height: level.len(),
                     width: level[0].len(),
                     intersector: None,
+                    win: false,
                 },
                 entities_by_prop,
             )
@@ -336,7 +340,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                 Some(e) =>
                     self.level[e.coords.0][e.coords.1]
                         .iter()
-                        .filter(|x| **x == e.e)
+                        .filter(|x| **x != e.e)
                         .map(|x| Boop{e: *x, dir: x.dir, coords: e.coords})
                         .filter(|x| if let Some(a) = adj { self.is_prop(*x, a) } else { true })
                         .collect(),
@@ -402,6 +406,10 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             self.intersect_(None)
         }
 
+        fn win(&mut self) {
+            self.win = true;
+        }
+
         fn dir(&self, e: LogicEntity) -> Direction {
             self.get_entity(e).dir
         }
@@ -434,6 +442,8 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
         Right,
         Left,
 
+        Win,
+
         // Red,
         // Blue,
         // Best,
@@ -448,8 +458,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
         }
     }
 
-    // TODO: Win
-    return (state.level, false);
+    return (state.level, state.win);
 }
 
 fn incoming(l: &mut impl Logic, this: Boop, dir: Direction, prop: Adjective) -> bool {
@@ -499,6 +508,11 @@ fn do_prop(l: &mut impl Logic, this: Boop, prop: Adjective, input: Input) {
         Shift =>
             for x in l.intersect_any() {
                 l.move_(x, this.dir);
+            },
+        Win =>
+            for x in l.intersect(You) {
+                l.win();
+                break;
             },
 
 //         Up => this.dir = Dir::Up,
