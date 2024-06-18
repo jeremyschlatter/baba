@@ -267,8 +267,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             panic!("missing entity");
         }
 
-        fn delta(&self, e: Boop, dir: Direction) -> Option<(impl Iterator<Item = Boop>, (usize, usize))> {
-            let (y_, x_) = e.coords;
+        fn delta(&self, (y_, x_): (usize, usize), dir: Direction) -> Option<(usize, usize)> {
             let (dy, dx) = match dir {
                 Dir::Up    => (-1, 0),
                 Dir::Down  => (1,  0),
@@ -278,15 +277,17 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             let (y, x) = (y_ as i32 + dy, x_ as i32 + dx);
             if y < 0 || x < 0 || y >= self.height as i32 || x >= self.width as i32 {
                 None
-            } else {
-                Some((
-                    self.level[y as usize][x as usize].iter()
-                        .map(move |e| Boop {e: *e, dir: e.dir, coords: (y as usize, x as usize) })
-                        .collect::<Vec<_>>()
-                        .into_iter(),
-                    (y as usize, x as usize)
-                ))
-            }
+            } else { Some((y as usize, x as usize)) }
+        }
+
+        fn neighbors(&self, e: Boop, dir: Direction) -> Option<(impl Iterator<Item = Boop>, (usize, usize))> {
+            self.delta(e.coords, dir).map(|(y, x)| (
+                self.level[y][x].iter()
+                    .map(move |e| Boop {e: *e, dir: e.dir, coords: (y as usize, x as usize) })
+                    .collect::<Vec<_>>()
+                    .into_iter(),
+                (y, x),
+            ))
         }
 
         fn is_or_has(id: &mut u64, e: &LiveEntity, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> Vec<LiveEntity> {
@@ -335,6 +336,32 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             }
         }
 
+        fn move_cursor(&mut self, dir: Direction) {
+            let mut cursors = vec![];
+            for (y, row) in self.level.iter().enumerate() {
+                for (x, cell) in row.iter().enumerate() {
+                    for (i, e) in cell.iter().enumerate() {
+                        if e.e == Entity::Noun(Cursor) {
+                            cursors.push((y, x, i));
+                        }
+                    }
+                }
+            }
+            for (y, x, i) in cursors {
+                if let Some((y_, x_)) = self.delta((y, x), dir) {
+                    if self.level[y_][x_].iter().any(|e| match e.e {
+                        Entity::Noun(Line) => true,
+                        Entity::Noun(Level(_)) => true,
+                        _ => false,
+                    }) {
+                        let mut c = self.level[y][x].remove(i);
+                        c.dir = dir;
+                        self.level[y_][x_].push(c);
+                    }
+                }
+            }
+        }
+
         fn intersect_(&self, adj: Option<Adjective>) -> Vec<Boop> {
             match self.intersector {
                 Some(e) =>
@@ -352,9 +379,8 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
     impl Logic for State {
         fn move_(&mut self, e: Boop, dir: Direction) -> bool {
             // e.dir = d;
-            println!("move {e:?} {dir:?}");
             let moved = 'moved: {
-                if let Some((new_cell, new_coords)) = self.delta(e, dir) {
+                if let Some((new_cell, new_coords)) = self.neighbors(e, dir) {
                     for x in new_cell {
                         let x_props = self.props_by_entity[&x.e.id];
                         for prop in Adjective::iter() {
@@ -366,7 +392,6 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                     Some(new_coords)
                 } else { None }
             };
-            println!("moved? {moved:?}");
             if let Some((y, x)) = moved {
                 self.remove_from_cell(e);
                 self.level[y][x].push(e.e);
@@ -377,7 +402,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                     true
                 } else { moved.is_some() };
             if exited {
-                if let Some((away_cell, _)) = self.delta(e, dir.reverse()) {
+                if let Some((away_cell, _)) = self.neighbors(e, dir.reverse()) {
                     for x in away_cell {
                         if self.is_prop(x, Pull) {
                             self.move_(x, dir);
@@ -458,6 +483,10 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
         }
     }
 
+    if let Go(d) = input {
+        state.move_cursor(d);
+    }
+
     return (state.level, state.win);
 }
 
@@ -474,7 +503,6 @@ fn incoming(l: &mut impl Logic, this: Boop, dir: Direction, prop: Adjective) -> 
 fn do_prop(l: &mut impl Logic, this: Boop, prop: Adjective, input: Input) {
     match prop {
         You => if let Go(d) = input {
-            println!("input: {input:?}");
             l.move_(this, d);
         },
         Sink =>
