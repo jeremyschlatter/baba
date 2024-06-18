@@ -220,7 +220,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             )
         }
 
-        fn delta(&self, e: Boop, dir: Direction) -> Option<impl Iterator<Item = Boop>> {
+        fn delta(&self, e: Boop, dir: Direction) -> Option<(impl Iterator<Item = Boop>, (usize, usize))> {
             let (y_, x_) = e.coords;
             let (dy, dx) = match dir {
                 Dir::Up    => (-1, 0),
@@ -232,12 +232,13 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             if y < 0 || x < 0 || y >= self.height as i32 || x >= self.width as i32 {
                 None
             } else {
-                Some(
+                Some((
                     self.level[y as usize][x as usize].iter()
                         .map(move |e| Boop {e: *e, dir: e.dir, coords: (y as usize, x as usize) })
                         .collect::<Vec<_>>()
-                        .into_iter()
-                )
+                        .into_iter(),
+                    (y as usize, x as usize)
+                ))
             }
         }
 
@@ -303,30 +304,32 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
 
     impl Logic for State {
         fn move_(&mut self, e: Boop, dir: Direction) -> bool {
+            println!("move {e:?} {dir:?}");
             let moved = 'moved: {
-                if let Some(new_cell) = self.delta(e, dir) {
+                if let Some((new_cell, new_coords)) = self.delta(e, dir) {
                     for x in new_cell {
                         let e_props = self.props_by_entity[&x.e.id];
                         for prop in Adjective::iter() {
                             if e_props[prop as usize] && incoming(self, x, e, prop) {
-                                break 'moved false;
+                                break 'moved None;
                             }
                         }
                     }
-                    true
-                } else { false }
+                    Some(new_coords)
+                } else { None }
             };
-            if moved {
+            println!("moved? {moved:?}");
+            if let Some((y, x)) = moved {
                 self.remove_from_cell(e);
-                self.level[e.coords.0][e.coords.1].push(e.e);
+                self.level[y][x].push(e.e);
             }
             let exited =
-                if !moved && self.props_by_entity[&e.e.id][Weak as usize] {
+                if moved.is_none() && self.props_by_entity[&e.e.id][Weak as usize] {
                     self.delete(e);
                     true
-                } else { moved };
+                } else { moved.is_some() };
             if exited {
-                if let Some(away_cell) = self.delta(e, dir.reverse()) {
+                if let Some((away_cell, _)) = self.delta(e, dir.reverse()) {
                     for x in away_cell {
                         if self.is_prop(x, Pull) {
                             self.move_(x, dir);
@@ -409,7 +412,11 @@ fn incoming(l: &mut impl Logic, this: Boop, x: Boop, prop: Adjective) -> bool {
 
 fn do_prop(l: &mut impl Logic, this: Boop, prop: Adjective, input: Input) {
     match prop {
-        You => if let Go(d) = input { l.move_(this, d); },
+        You => if let Go(d) = input {
+            println!("input: {input:?}");
+            l.move_(this, d);
+            // this.dir = d;
+        },
         Sink =>
             for x in l.intersect_any() {
                 l.delete(x);
@@ -420,7 +427,7 @@ fn do_prop(l: &mut impl Logic, this: Boop, prop: Adjective, input: Input) {
         Hot => for x in l.intersect(Melt) { l.delete(x); },
         Move =>
             if !l.move_(this, this.dir) {
-                this.dir = this.dir.reverse();
+                // this.dir = this.dir.reverse();
                 l.move_(this, this.dir);
             },
         Shut =>
@@ -442,10 +449,12 @@ fn do_prop(l: &mut impl Logic, this: Boop, prop: Adjective, input: Input) {
             for x in l.intersect_any() {
                 l.move_(x, this.dir);
             },
-        Up => this.dir = Dir::Up,
-        Down => this.dir = Dir::Down,
-        Right => this.dir = Dir::Right,
-        Left => this.dir = Dir::Left,
+
+//         Up => this.dir = Dir::Up,
+//         Down => this.dir = Dir::Down,
+//         Right => this.dir = Dir::Right,
+//         Left => this.dir = Dir::Left,
+
         _ => {},
     }
 }
