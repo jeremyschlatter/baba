@@ -304,13 +304,14 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
 
     impl Logic for State {
         fn move_(&mut self, e: Boop, dir: Direction) -> bool {
+            // e.dir = d;
             println!("move {e:?} {dir:?}");
             let moved = 'moved: {
                 if let Some((new_cell, new_coords)) = self.delta(e, dir) {
                     for x in new_cell {
-                        let e_props = self.props_by_entity[&x.e.id];
+                        let x_props = self.props_by_entity[&x.e.id];
                         for prop in Adjective::iter() {
-                            if e_props[prop as usize] && incoming(self, x, e, prop) {
+                            if x_props[prop as usize] && !incoming(self, x, e, prop) {
                                 break 'moved None;
                             }
                         }
@@ -415,7 +416,6 @@ fn do_prop(l: &mut impl Logic, this: Boop, prop: Adjective, input: Input) {
         You => if let Go(d) = input {
             println!("input: {input:?}");
             l.move_(this, d);
-            // this.dir = d;
         },
         Sink =>
             for x in l.intersect_any() {
