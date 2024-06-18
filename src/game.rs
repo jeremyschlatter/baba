@@ -367,7 +367,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                 Some(e) =>
                     self.level[e.coords.0][e.coords.1]
                         .iter()
-                        .filter(|x| **x != e.e)
+                        .filter(|x| !(adj.is_none() && **x == e.e))
                         .map(|x| Boop{e: *x, dir: x.dir, coords: e.coords})
                         .filter(|x| if let Some(a) = adj { self.is_prop(*x, a) } else { true })
                         .collect(),
