@@ -161,11 +161,28 @@ struct Boop {
     coords: (usize, usize),
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+struct NewLiveEntity {
+    dir: Direction,
+    id: u64,
+    e: Entity,
+    coords: (usize, usize),
+}
+
+type NewCell = Vec<NewLiveEntity>;
+type NewLevel = Vec<Vec<NewCell>>;
+
+type LogicEntity = u64;
+
 trait Logic {
     fn move_(&mut self, e: Boop, dir: Direction) -> bool;
     fn delete(&mut self, e: Boop);
     fn intersect(&self, prop: Adjective) -> Vec<Boop>;
     fn intersect_any(&self) -> Vec<Boop>;
+
+    fn dir(&self, e: LogicEntity) -> Direction; // TODO design so it can't crash?
+    fn set_dir(&mut self, e: LogicEntity, d: Direction); // TODO: same
+
 }
 
 fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
@@ -218,6 +235,32 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                 },
                 entities_by_prop,
             )
+        }
+
+        fn get_entity(&self, e: LogicEntity) -> &LiveEntity {
+            for row in &self.level {
+                for cell in row {
+                    for x in cell {
+                        if x.id == e {
+                            return &x;
+                        }
+                    }
+                }
+            }
+            panic!("missing entity");
+        }
+
+        fn get_entity_mut(&mut self, e: LogicEntity) -> &mut LiveEntity {
+            for row in &mut self.level {
+                for cell in row {
+                    for x in cell {
+                        if x.id == e {
+                            return x;
+                        }
+                    }
+                }
+            }
+            panic!("missing entity");
         }
 
         fn delta(&self, e: Boop, dir: Direction) -> Option<(impl Iterator<Item = Boop>, (usize, usize))> {
@@ -357,6 +400,14 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
 
         fn intersect_any(&self) -> Vec<Boop> {
             self.intersect_(None)
+        }
+
+        fn dir(&self, e: LogicEntity) -> Direction {
+            self.get_entity(e).dir
+        }
+
+        fn set_dir(&mut self, e: LogicEntity, d: Direction) {
+            self.get_entity_mut(e).dir = d
         }
     }
 
