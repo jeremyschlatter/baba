@@ -161,20 +161,27 @@ struct Boop {
     coords: (usize, usize),
 }
 
+trait Logic {
+    fn move_(&mut self, e: Boop, dir: Direction) -> bool;
+    fn delete(&mut self, e: Boop);
+    fn intersect(&self, prop: Adjective) -> Vec<Boop>;
+    fn intersect_any(&self) -> Vec<Boop>;
+}
+
 fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
     struct State {
         level: Level,
         rules: Vec<Rule>,
         rules_cache: RulesCache,
         id: u64,
-        entities_by_prop: [Vec<Boop>; Adjective::COUNT],
         props_by_entity: HashMap<u64, [bool; Adjective::COUNT]>,
         height: usize,
         width: usize,
+        intersector: Option<Boop>,
     }
 
     impl State {
-        fn new(level: &Level) -> Self {
+        fn new(level: &Level) -> (Self, [Vec<Boop>; Adjective::COUNT]) {
             let mut entities_by_prop = core::array::from_fn(|_| vec![]);
             let mut props_by_entity = HashMap::new();
             let rules = scan_rules_no_index(&level);
@@ -183,7 +190,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                 for (x, cell) in row.iter().enumerate() {
                     for e in cell {
                         let t_or_n = e.e.to_text_or_noun();
-                        let e_props = [false; Adjective::COUNT];
+                        let mut e_props = [false; Adjective::COUNT];
                         for a in Adjective::iter() {
                             if is(t_or_n, &rules_cache, a) {
                                 entities_by_prop[a as usize].push(Boop {
@@ -194,23 +201,26 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                                 e_props[a as usize] = true;
                             }
                         }
-                        props_by_entity[&e.id] = e_props;
+                        props_by_entity.insert(e.id, e_props);
                     }
                 }
             }
-            State {
-                level: level.clone(),
-                rules,
-                rules_cache,
-                id: max_id(&level),
+            (
+                State {
+                    level: level.clone(),
+                    rules,
+                    rules_cache,
+                    id: max_id(&level),
+                    props_by_entity,
+                    height: level.len(),
+                    width: level[0].len(),
+                    intersector: None,
+                },
                 entities_by_prop,
-                props_by_entity,
-                height: level.len(),
-                width: level[0].len(),
-            }
+            )
         }
 
-        fn delta(&self, e: Boop, dir: Direction) -> Option<&mut dyn Iterator<Item = Boop>> {
+        fn delta(&self, e: Boop, dir: Direction) -> Option<impl Iterator<Item = Boop>> {
             let (y_, x_) = e.coords;
             let (dy, dx) = match dir {
                 Dir::Up    => (-1, 0),
@@ -223,13 +233,15 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                 None
             } else {
                 Some(
-                    &mut self.level[y as usize][x as usize].iter()
+                    self.level[y as usize][x as usize].iter()
                         .map(move |e| Boop {e: *e, dir: e.dir, coords: (y as usize, x as usize) })
+                        .collect::<Vec<_>>()
+                        .into_iter()
                 )
             }
         }
 
-        fn is_or_has(&mut self, e: &LiveEntity, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> Vec<LiveEntity> {
+        fn is_or_has(id: &mut u64, e: &LiveEntity, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> Vec<LiveEntity> {
             let t_or_n = e.e.to_text_or_noun();
             let [yes, no] = array_map_ref(&rules,
                 |v| v.iter()
@@ -243,7 +255,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
               .iter()
               .map(|x| LiveEntity {
                   dir: e.dir,
-                  id: {self.id += 1; self.id},
+                  id: {*id += 1; *id},
                   e: match x {
                       TextOrNoun::Noun(n) => Entity::Noun(*n),
                       TextOrNoun::Text => Entity::Text(match e.e {
@@ -256,10 +268,13 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
         }
 
         fn has(&mut self, e: &LiveEntity) -> Vec<LiveEntity> {
-            self.is_or_has(e, &self.rules_cache.1)
+            let mut id = self.id;
+            let result = State::is_or_has(&mut id, e, &self.rules_cache.1);
+            self.id = id;
+            result
         }
 
-        fn is_prop(&self, e: &Boop, prop: Adjective) -> bool {
+        fn is_prop(&self, e: Boop, prop: Adjective) -> bool {
             self.props_by_entity[&e.e.id][prop as usize]
         }
 
@@ -272,30 +287,39 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             }
         }
 
-        fn delete(&mut self, e: Boop) {
-            let cell = self.level[e.coords.0][e.coords.1];
-            self.remove_from_cell(e);
-            for x in self.has(&e.e) {
-                cell.push(x);
+        fn intersect_(&self, adj: Option<Adjective>) -> Vec<Boop> {
+            match self.intersector {
+                Some(e) =>
+                    self.level[e.coords.0][e.coords.1]
+                        .iter()
+                        .filter(|x| **x == e.e)
+                        .map(|x| Boop{e: *x, dir: x.dir, coords: e.coords})
+                        .filter(|x| if let Some(a) = adj { self.is_prop(*x, a) } else { true })
+                        .collect(),
+                None => panic!("no intersector"),
             }
         }
+    }
 
+    impl Logic for State {
         fn move_(&mut self, e: Boop, dir: Direction) -> bool {
             let moved = 'moved: {
                 if let Some(new_cell) = self.delta(e, dir) {
                     for x in new_cell {
                         let e_props = self.props_by_entity[&x.e.id];
                         for prop in Adjective::iter() {
-                            if e_props[prop as usize] && incoming(x, e, |e, dir| self.move_(e, dir), prop) {
+                            if e_props[prop as usize] && incoming(self, x, e, prop) {
                                 break 'moved false;
                             }
                         }
                     }
-                    self.remove_from_cell(e);
-                    self.level[e.coords.0][e.coords.1].push(e.e);
                     true
                 } else { false }
             };
+            if moved {
+                self.remove_from_cell(e);
+                self.level[e.coords.0][e.coords.1].push(e.e);
+            }
             let exited =
                 if !moved && self.props_by_entity[&e.e.id][Weak as usize] {
                     self.delete(e);
@@ -304,29 +328,60 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             if exited {
                 if let Some(away_cell) = self.delta(e, dir.reverse()) {
                     for x in away_cell {
-                        if self.is_prop(&x, Pull) {
+                        if self.is_prop(x, Pull) {
                             self.move_(x, dir);
                         }
                     }
                 }
+
             }
             return exited;
         }
 
-        fn cellmates(&self, e: Boop) -> &mut dyn Iterator<Item = Boop> {
-            &mut self.level[e.coords.0][e.coords.1]
-                .iter()
-                .filter(|x| **x == e.e)
-                .map(|x| Boop{e: *x, dir: x.dir, coords: e.coords})
+        fn delete(&mut self, e: Boop) {
+            self.remove_from_cell(e);
+            let has = self.has(&e.e);
+            let cell = &mut self.level[e.coords.0][e.coords.1];
+            for x in has {
+                cell.push(x);
+            }
         }
 
-        fn intersect_for(&self, e: Boop) -> &dyn Fn(Option<Adjective>) -> Vec<Boop> {
-            &|adj: Option<Adjective>|
-                self.cellmates(e)
-                    .filter(|x| if let Some(a) = adj { self.is_prop(x, a) } else { true })
-                    .collect()
+        fn intersect(&self, prop: Adjective) -> Vec<Boop> {
+            self.intersect_(Some(prop))
+        }
+
+        fn intersect_any(&self) -> Vec<Boop> {
+            self.intersect_(None)
         }
     }
+
+//         // fn intersect_for<'a>(&'a self, e: &'a Boop) -> impl Fn(Option<Adjective>) -> Vec<Boop> + 'a {
+//         fn intersect_for(&self, e: &Boop) -> impl Fn(Option<Adjective>) -> Vec<Boop> {
+//             |adj: Option<Adjective>|
+//                 self.level[e.coords.0][e.coords.1]
+//                     .iter()
+//                     .filter(|x| **x == e.e)
+//                     .map(|x| Boop{e: *x, dir: x.dir, coords: e.coords})
+//                     .filter(|x| if let Some(a) = adj { self.is_prop(*x, a) } else { true })
+//                     .collect()
+//         }
+//     }
+
+//         fn cellmates(&self, e: Boop) -> &mut dyn Iterator<Item = Boop> {
+//             &mut self.level[e.coords.0][e.coords.1]
+//                 .iter()
+//                 .filter(|x| **x == e.e)
+//                 .map(|x| Boop{e: *x, dir: x.dir, coords: e.coords})
+//         }
+
+//         fn intersect_for(&self, e: Boop) -> &dyn Fn(Option<Adjective>) -> Vec<Boop> {
+//             &|adj: Option<Adjective>|
+//                 self.cellmates(e)
+//                     .filter(|x| if let Some(a) = adj { self.is_prop(*x, a) } else { true })
+//                     .collect()
+//         }
+//     }
 
 //     fn intersect_for<F> (level: &Level, e: Boop) -> &dyn Fn(Option<Adjective>) -> Vec<Boop> {
 //         &|adj: Option<Adjective>|
@@ -371,16 +426,12 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
         // Best,
     ];
 
-    let mut state = State::new(l);
+    let (mut state, entities_by_prop) = State::new(l);
 
     for prop in props {
-        for e in state.entities_by_prop[prop as usize] {
-            do_prop(
-                e, prop, input,
-                |e, dir| state.move_(e, dir),
-                state.intersect_for(e),
-                |e| state.delete(e),
-            )
+        for e in &entities_by_prop[prop as usize] {
+            state.intersector = Some(*e);
+            do_prop(&mut state, *e, prop, input)
         }
     }
 
@@ -388,66 +439,50 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
     return (state.level, false);
 }
 
-fn incoming<M>(this: Boop, x: Boop, move_: M, prop: Adjective) -> bool
-where
-    M: FnMut(Boop, Direction) -> bool
-{
+fn incoming(l: &mut impl Logic, this: Boop, x: Boop, prop: Adjective) -> bool {
     match prop {
         Stop => false,
-        Push => move_(this, x.dir),
-        Swap => { move_(this, x.dir.reverse()); true },
+        Push => l.move_(this, x.dir),
+        Swap => { l.move_(this, x.dir.reverse()); true },
         _ => true,
     }
 }
 
 
-fn do_prop<M, I, D>(
-    this: Boop,
-    prop: Adjective,
-    input: Input,
-    move_: M,
-    intersect_: I,
-    delete: D,
-) where
-    M: FnMut(Boop, Direction) -> bool,
-    I: Fn(Option<Adjective>) -> Vec<Boop>,
-    D: FnMut(Boop),
-{
-    let intersect = |adj| intersect_(Some(adj));
-    let intersect_any = || intersect_(None);
+fn do_prop(l: &mut impl Logic, this: Boop, prop: Adjective, input: Input) {
     match prop {
-        You => if let Go(d) = input { move_(this, d); },
+        You => if let Go(d) = input { l.move_(this, d); },
         Sink =>
-            for x in intersect_any() {
-                delete(x);
-                delete(this);
+            for x in l.intersect_any() {
+                l.delete(x);
+                l.delete(this);
                 break;
             },
-        Defeat => for x in intersect(You) { delete(x); },
-        Hot => for x in intersect(Melt) { delete(x); },
+        Defeat => for x in l.intersect(You) { l.delete(x); },
+        Hot => for x in l.intersect(Melt) { l.delete(x); },
         Move =>
-            if !move_(this, this.dir) {
+            if !l.move_(this, this.dir) {
                 this.dir = this.dir.reverse();
-                move_(this, this.dir);
+                l.move_(this, this.dir);
             },
         Shut =>
-            for x in intersect(Open) {
-                delete(x);
-                delete(this);
+            for x in l.intersect(Open) {
+                l.delete(x);
+                l.delete(this);
                 break;
             },
         Weak =>
-            for x in intersect_any() {
-                delete(this);
+            for _ in l.intersect_any() {
+                l.delete(this);
                 break;
             },
         // Tele =>
-        //     for x in intersect_any() {
+        //     for x in l.intersect_any() {
         //         tele(x, this);
         //     },
         Shift =>
-            for x in intersect_any() {
-                move_(x, this.dir);
+            for x in l.intersect_any() {
+                l.move_(x, this.dir);
             },
         Up => this.dir = Dir::Up,
         Down => this.dir = Dir::Down,
