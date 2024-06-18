@@ -72,7 +72,6 @@ dependencies = [
  "clap 4.0.4",
  "criterion",
  "dirs",
- "fix_fn",
  "futures",
  "image",
  "itertools",
@@ -381,12 +380,6 @@ dependencies = [
  "smallvec",
  "threadpool",
 ]
-
-[[package]]
-name = "fix_fn"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "380f193e13417258cee0f6f750a1be449bfaa476874985fd6690be580086f7f1"
 
 [[package]]
 name = "flate2"

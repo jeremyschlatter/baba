@@ -162,154 +162,171 @@ struct Boop {
 }
 
 fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
-    let mut level = l.clone();
-    let rules = scan_rules_no_index(&level);
-    let rules_cache = cache_rules(&rules);
+    struct State {
+        level: Level,
+        rules: Vec<Rule>,
+        rules_cache: RulesCache,
+        id: u64,
+        entities_by_prop: [Vec<Boop>; Adjective::COUNT],
+        props_by_entity: HashMap<u64, [bool; Adjective::COUNT]>,
+        height: usize,
+        width: usize,
+    }
 
-    let mut id = max_id(&level);
-
-    let entities_by_prop: [_; Adjective::COUNT] = core::array::from_fn(|_| vec![]);
-    let props_by_entity: HashMap<u64, _> = HashMap::new();
-    for (y, row) in level.iter().enumerate() {
-        for (x, cell) in row.iter().enumerate() {
-            for e in cell {
-                let t_or_n = e.e.to_text_or_noun();
-                let e_props = [false; Adjective::COUNT];
-                // let mut e_props = vec![];
-                for a in Adjective::iter() {
-                    if is(t_or_n, &rules_cache, a) {
-                        entities_by_prop[a as usize].push(Boop {
-                            e: *e,
-                            dir: e.dir,
-                            coords: (y, x),
-                        });
-                        e_props[a as usize] = true;
-                        // e_props.push(a);
+    impl State {
+        fn new(level: &Level) -> Self {
+            let mut entities_by_prop = core::array::from_fn(|_| vec![]);
+            let mut props_by_entity = HashMap::new();
+            let rules = scan_rules_no_index(&level);
+            let rules_cache = cache_rules(&rules);
+            for (y, row) in level.iter().enumerate() {
+                for (x, cell) in row.iter().enumerate() {
+                    for e in cell {
+                        let t_or_n = e.e.to_text_or_noun();
+                        let e_props = [false; Adjective::COUNT];
+                        for a in Adjective::iter() {
+                            if is(t_or_n, &rules_cache, a) {
+                                entities_by_prop[a as usize].push(Boop {
+                                    e: *e,
+                                    dir: e.dir,
+                                    coords: (y, x),
+                                });
+                                e_props[a as usize] = true;
+                            }
+                        }
+                        props_by_entity[&e.id] = e_props;
                     }
                 }
-                props_by_entity[&e.id] = e_props;
+            }
+            State {
+                level: level.clone(),
+                rules,
+                rules_cache,
+                id: max_id(&level),
+                entities_by_prop,
+                props_by_entity,
+                height: level.len(),
+                width: level[0].len(),
             }
         }
-    }
-    // is(live entity) -> entities
-    // has(live entity) -> entities
 
-    let height = level.len();
-    let width = level[0].len();
-
-    let d = |e: Boop, dir| -> Option<(usize, usize)> {
-        let (y_, x_) = e.coords;
-        let (dy, dx) = match dir {
-            Dir::Up    => (-1, 0),
-            Dir::Down  => (1,  0),
-            Dir::Left  => (0, -1),
-            Dir::Right => (0, 1),
-        };
-        let (y, x) = (y_ as i32 + dy, x_ as i32 + dx);
-        if y < 0 || x < 0 || y >= height as i32 || x >= width as i32 {
-            None
-        } else { Some((y as usize, x as usize)) }
-    };
-
-    let delta = |e, dir| d(e, dir).map(|(y, x)|
-        level[y][x].iter().map(move |e| Boop {e: *e, dir: e.dir, coords: (y, x) })
-    );
-
-    fn is_or_has(id: &mut u64, e: &LiveEntity, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> Vec<LiveEntity> {
-        let t_or_n = e.e.to_text_or_noun();
-        let [yes, no] = array_map_ref(&rules,
-            |v| v.iter()
-                 .filter(|(s, _)| subject_match(t_or_n, s))
-                 .map(|(_, e)| e)
-                 .copied()
-                 .collect::<HashSet<TextOrNoun>>());
-
-        let mut result = yes.difference(&no).copied().collect::<Vec<TextOrNoun>>();
-        result.sort();
-        result
-          .iter()
-          .map(|x| LiveEntity {
-              dir: e.dir,
-              id: {*id += 1; *id},
-              e: match x {
-                  TextOrNoun::Noun(n) => Entity::Noun(*n),
-                  TextOrNoun::Text => Entity::Text(match e.e {
-                      Entity::Noun(n) => Text::Object(n),
-                      Entity::Text(_) => Text::Text,
-                  }),
-              }
-          })
-          .collect()
-    }
-
-    fn has(id: &mut u64, e: &LiveEntity, rules: &RulesCache) -> Vec<LiveEntity> {
-        is_or_has(id, e, &rules.1)
-    }
-
-    let is_prop = |e: &Boop, prop: Adjective| -> bool {
-        props_by_entity[&e.e.id][prop as usize]
-    };
-
-    let mut remove_from_cell = |e: Boop|
-        for (i, x) in level[e.coords.0][e.coords.1].iter().enumerate() {
-            if *x == e.e {
-                level[e.coords.0][e.coords.1].remove(i);
-                return
+        fn delta(&self, e: Boop, dir: Direction) -> Option<&mut dyn Iterator<Item = Boop>> {
+            let (y_, x_) = e.coords;
+            let (dy, dx) = match dir {
+                Dir::Up    => (-1, 0),
+                Dir::Down  => (1,  0),
+                Dir::Left  => (0, -1),
+                Dir::Right => (0, 1),
+            };
+            let (y, x) = (y_ as i32 + dy, x_ as i32 + dx);
+            if y < 0 || x < 0 || y >= self.height as i32 || x >= self.width as i32 {
+                None
+            } else {
+                Some(
+                    &mut self.level[y as usize][x as usize].iter()
+                        .map(move |e| Boop {e: *e, dir: e.dir, coords: (y as usize, x as usize) })
+                )
             }
-        };
-
-    let mut delete = |e: Boop| {
-        let cell = &mut level[e.coords.0][e.coords.1];
-        remove_from_cell(e);
-        for x in has(&mut id, &e.e, &rules_cache) {
-            cell.push(x);
         }
-    };
 
-    let move_ = fix_fn::fix_fn!(|move_, e: Boop, dir: Direction| -> bool {
-        let moved = 'moved: {
-            if let Some(new_cell) = delta(e, dir) {
-                for x in new_cell {
-                    let e_props = props_by_entity[&x.e.id];
-                    for prop in Adjective::iter() {
-                        if e_props[prop as usize] && !incoming(x, e, move_, prop) {
-                            break 'moved false;
+        fn is_or_has(&mut self, e: &LiveEntity, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> Vec<LiveEntity> {
+            let t_or_n = e.e.to_text_or_noun();
+            let [yes, no] = array_map_ref(&rules,
+                |v| v.iter()
+                     .filter(|(s, _)| subject_match(t_or_n, s))
+                     .map(|(_, e)| e)
+                     .copied()
+                     .collect::<HashSet<TextOrNoun>>());
+            let mut result = yes.difference(&no).copied().collect::<Vec<TextOrNoun>>();
+            result.sort();
+            result
+              .iter()
+              .map(|x| LiveEntity {
+                  dir: e.dir,
+                  id: {self.id += 1; self.id},
+                  e: match x {
+                      TextOrNoun::Noun(n) => Entity::Noun(*n),
+                      TextOrNoun::Text => Entity::Text(match e.e {
+                          Entity::Noun(n) => Text::Object(n),
+                          Entity::Text(_) => Text::Text,
+                      }),
+                  }
+              })
+              .collect()
+        }
+
+        fn has(&mut self, e: &LiveEntity) -> Vec<LiveEntity> {
+            self.is_or_has(e, &self.rules_cache.1)
+        }
+
+        fn is_prop(&self, e: &Boop, prop: Adjective) -> bool {
+            self.props_by_entity[&e.e.id][prop as usize]
+        }
+
+        fn remove_from_cell(&mut self, e: Boop) {
+            for (i, x) in self.level[e.coords.0][e.coords.1].iter().enumerate() {
+                if *x == e.e {
+                    self.level[e.coords.0][e.coords.1].remove(i);
+                    return
+                }
+            }
+        }
+
+        fn delete(&mut self, e: Boop) {
+            let cell = self.level[e.coords.0][e.coords.1];
+            self.remove_from_cell(e);
+            for x in self.has(&e.e) {
+                cell.push(x);
+            }
+        }
+
+        fn move_(&mut self, e: Boop, dir: Direction) -> bool {
+            let moved = 'moved: {
+                if let Some(new_cell) = self.delta(e, dir) {
+                    for x in new_cell {
+                        let e_props = self.props_by_entity[&x.e.id];
+                        for prop in Adjective::iter() {
+                            if e_props[prop as usize] && incoming(x, e, |e, dir| self.move_(e, dir), prop) {
+                                break 'moved false;
+                            }
+                        }
+                    }
+                    self.remove_from_cell(e);
+                    self.level[e.coords.0][e.coords.1].push(e.e);
+                    true
+                } else { false }
+            };
+            let exited =
+                if !moved && self.props_by_entity[&e.e.id][Weak as usize] {
+                    self.delete(e);
+                    true
+                } else { moved };
+            if exited {
+                if let Some(away_cell) = self.delta(e, dir.reverse()) {
+                    for x in away_cell {
+                        if self.is_prop(&x, Pull) {
+                            self.move_(x, dir);
                         }
                     }
                 }
-                remove_from_cell(e);
-                level[e.coords.0][e.coords.1].push(e.e);
-                true
-            } else { false }
-        };
-        let exited =
-            if !moved && props_by_entity[&e.e.id][Weak as usize] {
-                delete(e);
-                true
-            } else { moved };
-        if exited {
-            if let Some(away_cell) = delta(e, dir.reverse()) {
-                for x in away_cell {
-                    if is_prop(&x, Pull) {
-                        move_(x, dir);
-                    }
-                }
             }
+            return exited;
         }
-        exited
-    });
 
-    fn cellmates(level: &Level, e: Boop) -> &mut dyn Iterator<Item = Boop> {
-        &mut level[e.coords.0][e.coords.1]
-            .iter()
-            .filter(|x| **x == e.e)
-            .map(|x| Boop{e: *x, dir: x.dir, coords: e.coords})
+        fn cellmates(&self, e: Boop) -> &mut dyn Iterator<Item = Boop> {
+            &mut self.level[e.coords.0][e.coords.1]
+                .iter()
+                .filter(|x| **x == e.e)
+                .map(|x| Boop{e: *x, dir: x.dir, coords: e.coords})
+        }
+
+        fn intersect_for(&self, e: Boop) -> &dyn Fn(Option<Adjective>) -> Vec<Boop> {
+            &|adj: Option<Adjective>|
+                self.cellmates(e)
+                    .filter(|x| if let Some(a) = adj { self.is_prop(x, a) } else { true })
+                    .collect()
+        }
     }
-
-    let intersect_for = |level: &Level, e: Boop| -> &dyn Fn(Option<Adjective>) -> Vec<Boop> {
-        &|adj: Option<Adjective>|
-            cellmates(level, e).filter(|x| if let Some(a) = adj { is_prop(x, a) } else { true }).collect()
-    };
 
 //     fn intersect_for<F> (level: &Level, e: Boop) -> &dyn Fn(Option<Adjective>) -> Vec<Boop> {
 //         &|adj: Option<Adjective>|
@@ -354,14 +371,21 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
         // Best,
     ];
 
+    let mut state = State::new(l);
+
     for prop in props {
-        for e in entities_by_prop[prop as usize] {
-            do_prop(e, prop, input, move_, intersect_for(&level, e), delete)
+        for e in state.entities_by_prop[prop as usize] {
+            do_prop(
+                e, prop, input,
+                |e, dir| state.move_(e, dir),
+                state.intersect_for(e),
+                |e| state.delete(e),
+            )
         }
     }
 
     // TODO: Win
-    return (level, false);
+    return (state.level, false);
 }
 
 fn incoming<M>(this: Boop, x: Boop, move_: M, prop: Adjective) -> bool
