@@ -356,48 +356,6 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
         }
     }
 
-//         // fn intersect_for<'a>(&'a self, e: &'a Boop) -> impl Fn(Option<Adjective>) -> Vec<Boop> + 'a {
-//         fn intersect_for(&self, e: &Boop) -> impl Fn(Option<Adjective>) -> Vec<Boop> {
-//             |adj: Option<Adjective>|
-//                 self.level[e.coords.0][e.coords.1]
-//                     .iter()
-//                     .filter(|x| **x == e.e)
-//                     .map(|x| Boop{e: *x, dir: x.dir, coords: e.coords})
-//                     .filter(|x| if let Some(a) = adj { self.is_prop(*x, a) } else { true })
-//                     .collect()
-//         }
-//     }
-
-//         fn cellmates(&self, e: Boop) -> &mut dyn Iterator<Item = Boop> {
-//             &mut self.level[e.coords.0][e.coords.1]
-//                 .iter()
-//                 .filter(|x| **x == e.e)
-//                 .map(|x| Boop{e: *x, dir: x.dir, coords: e.coords})
-//         }
-
-//         fn intersect_for(&self, e: Boop) -> &dyn Fn(Option<Adjective>) -> Vec<Boop> {
-//             &|adj: Option<Adjective>|
-//                 self.cellmates(e)
-//                     .filter(|x| if let Some(a) = adj { self.is_prop(*x, a) } else { true })
-//                     .collect()
-//         }
-//     }
-
-//     fn intersect_for<F> (level: &Level, e: Boop) -> &dyn Fn(Option<Adjective>) -> Vec<Boop> {
-//         &|adj: Option<Adjective>|
-//             cellmates(level, e).filter(|x| if let Some(a) = adj { is_prop(x, a) } else { true }).collect()
-
-//             let mut result = vec![];
-//             for x in cellmates(e) {
-//                 if let Some(a) = adj {
-//                     if !is(x, adj) {
-//                         continue
-//                     }
-//                 }
-//                 result.push(x)
-//             }
-//             result
-
     let props = vec![
         You,
         // Stop,
