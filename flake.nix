@@ -4,6 +4,7 @@
     with nixpkgs.legacyPackages.${system};
     let
       scripts = {
+        "build" = "cargo build";
         "check" = "cargo test";
         "run" = ''
           set -eu

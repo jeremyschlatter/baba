@@ -154,13 +154,6 @@ impl Default for LevelName {
     }
 }
 
-#[derive_the_basics]
-struct Boop {
-    e: LiveEntity,
-    dir: Direction,
-    coords: (usize, usize),
-}
-
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 struct NewLiveEntity {
     dir: Direction,
@@ -172,100 +165,155 @@ struct NewLiveEntity {
 type NewCell = Vec<NewLiveEntity>;
 type NewLevel = Vec<Vec<NewCell>>;
 
-type LogicEntity = u64;
-
-trait Logic {
-    fn move_(&mut self, e: Boop, dir: Direction) -> bool;
-    fn delete(&mut self, e: Boop);
-    fn intersect(&self, prop: Adjective) -> Vec<Boop>;
-    fn intersect_any(&self) -> Vec<Boop>;
-
-    fn win(&mut self);
-
-    fn dir(&self, e: LogicEntity) -> Direction; // TODO design so it can't crash?
-    fn set_dir(&mut self, e: LogicEntity, d: Direction); // TODO: same
-
+fn level_map(level: &NewLevel, mut f: impl FnMut((usize, usize, usize), &NewLiveEntity)) {
+    for (y, row) in level.iter().enumerate() {
+        for (x, cell) in row.iter().enumerate() {
+            for (i, e) in cell.iter().enumerate() {
+                f((y, x, i), e)
+            }
+        }
+    }
 }
 
+fn map_grid<A, B>(a: &Vec<Vec<Vec<A>>>, f: impl Fn((usize, usize, usize), &A) -> B) -> Vec<Vec<Vec<B>>> {
+    a.iter()
+        .enumerate()
+        .map(|(y, row)|
+            row.iter()
+                .enumerate()
+                .map(|(x, cell)|
+                    cell.iter()
+                        .enumerate()
+                        .map(|(i, a)| f((y, x, i), a))
+                        .collect()
+                )
+                .collect()
+        )
+        .collect()
+}
+
+fn to_new_level(level: &Level) -> NewLevel {
+    map_grid(level, |(y, x, _), e: &LiveEntity| NewLiveEntity {
+        e: e.e,
+        id: e.id,
+        dir: e.dir,
+        coords: (y, x),
+    })
+}
+
+fn from_new_level(level: &NewLevel) -> Level {
+    map_grid(level, |_, e| LiveEntity {
+        e: e.e,
+        id: e.id,
+        dir: e.dir,
+    })
+}
+
+type EntityRef = u64;
+
+enum MutMod {
+    Delete,
+    Move(usize, usize, Direction), // the Direction is a rotation
+}
+enum Mut {
+    Mod(u64, MutMod),
+    Insert(Entity, (usize, usize), Direction),
+}
+type Muts = Vec<Mut>;
+
+trait Logic {
+    fn move_(&self, muts: &mut Muts, e: &NewLiveEntity, dir: Direction) -> bool;
+    fn delete(&self, muts: &mut Muts, e: &NewLiveEntity);
+    fn intersect(&self, e: &NewLiveEntity, prop: Adjective) -> impl Iterator<Item = &NewLiveEntity>;
+    fn intersect_any(&self, e: &NewLiveEntity) -> impl Iterator<Item = &NewLiveEntity>;
+
+    // fn win(muts: &mut Muts);
+    // fn set_dir(muts: &mut Muts, e: &NewLiveEntity, d: Direction);
+}
+
+// trait Logic {
+//     fn move_(&mut self, e: EntityRef, dir: Direction) -> Option<bool>;
+//     fn delete(&mut self, e: EntityRef);
+//     fn intersect(&self, e: EntityRef, prop: Adjective) -> Vec<EntityRef>;
+//     fn intersect_any(&self, e: EntityRef) -> Vec<EntityRef>;
+//     fn win(&mut self);
+//     fn set_dir(&mut self, e: EntityRef, d: Direction);
+// }
+
 fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
+    type PropsByEntity = HashMap<EntityRef, [bool; Adjective::COUNT]>;
     struct State {
-        level: Level,
-        rules: Vec<Rule>,
+        level: NewLevel,
         rules_cache: RulesCache,
+        props_by_entity: PropsByEntity,
         id: u64,
-        props_by_entity: HashMap<u64, [bool; Adjective::COUNT]>,
         height: usize,
         width: usize,
-        intersector: Option<Boop>,
         win: bool,
     }
 
+    fn scan(level: &NewLevel) -> (RulesCache, PropsByEntity) {
+        let rules_cache = cache_rules(&scan_rules_no_index(&from_new_level(level)));
+        let mut props_by_entity = HashMap::new();
+        level_map(level, |_, e| {
+            let t_or_n = e.e.to_text_or_noun();
+            let mut e_props = [false; Adjective::COUNT];
+            for a in Adjective::iter() {
+                if is(t_or_n, &rules_cache, a) {
+                    e_props[a as usize] = true;
+                }
+            }
+            props_by_entity.insert(e.id, e_props);
+        });
+        return (rules_cache, props_by_entity);
+    }
+
     impl State {
-        fn new(level: &Level) -> (Self, [Vec<Boop>; Adjective::COUNT]) {
-            let mut entities_by_prop = core::array::from_fn(|_| vec![]);
-            let mut props_by_entity = HashMap::new();
-            let rules = scan_rules_no_index(&level);
-            let rules_cache = cache_rules(&rules);
-            for (y, row) in level.iter().enumerate() {
-                for (x, cell) in row.iter().enumerate() {
-                    for e in cell {
-                        let t_or_n = e.e.to_text_or_noun();
-                        let mut e_props = [false; Adjective::COUNT];
-                        for a in Adjective::iter() {
-                            if is(t_or_n, &rules_cache, a) {
-                                entities_by_prop[a as usize].push(Boop {
-                                    e: *e,
-                                    dir: e.dir,
-                                    coords: (y, x),
-                                });
-                                e_props[a as usize] = true;
-                            }
-                        }
-                        props_by_entity.insert(e.id, e_props);
-                    }
-                }
+        fn new(level: &Level) -> Self {
+            let new_level = to_new_level(level);
+            let (rules_cache, props_by_entity) = scan(&new_level);
+            State {
+                level: new_level,
+                rules_cache,
+                props_by_entity,
+                id: max_id(&level),
+                height: level.len(),
+                width: level[0].len(),
+                win: false,
             }
-            (
-                State {
-                    level: level.clone(),
-                    rules,
-                    rules_cache,
-                    id: max_id(&level),
-                    props_by_entity,
-                    height: level.len(),
-                    width: level[0].len(),
-                    intersector: None,
-                    win: false,
-                },
-                entities_by_prop,
-            )
         }
 
-        fn get_entity(&self, e: LogicEntity) -> &LiveEntity {
-            for row in &self.level {
-                for cell in row {
-                    for x in cell {
-                        if x.id == e {
-                            return &x;
-                        }
-                    }
-                }
-            }
-            panic!("missing entity");
+        fn rescan(&mut self) {
+            let x = scan(&self.level);
+            self.rules_cache = x.0;
+            self.props_by_entity = x.1;
         }
 
-        fn get_entity_mut(&mut self, e: LogicEntity) -> &mut LiveEntity {
-            for row in &mut self.level {
-                for cell in row {
-                    for x in cell {
-                        if x.id == e {
-                            return x;
-                        }
-                    }
-                }
-            }
-            panic!("missing entity");
-        }
+//         fn get_entity(&self, e: EntityRef) -> Option<&NewLiveEntity> {
+//             for row in &self.level {
+//                 for cell in row {
+//                     for x in cell {
+//                         if x.id == e {
+//                             return Some(&x);
+//                         }
+//                     }
+//                 }
+//             }
+//             None
+//         }
+
+//         fn get_entity_mut(&mut self, e: EntityRef) -> Option<&mut NewLiveEntity> {
+//             for row in &mut self.level {
+//                 for cell in row {
+//                     for x in cell {
+//                         if x.id == e {
+//                             return Some(x);
+//                         }
+//                     }
+//                 }
+//             }
+//             None
+//         }
 
         fn delta(&self, (y_, x_): (usize, usize), dir: Direction) -> Option<(usize, usize)> {
             let (dy, dx) = match dir {
@@ -280,17 +328,21 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             } else { Some((y as usize, x as usize)) }
         }
 
-        fn neighbors(&self, e: Boop, dir: Direction) -> Option<(impl Iterator<Item = Boop>, (usize, usize))> {
+//         fn neighbors(&self, e: &NewLiveEntity, dir: Direction) -> Option<(impl Iterator<Item = EntityRef>, (usize, usize))> {
+//             self.delta(e.coords, dir).map(|(y, x)| (
+//                 self.level[y][x].iter().map(|e| e.id).collect::<Vec<_>>().into_iter(),
+//                 (y, x),
+//             ))
+//         }
+
+        fn neighbors(&self, e: &NewLiveEntity, dir: Direction) -> Option<(impl Iterator<Item = &NewLiveEntity>, (usize, usize))> {
             self.delta(e.coords, dir).map(|(y, x)| (
-                self.level[y][x].iter()
-                    .map(move |e| Boop {e: *e, dir: e.dir, coords: (y as usize, x as usize) })
-                    .collect::<Vec<_>>()
-                    .into_iter(),
+                self.level[y][x].iter(),
                 (y, x),
             ))
         }
 
-        fn is_or_has(id: &mut u64, e: &LiveEntity, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> Vec<LiveEntity> {
+        fn is_or_has(e: &NewLiveEntity, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> impl Iterator<Item = Entity> {
             let t_or_n = e.e.to_text_or_noun();
             let [yes, no] = array_map_ref(&rules,
                 |v| v.iter()
@@ -298,55 +350,42 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                      .map(|(_, e)| e)
                      .copied()
                      .collect::<HashSet<TextOrNoun>>());
-            let mut result = yes.difference(&no).copied().collect::<Vec<TextOrNoun>>();
+            let mut result = yes.difference(&no).cloned().collect::<Vec<TextOrNoun>>();
             result.sort();
             result
-              .iter()
-              .map(|x| LiveEntity {
-                  dir: e.dir,
-                  id: {*id += 1; *id},
-                  e: match x {
-                      TextOrNoun::Noun(n) => Entity::Noun(*n),
-                      TextOrNoun::Text => Entity::Text(match e.e {
-                          Entity::Noun(n) => Text::Object(n),
-                          Entity::Text(_) => Text::Text,
-                      }),
-                  }
+              .into_iter()
+              .map(move |x| match x {
+                  TextOrNoun::Noun(n) => Entity::Noun(n),
+                  TextOrNoun::Text => Entity::Text(match t_or_n {
+                      TextOrNoun::Noun(n) => Text::Object(n),
+                      TextOrNoun::Text => Text::Text,
+                  }),
+
               })
-              .collect()
         }
 
-        fn has(&mut self, e: &LiveEntity) -> Vec<LiveEntity> {
-            let mut id = self.id;
-            let result = State::is_or_has(&mut id, e, &self.rules_cache.1);
-            self.id = id;
-            result
+        fn has(&self, e: &NewLiveEntity) -> impl Iterator<Item = Entity> {
+            State::is_or_has(e, &self.rules_cache.1)
         }
 
-        fn is_prop(&self, e: Boop, prop: Adjective) -> bool {
-            self.props_by_entity[&e.e.id][prop as usize]
-        }
+//         fn is_prop(&self, e: NewLiveEntity, prop: Adjective) -> bool {
+//             is(e.to_text_or_noun(), self.rules_cache, prop)
+//         }
 
-        fn remove_from_cell(&mut self, e: Boop) {
-            for (i, x) in self.level[e.coords.0][e.coords.1].iter().enumerate() {
-                if *x == e.e {
-                    self.level[e.coords.0][e.coords.1].remove(i);
-                    return
-                }
-            }
-        }
+//         fn remove_from_cell(&mut self, e: &NewLiveEntity) -> NewLiveEntity {
+//             for (i, x) in self.level[e.coords.0][e.coords.1].iter().enumerate() {
+//                 if x == e {
+//                     return self.level[e.coords.0][e.coords.1].remove(i);
+//                 }
+//             }
+//             panic!("tried to remove entity that is not in the cell");
+//         }
 
         fn move_cursor(&mut self, dir: Direction) {
             let mut cursors = vec![];
-            for (y, row) in self.level.iter().enumerate() {
-                for (x, cell) in row.iter().enumerate() {
-                    for (i, e) in cell.iter().enumerate() {
-                        if e.e == Entity::Noun(Cursor) {
-                            cursors.push((y, x, i));
-                        }
-                    }
-                }
-            }
+            level_map(&self.level, |c, e| if e.e == Entity::Noun(Cursor) {
+                cursors.push(c);
+            });
             for (y, x, i) in cursors {
                 if let Some((y_, x_)) = self.delta((y, x), dir) {
                     if self.level[y_][x_].iter().any(|e| match e.e {
@@ -362,171 +401,293 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             }
         }
 
-        fn intersect_(&self, adj: Option<Adjective>) -> Vec<Boop> {
-            match self.intersector {
-                Some(e) =>
-                    self.level[e.coords.0][e.coords.1]
-                        .iter()
-                        .filter(|x| !(adj.is_none() && **x == e.e))
-                        .map(|x| Boop{e: *x, dir: x.dir, coords: e.coords})
-                        .filter(|x| if let Some(a) = adj { self.is_prop(*x, a) } else { true })
-                        .collect(),
-                None => panic!("no intersector"),
+        fn is_prop(&self, id: u64, adj: Adjective) -> bool {
+            self.props_by_entity[&id][adj as usize]
+        }
+
+        fn intersect_(&self, e: &NewLiveEntity, adj: Option<Adjective>) -> impl Iterator<Item = &NewLiveEntity> {
+            let ee = e.e;
+            self.level[e.coords.0][e.coords.1]
+                .iter()
+                .filter(move |x| match adj {
+                    None => x.e != ee,
+                    Some(a) => self.is_prop(x.id, a),
+                })
+        }
+
+//         fn delete_e(&mut self, e: &NewLiveEntity) {
+//             self.remove_from_cell(e);
+//             let has = self.has(&e);
+//             let cell = &mut self.level[e.coords.0][e.coords.1];
+//             for x in has {
+//                 cell.push(x);
+//             }
+//         }
+
+        fn apply_muts(&mut self, muts: Muts) {
+            use Mut::*;
+            use MutMod::*;
+            let (mods, inserts) = {
+                let mut mods = HashMap::new();
+                let mut inserts = vec![];
+                for m in muts {
+                    match m {
+                        Mod(id, m) => {
+                            let e = mods.entry(id).or_insert((vec![], false));
+                            match m {
+                                Delete => e.1 = true,
+                                Move(y, x, d) => e.0.push((y, x, d)),
+                            }
+                        },
+                        Insert(e, c, d) => inserts.push((e, c, d)),
+                    };
+                }
+                (mods, inserts)
+            };
+            let id_to_cell = {
+                let mut id_to_cell = HashMap::new();
+                level_map(&self.level, |(y, x, _), e| { id_to_cell.insert(e.id, (y, x)); });
+                id_to_cell
+            };
+            for (id, (moves, delete)) in mods {
+                let (y, x) = id_to_cell[&id];
+                let ix = self.level[y][x].iter()
+                    .enumerate()
+                    .find(|(_, e)| e.id == id)
+                    .unwrap()
+                    .0;
+                let mut e = self.level[y][x].remove(ix);
+                if !delete {
+                    let (y, x, dir) = moves[0];
+                    e.dir = dir;
+                    self.level[y][x].push(e);
+                }
+            }
+            for (e, (y, x), dir) in inserts {
+                let id = { self.id += 1; self.id };
+                self.level[y][x].push(NewLiveEntity{
+                    e, dir, id, coords: (y, x),
+                })
             }
         }
     }
 
     impl Logic for State {
-        fn move_(&mut self, e: Boop, dir: Direction) -> bool {
-            // e.dir = d;
-            let moved = 'moved: {
-                if let Some((new_cell, new_coords)) = self.neighbors(e, dir) {
+        fn move_(&self, muts: &mut Muts, e: &NewLiveEntity, dir: Direction) -> bool {
+            use Mut::*;
+            use MutMod::*;
+            let stopped = 'stopped: {
+                if let Some((new_cell, (y_, x_))) = self.neighbors(e, dir) {
                     for x in new_cell {
-                        let x_props = self.props_by_entity[&x.e.id];
-                        for prop in Adjective::iter() {
-                            if x_props[prop as usize] && !incoming(self, x, dir, prop) {
-                                break 'moved None;
+                        for prop in INCOMING_PROPS {
+                            if self.is_prop(x.id, prop) && !incoming(self, muts, x, prop) {
+                                break 'stopped true;
                             }
                         }
                     }
-                    Some(new_coords)
-                } else { None }
+                    muts.push(Mod(e.id, Move(y_, x_, dir)));
+                    false
+                } else { true }
             };
-            if let Some((y, x)) = moved {
-                self.remove_from_cell(e);
-                self.level[y][x].push(e.e);
-            }
-            let exited =
-                if moved.is_none() && self.props_by_entity[&e.e.id][Weak as usize] {
-                    self.delete(e);
+            let exited_cell =
+                if stopped && self.is_prop(e.id, Weak) {
+                    muts.push(Mod(e.id, Delete));
                     true
-                } else { moved.is_some() };
-            if exited {
+                } else { !stopped };
+            if exited_cell {
                 if let Some((away_cell, _)) = self.neighbors(e, dir.reverse()) {
                     for x in away_cell {
-                        if self.is_prop(x, Pull) {
-                            self.move_(x, dir);
+                        if self.is_prop(x.id, Pull) {
+                            self.move_(muts, x, dir);
                         }
                     }
                 }
-
             }
-            return exited;
+            return exited_cell;
         }
 
-        fn delete(&mut self, e: Boop) {
-            self.remove_from_cell(e);
-            let has = self.has(&e.e);
-            let cell = &mut self.level[e.coords.0][e.coords.1];
-            for x in has {
-                cell.push(x);
+//         fn move_(&mut self, r: EntityRef, dir: Direction) -> Option<bool> {
+//             // self.get_entity_mut(r).map(|e| e.dir = dir);
+//             // let e = match self.get_entity(r) {
+//                 // Some(e) => e,
+//                 // None => return None,
+//             // };
+//             // let from = e.coords;
+//             // let id = e.id;
+//             // let away_cell = self.neighbors(e, dir.reverse());
+//             let moved = 'moved: {
+//                 if let Some((new_cell, new_coords)) = self.neighbors(e, dir) {
+//                     for x in new_cell {
+//                         for prop in INCOMING_PROPS {
+//                             if self.is_prop(x, prop) && !incoming(self, x, dir, prop) {
+//                                 break 'moved None;
+//                             }
+//                         }
+//                     }
+//                     Some(new_coords)
+//                 } else { None }
+//             };
+//             // The compiler has no proof that e is still unchanged after the `incoming`
+//             // hooks above, but it _probably_ is? Crash if not.
+//             let e = self.level[from.0][from.1].iter().find(|e| e.id == id).unwrap();
+//             if let Some((y, x)) = moved {
+//                 self.level[y][x].push(self.remove_from_cell(e));
+//             }
+//             let exited =
+//                 if moved.is_none() && self.is_prop(id, Weak) {
+//                     self.delete_e(e);
+//                     true
+//                 } else { moved.is_some() };
+//             if exited {
+//                 if let Some((away_cell, _)) = away_cell {
+//                     for x in away_cell {
+//                         if self.is_prop(x, Pull) {
+//                             self.move_(x, dir);
+//                         }
+//                     }
+//                 }
+//             }
+//             return Some(exited);
+//         }
+
+        fn delete(&self, muts: &mut Muts, e: &NewLiveEntity) {
+            muts.push(Mut::Mod(e.id, MutMod::Delete));
+            for x in self.has(&e) {
+                muts.push(Mut::Insert(x, e.coords, e.dir));
             }
         }
 
-        fn intersect(&self, prop: Adjective) -> Vec<Boop> {
-            self.intersect_(Some(prop))
+        fn intersect(&self, e: &NewLiveEntity, prop: Adjective) -> impl Iterator<Item = &NewLiveEntity> {
+            self.intersect_(e, Some(prop))
         }
 
-        fn intersect_any(&self) -> Vec<Boop> {
-            self.intersect_(None)
+        fn intersect_any(&self, e: &NewLiveEntity) -> impl Iterator<Item = &NewLiveEntity> {
+            self.intersect_(e, None)
         }
 
-        fn win(&mut self) {
-            self.win = true;
-        }
+//         fn win(&mut self) {
+//             self.win = true;
+//         }
 
-        fn dir(&self, e: LogicEntity) -> Direction {
-            self.get_entity(e).dir
-        }
+//         fn set_dir(&mut self, e: EntityRef, d: Direction) {
+//             self.get_entity_mut(e).map(|e| e.dir = d);
+//         }
 
-        fn set_dir(&mut self, e: LogicEntity, d: Direction) {
-            self.get_entity_mut(e).dir = d
-        }
     }
 
-    let props = vec![
+    let move_props = vec![
         You,
-        // Stop,
-        // Push,
-        // Win,
+        Move,
+        Shift,
+        // Tele, TODO
+    ];
+
+    let transform_props = vec![
         Sink,
         Defeat,
         Hot,
         // Melt,
-        Move,
         Shut,
         // Open,
-        // Float,
         Weak,
-        // Tele, TODO
-        // Pull
-        Shift,
-        Swap,
+
         Up,
         Down,
         Right,
         Left,
 
         Win,
-
-        // Red,
-        // Blue,
-        // Best,
     ];
 
-    let (mut state, entities_by_prop) = State::new(l);
+    // Float,
 
-    for prop in props {
-        for e in &entities_by_prop[prop as usize] {
-            state.intersector = Some(*e);
-            do_prop(&mut state, *e, prop, input)
+//     let incoming_props = vec![
+//         Stop,
+//         Push,
+//         Pull,
+//         Swap,
+//     ];
+
+//     let  render_props = vec![
+//         Red,
+//         Blue,
+//         Best,
+//     ];
+
+    let mut state = State::new(l);
+
+    impl State {
+        fn do_props(&mut self, props: Vec<Adjective>, input: Input) {
+            for prop in props {
+                let mut es: Vec<&NewLiveEntity> = vec![];
+                for row in &self.level {
+                    for cell in row {
+                        for e in cell {
+                            if self.is_prop(e.id, prop) {
+                                es.push(&e);
+                            }
+                        }
+                    }
+                }
+                let mut muts = vec![];
+                for e in es {
+                    do_prop(self, &mut muts, e, prop, input);
+                }
+                self.apply_muts(muts);
+            }
         }
     }
+
+    state.do_props(move_props, input);
+    state.rescan();
+    state.do_props(transform_props, input);
 
     if let Go(d) = input {
         state.move_cursor(d);
     }
 
-    return (state.level, state.win);
+    return (from_new_level(&state.level), state.win);
 }
 
-fn incoming(l: &mut impl Logic, this: Boop, dir: Direction, prop: Adjective) -> bool {
+const INCOMING_PROPS: [Adjective; 3] = [Stop, Push, Swap];
+
+fn incoming(l: &impl Logic, muts: &mut Muts, this: &NewLiveEntity, prop: Adjective) -> bool {
     match prop {
         Stop => false,
-        Push => l.move_(this, dir),
-        Swap => { l.move_(this, dir.reverse()); true },
+        Push => l.move_(muts, this, this.dir),
+        Swap => { l.move_(muts, this, this.dir.reverse()); true },
         _ => true,
     }
 }
 
-
-fn do_prop(l: &mut impl Logic, this: Boop, prop: Adjective, input: Input) {
+fn do_prop(l: &impl Logic, muts: &mut Muts, this: &NewLiveEntity, prop: Adjective, input: Input) {
     match prop {
         You => if let Go(d) = input {
-            l.move_(this, d);
+            l.move_(muts, this, d);
         },
-        Sink =>
-            for x in l.intersect_any() {
-                l.delete(x);
-                l.delete(this);
+        Sink => {
+            for x in l.intersect_any(this) {
+                l.delete(muts, x);
+                l.delete(muts, this);
                 break;
-            },
-        Defeat => for x in l.intersect(You) { l.delete(x); },
-        Hot => for x in l.intersect(Melt) { l.delete(x); },
+            }
+        },
+        Defeat => for x in l.intersect(this, You) { l.delete(muts, x); },
+        Hot => for x in l.intersect(this, Melt) { l.delete(muts, x); },
         Move =>
-            if !l.move_(this, this.dir) {
-                // this.dir = this.dir.reverse();
-                l.move_(this, this.dir);
+            if !l.move_(muts, this, this.dir) {
+                l.move_(muts, this, this.dir.reverse());
             },
-        Shut =>
-            for x in l.intersect(Open) {
-                l.delete(x);
-                l.delete(this);
+        Shut => {
+            for x in l.intersect(this, Open) {
+                l.delete(muts, x);
+                l.delete(muts, this);
                 break;
-            },
+            }
+        },
         Weak =>
-            for _ in l.intersect_any() {
-                l.delete(this);
+            for _ in l.intersect_any(this) {
+                l.delete(muts, this);
                 break;
             },
         // Tele =>
@@ -534,19 +695,20 @@ fn do_prop(l: &mut impl Logic, this: Boop, prop: Adjective, input: Input) {
         //         tele(x, this);
         //     },
         Shift =>
-            for x in l.intersect_any() {
-                l.move_(x, this.dir);
-            },
-        Win =>
-            for x in l.intersect(You) {
-                l.win();
-                break;
+            for x in l.intersect_any(this) {
+                l.move_(muts, x, this.dir);
             },
 
-//         Up => this.dir = Dir::Up,
-//         Down => this.dir = Dir::Down,
-//         Right => this.dir = Dir::Right,
-//         Left => this.dir = Dir::Left,
+//         Win =>
+//             for x in l.intersect(this, You) {
+//                 l.win();
+//                 break;
+//             },
+
+//         Up    => l.set_dir(this, Dir::Up),
+//         Down  => l.set_dir(this, Dir::Down),
+//         Right => l.set_dir(this, Dir::Right),
+//         Left  => l.set_dir(this, Dir::Left),
 
         _ => {},
     }
