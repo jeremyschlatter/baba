@@ -369,6 +369,15 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             State::is_or_has(e, &self.rules_cache.1)
         }
 
+        fn is_noun(&self, e: &NewLiveEntity) -> impl Iterator<Item = Entity> {
+            let v = State::is_or_has(e, &self.rules_cache.2).collect::<Vec<_>>();
+            if v.iter().any(|x| *x == e.e) {
+                vec![] // x is x
+            } else {
+                v
+            }.into_iter()
+        }
+
 //         fn is_prop(&self, e: NewLiveEntity, prop: Adjective) -> bool {
 //             is(e.to_text_or_noun(), self.rules_cache, prop)
 //         }
@@ -403,7 +412,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
         }
 
         fn is_prop(&self, id: u64, adj: Adjective) -> bool {
-            self.props_by_entity[&id][adj as usize]
+            self.props_by_entity.get(&id).map(|p| p[adj as usize]).unwrap_or(false)
         }
 
         fn intersect_(&self, e: &NewLiveEntity, adj: Option<Adjective>) -> impl Iterator<Item = &NewLiveEntity> {
@@ -639,10 +648,33 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                 self.apply_muts(muts);
             }
         }
+
+        fn things_are_other_things(&mut self) {
+            for y in 0..self.height {
+                for x in 0..self.width {
+                    for i in (0..self.level[y][x].len()).rev() {
+                        let changed = self.is_noun(&self.level[y][x][i]).collect::<Vec<_>>();
+                        let n = changed.len();
+                        if n > 0 {
+                            let dir = self.level[y][x].remove(i).dir;
+                            for (i, new) in changed.into_iter().rev().enumerate() {
+                                self.level[y][x].insert(i, NewLiveEntity{
+                                    e: new,
+                                    id: { self.id += 1; self.id },
+                                    coords: (y, x),
+                                    dir,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     state.do_props(move_props, input);
     state.rescan();
+    state.things_are_other_things();
     state.do_props(transform_props, input);
 
     if let Go(d) = input {
@@ -1344,9 +1376,8 @@ mod tests {
                         history.push(screen);
                     }
                 }
-                let i = history.len()-1;
-                let s = history[i].clone();
-                got_screens.push(s);
+
+                got_screens.push(history[history.len()-1].clone());
                 if got_screens[i] != screens[i] {
                     return Some((entry.path(), ReplayMismatch((
                         screens[i-1].clone(),
@@ -1359,8 +1390,8 @@ mod tests {
                         inputs,
                         palette_name.to_string(),
                     ))));
-
                 }
+
             }
 
             return None;
