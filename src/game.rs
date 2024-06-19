@@ -227,6 +227,7 @@ trait Logic {
     fn delete(&self, muts: &mut Muts, e: &NewLiveEntity);
     fn intersect(&self, e: &NewLiveEntity, prop: Adjective) -> impl Iterator<Item = &NewLiveEntity>;
     fn intersect_any(&self, e: &NewLiveEntity) -> impl Iterator<Item = &NewLiveEntity>;
+    fn is_prop(&self, id: u64, prop: Adjective) -> bool;
 
     fn win(&self, muts: &mut Muts);
     // fn set_dir(muts: &mut Muts, e: &NewLiveEntity, d: Direction);
@@ -411,10 +412,6 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             }
         }
 
-        fn is_prop(&self, id: u64, adj: Adjective) -> bool {
-            self.props_by_entity.get(&id).map(|p| p[adj as usize]).unwrap_or(false)
-        }
-
         fn intersect_(&self, e: &NewLiveEntity, adj: Option<Adjective>) -> impl Iterator<Item = &NewLiveEntity> {
             let ee = e.e;
             self.level[e.coords.0][e.coords.1]
@@ -492,7 +489,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                 if let Some((new_cell, (y_, x_))) = self.neighbors(e, dir) {
                     for x in new_cell {
                         for prop in INCOMING_PROPS {
-                            if self.is_prop(x.id, prop) && !incoming(self, muts, x, dir, prop) {
+                            if self.is_prop(x.id, prop) && !incoming(self, muts, e, x, dir, prop) {
                                 break 'stopped true;
                             }
                         }
@@ -579,6 +576,10 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
 
         fn win(&self, muts: &mut Muts) {
             muts.push(Mut::Win);
+        }
+
+        fn is_prop(&self, id: u64, adj: Adjective) -> bool {
+            self.props_by_entity.get(&id).map(|p| p[adj as usize]).unwrap_or(false)
         }
 
 //         fn set_dir(&mut self, e: EntityRef, d: Direction) {
@@ -684,13 +685,27 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
     return (from_new_level(&state.level), state.win);
 }
 
-const INCOMING_PROPS: [Adjective; 3] = [Stop, Push, Swap];
+const INCOMING_PROPS: [Adjective; 5] = [Stop, Push, Swap, Shut, Open];
 
-fn incoming(l: &impl Logic, muts: &mut Muts, this: &NewLiveEntity, dir: Direction, prop: Adjective) -> bool {
+fn incoming(l: &impl Logic, muts: &mut Muts, incomer: &NewLiveEntity, this: &NewLiveEntity, dir: Direction, prop: Adjective) -> bool {
     match prop {
         Stop => false,
         Push => l.move_(muts, this, dir),
         Swap => { l.move_(muts, this, dir.reverse()); true },
+        Open => {
+            if l.is_prop(incomer.id, Shut) {
+                l.delete(muts, incomer);
+                l.delete(muts, this);
+            }
+            true
+        },
+        Shut => {
+            if l.is_prop(incomer.id, Open) {
+                l.delete(muts, incomer);
+                l.delete(muts, this);
+            }
+            true
+        },
         _ => true,
     }
 }
