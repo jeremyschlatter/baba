@@ -459,6 +459,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                 let mut e = self.level[y][x].remove(ix);
                 if !delete {
                     let (y, x, dir) = moves[0];
+                    e.coords = (y, x);
                     e.dir = dir;
                     self.level[y][x].push(e);
                 }
