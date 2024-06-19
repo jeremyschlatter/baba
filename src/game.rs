@@ -480,7 +480,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                 if let Some((new_cell, (y_, x_))) = self.neighbors(e, dir) {
                     for x in new_cell {
                         for prop in INCOMING_PROPS {
-                            if self.is_prop(x.id, prop) && !incoming(self, muts, x, prop) {
+                            if self.is_prop(x.id, prop) && !incoming(self, muts, x, dir, prop) {
                                 break 'stopped true;
                             }
                         }
@@ -651,11 +651,11 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
 
 const INCOMING_PROPS: [Adjective; 3] = [Stop, Push, Swap];
 
-fn incoming(l: &impl Logic, muts: &mut Muts, this: &NewLiveEntity, prop: Adjective) -> bool {
+fn incoming(l: &impl Logic, muts: &mut Muts, this: &NewLiveEntity, dir: Direction, prop: Adjective) -> bool {
     match prop {
         Stop => false,
-        Push => l.move_(muts, this, this.dir),
-        Swap => { l.move_(muts, this, this.dir.reverse()); true },
+        Push => l.move_(muts, this, dir),
+        Swap => { l.move_(muts, this, dir.reverse()); true },
         _ => true,
     }
 }
