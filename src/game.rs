@@ -1324,48 +1324,46 @@ mod tests {
         let first_failure = goldens.par_iter().find_map_any(|entry| {
             println!("{}", entry.path().display());
             let (screens, inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
-            let got_screens = {
-                let mut screens = vec![screens[0].clone()];
-                let mut history = vec![screens[0].clone()];
-                for (i, input) in inputs.iter().enumerate() {
-                    if *input == Undo {
-                        if history.len() > 1 {
-                            history.pop();
-                        }
-                    } else {
-                        let (screen, win) = step(
-                            &history[history.len()-1], *input, history.len() as u32);
-                        if i < inputs.len() - 1 && win {
-                            return Some((entry.path(), EarlyWin((screens, inputs[..i+1].to_vec(), palette_name.to_string()))))
-                        }
-                        if i == inputs.len() - 1 && !win {
-                            return Some((entry.path(), NoWin((screens, inputs, palette_name.to_string()))))
-                        }
-                        if screen != history[history.len()-1] {
-                            history.push(screen);
-                        }
+            let mut got_screens = vec![screens[0].clone()];
+            let mut history = vec![screens[0].clone()];
+            for (i, input) in inputs.iter().enumerate() {
+                if *input == Undo {
+                    if history.len() > 1 {
+                        history.pop();
                     }
-                    screens.push(history[history.len()-1].clone());
+                } else {
+                    let (screen, win) = step(
+                        &history[history.len()-1], *input, history.len() as u32);
+                    if i < inputs.len() - 1 && win {
+                        return Some((entry.path(), EarlyWin((got_screens, inputs[..i+1].to_vec(), palette_name.to_string()))))
+                    }
+                    if i == inputs.len() - 1 && !win {
+                        return Some((entry.path(), NoWin((got_screens, inputs, palette_name.to_string()))))
+                    }
+                    if screen != history[history.len()-1] {
+                        history.push(screen);
+                    }
                 }
-                screens
-            };
-            for i in 0..screens.len() - 1 {
-                if got_screens[i + 1] != screens[i + 1] {
-                    println!("{}", entry.path().display());
+                let i = history.len()-1;
+                let s = history[i].clone();
+                got_screens.push(s);
+                if got_screens[i] != screens[i] {
                     return Some((entry.path(), ReplayMismatch((
+                        screens[i-1].clone(),
                         screens[i].clone(),
-                        screens[i+1].clone(),
-                        got_screens[i+1].clone(),
+                        got_screens[i].clone(),
                         palette_name.to_string(),
-                        inputs[i],
+                        *input,
                     ), (
                         got_screens,
                         inputs,
                         palette_name.to_string(),
                     ))));
+
                 }
             }
-            None
+
+            return None;
         });
 
         if let Some((test, failure)) = first_failure {
