@@ -218,6 +218,7 @@ enum MutMod {
 enum Mut {
     Mod(u64, MutMod),
     Insert(Entity, (usize, usize), Direction),
+    Win,
 }
 type Muts = Vec<Mut>;
 
@@ -227,7 +228,7 @@ trait Logic {
     fn intersect(&self, e: &NewLiveEntity, prop: Adjective) -> impl Iterator<Item = &NewLiveEntity>;
     fn intersect_any(&self, e: &NewLiveEntity) -> impl Iterator<Item = &NewLiveEntity>;
 
-    // fn win(muts: &mut Muts);
+    fn win(&self, muts: &mut Muts);
     // fn set_dir(muts: &mut Muts, e: &NewLiveEntity, d: Direction);
 }
 
@@ -440,6 +441,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                             }
                         },
                         Insert(e, c, d) => inserts.push((e, c, d)),
+                        Win => self.win = true,
                     };
                 }
                 (mods, inserts)
@@ -566,9 +568,9 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             self.intersect_(e, None)
         }
 
-//         fn win(&mut self) {
-//             self.win = true;
-//         }
+        fn win(&self, muts: &mut Muts) {
+            muts.push(Mut::Win);
+        }
 
 //         fn set_dir(&mut self, e: EntityRef, d: Direction) {
 //             self.get_entity_mut(e).map(|e| e.dir = d);
@@ -699,12 +701,11 @@ fn do_prop(l: &impl Logic, muts: &mut Muts, this: &NewLiveEntity, prop: Adjectiv
             for x in l.intersect_any(this) {
                 l.move_(muts, x, this.dir);
             },
-
-//         Win =>
-//             for x in l.intersect(this, You) {
-//                 l.win();
-//                 break;
-//             },
+        Win =>
+            for _ in l.intersect(this, You) {
+                l.win(muts);
+                break;
+            },
 
 //         Up    => l.set_dir(this, Dir::Up),
 //         Down  => l.set_dir(this, Dir::Down),
