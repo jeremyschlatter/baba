@@ -233,15 +233,6 @@ trait Logic {
     // fn set_dir(muts: &mut Muts, e: &NewLiveEntity, d: Direction);
 }
 
-// trait Logic {
-//     fn move_(&mut self, e: EntityRef, dir: Direction) -> Option<bool>;
-//     fn delete(&mut self, e: EntityRef);
-//     fn intersect(&self, e: EntityRef, prop: Adjective) -> Vec<EntityRef>;
-//     fn intersect_any(&self, e: EntityRef) -> Vec<EntityRef>;
-//     fn win(&mut self);
-//     fn set_dir(&mut self, e: EntityRef, d: Direction);
-// }
-
 fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
     type PropsByEntity = HashMap<EntityRef, [bool; Adjective::COUNT]>;
     struct State {
@@ -291,32 +282,6 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             self.props_by_entity = x.1;
         }
 
-//         fn get_entity(&self, e: EntityRef) -> Option<&NewLiveEntity> {
-//             for row in &self.level {
-//                 for cell in row {
-//                     for x in cell {
-//                         if x.id == e {
-//                             return Some(&x);
-//                         }
-//                     }
-//                 }
-//             }
-//             None
-//         }
-
-//         fn get_entity_mut(&mut self, e: EntityRef) -> Option<&mut NewLiveEntity> {
-//             for row in &mut self.level {
-//                 for cell in row {
-//                     for x in cell {
-//                         if x.id == e {
-//                             return Some(x);
-//                         }
-//                     }
-//                 }
-//             }
-//             None
-//         }
-
         fn delta(&self, (y_, x_): (usize, usize), dir: Direction) -> Option<(usize, usize)> {
             let (dy, dx) = match dir {
                 Dir::Up    => (-1, 0),
@@ -329,13 +294,6 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                 None
             } else { Some((y as usize, x as usize)) }
         }
-
-//         fn neighbors(&self, e: &NewLiveEntity, dir: Direction) -> Option<(impl Iterator<Item = EntityRef>, (usize, usize))> {
-//             self.delta(e.coords, dir).map(|(y, x)| (
-//                 self.level[y][x].iter().map(|e| e.id).collect::<Vec<_>>().into_iter(),
-//                 (y, x),
-//             ))
-//         }
 
         fn neighbors(&self, e: &NewLiveEntity, dir: Direction) -> Option<(impl Iterator<Item = &NewLiveEntity>, (usize, usize))> {
             self.delta(e.coords, dir).map(|(y, x)| (
@@ -379,19 +337,6 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             }.into_iter()
         }
 
-//         fn is_prop(&self, e: NewLiveEntity, prop: Adjective) -> bool {
-//             is(e.to_text_or_noun(), self.rules_cache, prop)
-//         }
-
-//         fn remove_from_cell(&mut self, e: &NewLiveEntity) -> NewLiveEntity {
-//             for (i, x) in self.level[e.coords.0][e.coords.1].iter().enumerate() {
-//                 if x == e {
-//                     return self.level[e.coords.0][e.coords.1].remove(i);
-//                 }
-//             }
-//             panic!("tried to remove entity that is not in the cell");
-//         }
-
         fn move_cursor(&mut self, dir: Direction) {
             let mut cursors = vec![];
             level_map(&self.level, |c, e| if e.e == Entity::Noun(Cursor) {
@@ -421,15 +366,6 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                     Some(a) => self.is_prop(x.id, a),
                 })
         }
-
-//         fn delete_e(&mut self, e: &NewLiveEntity) {
-//             self.remove_from_cell(e);
-//             let has = self.has(&e);
-//             let cell = &mut self.level[e.coords.0][e.coords.1];
-//             for x in has {
-//                 cell.push(x);
-//             }
-//         }
 
         fn apply_muts(&mut self, muts: Muts) {
             use Mut::*;
@@ -479,85 +415,81 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                 })
             }
         }
-    }
 
-    impl Logic for State {
-        fn move_(&self, muts: &mut Muts, e: &NewLiveEntity, dir: Direction) -> bool {
+        fn move_with_ignore(&self, muts: &mut Muts, e: &NewLiveEntity, dir: Direction, ignore: Option<u64>) -> bool {
             use Mut::*;
             use MutMod::*;
-            let stopped = 'stopped: {
-                if let Some((new_cell, (y_, x_))) = self.neighbors(e, dir) {
-                    for x in new_cell {
-                        for prop in INCOMING_PROPS {
-                            if self.is_prop(x.id, prop) && !incoming(self, muts, e, x, dir, prop) {
-                                break 'stopped true;
-                            }
-                        }
-                    }
-                    muts.push(Mod(e.id, Move(y_, x_, dir)));
-                    false
-                } else { true }
+
+            let is = |x: &NewLiveEntity, p| self.is_prop(x.id, p);
+            let is_open_shut = |a, b| is(a, Shut) && is(b, Open) || is(a, Open) && is(b, Shut);
+
+            // Check if we get stopped.
+            let proceed = 'proceed: {
+                let (neighbors, (y_, x_)) = match self.neighbors(e, dir) {
+                    Some((n, c)) => (
+                        n.filter(
+                            |x| ignore.map(|id| x.id != id).unwrap_or(true)
+                        ).collect::<Vec<_>>(),
+                        c,
+                    ),
+                    None => break 'proceed None, // stopped by level border
+                };
+                if neighbors.iter().any(|x| is(x, Stop) && !is_open_shut(x, e)) {
+                    break 'proceed None; // stopped by Stop
+                }
+                if neighbors.iter().any(|x| is(x, Pull) && !is_open_shut(x, e)) {
+                    break 'proceed None; // stopped by Pull
+                }
+                let mut pushes = vec![];
+                if neighbors.iter().any(|x|
+                    is(x, Push) && !is_open_shut(x, e) && !self.move_(&mut pushes, x, dir))
+                {
+                    break 'proceed None; // stopped by Push that was itself stopped by something
+                }
+                muts.extend(pushes);
+                muts.push(Mod(e.id, Move(y_, x_, dir)));
+                Some(neighbors)
             };
-            let exited_cell =
-                if stopped && self.is_prop(e.id, Weak) {
+
+            // Break if stopped and Weak.
+            let broken = proceed.is_none() && is(e, Weak);
+            if broken {
+                muts.push(Mod(e.id, Delete));
+            }
+
+            if let Some(ref neighbors) = proceed {
+                // Do open/shut.
+                if let Some(x) = neighbors.iter().find(|x| is_open_shut(x, e)) {
+                    muts.push(Mod(x.id, Delete));
                     muts.push(Mod(e.id, Delete));
-                    true
-                } else { !stopped };
-            if exited_cell {
-                if let Some((away_cell, _)) = self.neighbors(e, dir.reverse()) {
-                    for x in away_cell {
-                        if self.is_prop(x.id, Pull) {
-                            self.move_(muts, x, dir);
+                }
+                // Do swap.
+                for n in neighbors.iter().filter(|n| is(n, Swap) || is(e, Swap)) {
+                    // TODO: ignore everything in this cell that is moving, not just e
+                    self.move_with_ignore(muts, n, dir.reverse(), Some(e.id));
+                }
+            }
+
+            if proceed.is_some() || broken {
+                // Do pull.
+                if let Some((ns, _)) = self.neighbors(e, dir.reverse()) {
+                    for n in ns {
+                        if is(n, Pull) {
+                            // TODO: ignore everything in this cell that is moving, not just e
+                            self.move_with_ignore(muts, n, dir, Some(e.id));
                         }
                     }
                 }
             }
-            return exited_cell;
-        }
 
-//         fn move_(&mut self, r: EntityRef, dir: Direction) -> Option<bool> {
-//             // self.get_entity_mut(r).map(|e| e.dir = dir);
-//             // let e = match self.get_entity(r) {
-//                 // Some(e) => e,
-//                 // None => return None,
-//             // };
-//             // let from = e.coords;
-//             // let id = e.id;
-//             // let away_cell = self.neighbors(e, dir.reverse());
-//             let moved = 'moved: {
-//                 if let Some((new_cell, new_coords)) = self.neighbors(e, dir) {
-//                     for x in new_cell {
-//                         for prop in INCOMING_PROPS {
-//                             if self.is_prop(x, prop) && !incoming(self, x, dir, prop) {
-//                                 break 'moved None;
-//                             }
-//                         }
-//                     }
-//                     Some(new_coords)
-//                 } else { None }
-//             };
-//             // The compiler has no proof that e is still unchanged after the `incoming`
-//             // hooks above, but it _probably_ is? Crash if not.
-//             let e = self.level[from.0][from.1].iter().find(|e| e.id == id).unwrap();
-//             if let Some((y, x)) = moved {
-//                 self.level[y][x].push(self.remove_from_cell(e));
-//             }
-//             let exited =
-//                 if moved.is_none() && self.is_prop(id, Weak) {
-//                     self.delete_e(e);
-//                     true
-//                 } else { moved.is_some() };
-//             if exited {
-//                 if let Some((away_cell, _)) = away_cell {
-//                     for x in away_cell {
-//                         if self.is_prop(x, Pull) {
-//                             self.move_(x, dir);
-//                         }
-//                     }
-//                 }
-//             }
-//             return Some(exited);
-//         }
+            return proceed.is_some() || broken;
+        }
+    }
+
+    impl Logic for State {
+        fn move_(&self, muts: &mut Muts, e: &NewLiveEntity, dir: Direction) -> bool {
+            self.move_with_ignore(muts, e, dir, None)
+        }
 
         fn delete(&self, muts: &mut Muts, e: &NewLiveEntity) {
             muts.push(Mut::Mod(e.id, MutMod::Delete));
@@ -581,11 +513,6 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
         fn is_prop(&self, id: u64, adj: Adjective) -> bool {
             self.props_by_entity.get(&id).map(|p| p[adj as usize]).unwrap_or(false)
         }
-
-//         fn set_dir(&mut self, e: EntityRef, d: Direction) {
-//             self.get_entity_mut(e).map(|e| e.dir = d);
-//         }
-
     }
 
     let move_props = vec![
@@ -683,31 +610,6 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
     }
 
     return (from_new_level(&state.level), state.win);
-}
-
-const INCOMING_PROPS: [Adjective; 5] = [Stop, Push, Swap, Shut, Open];
-
-fn incoming(l: &impl Logic, muts: &mut Muts, incomer: &NewLiveEntity, this: &NewLiveEntity, dir: Direction, prop: Adjective) -> bool {
-    match prop {
-        Stop => false,
-        Push => l.move_(muts, this, dir),
-        Swap => { l.move_(muts, this, dir.reverse()); true },
-        Open => {
-            if l.is_prop(incomer.id, Shut) {
-                l.delete(muts, incomer);
-                l.delete(muts, this);
-            }
-            true
-        },
-        Shut => {
-            if l.is_prop(incomer.id, Open) {
-                l.delete(muts, incomer);
-                l.delete(muts, this);
-            }
-            true
-        },
-        _ => true,
-    }
 }
 
 fn do_prop(l: &impl Logic, muts: &mut Muts, this: &NewLiveEntity, prop: Adjective, input: Input) {
