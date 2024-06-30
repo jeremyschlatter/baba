@@ -5,12 +5,22 @@ use macros::*;
 
 use anyhow::{anyhow, Result};
 use itertools::{iproduct, Itertools};
+use futures_util::{Future, FutureExt, future, task::Waker};
+// use futures_lite::future;
 use macroquad::prelude::*;
 use miniquad::graphics::*;
 use serde::{Serialize, Deserialize};
 use strum::{EnumCount, EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
 
-use std::{io::{Read, Write}, iter, collections::{HashMap, HashSet}, str::FromStr};
+use std::{
+    cell,
+    collections::{HashMap, HashSet},
+    io::{Read, Write},
+    iter,
+    rc::Rc,
+    str::FromStr,
+    task::{Context, Poll},
+};
 
 #[derive_the_basics]
 enum SpriteVariant {
@@ -154,7 +164,7 @@ impl Default for LevelName {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
 struct NewLiveEntity {
     dir: Direction,
     id: u64,
@@ -211,31 +221,108 @@ fn from_new_level(level: &NewLevel) -> Level {
 
 type EntityRef = u64;
 
+#[derive(Clone, Copy)]
 enum MutMod {
     Delete,
-    Move(usize, usize, Direction), // the Direction is a rotation
+    Move((usize, usize), Direction), // the Direction is a rotation
 }
 enum Mut {
-    Mod(u64, MutMod),
+    Mod(u64, (usize, usize), MutMod),
     Insert(Entity, (usize, usize), Direction),
     Win,
 }
-type Muts = Vec<Mut>;
 
-trait Logic {
-    fn move_(&self, muts: &mut Muts, e: &NewLiveEntity, dir: Direction) -> bool;
-    fn delete(&self, muts: &mut Muts, e: &NewLiveEntity);
-    fn intersect(&self, e: &NewLiveEntity, prop: Adjective) -> impl Iterator<Item = &NewLiveEntity>;
-    fn intersect_any(&self, e: &NewLiveEntity) -> impl Iterator<Item = &NewLiveEntity>;
+trait Logic<'fut> {
+    async fn move_<'a, 'e>(&'a self, e: &'e NewLiveEntity, dir: Direction) -> bool
+        where 'a: 'fut, 'fut: 'e;
+    fn intersect<'a: 'fut>(&'a self, e: &NewLiveEntity, prop: Adjective) -> impl Iterator<Item = &NewLiveEntity>;
+    fn intersect_any<'a: 'fut>(&'a self, e: &NewLiveEntity) -> impl Iterator<Item = &NewLiveEntity>;
     fn is_prop(&self, id: u64, prop: Adjective) -> bool;
 
-    fn win(&self, muts: &mut Muts);
+    // TODO state reminder:
+    // - is this mut design the right way to go?
+    //   - or should we pass a RefMut to move_ and delete?
+    //   - consider the `pushes` mut replacement
+    //     - seems intractable to make that work with concurrency,
+    //       probably just drop the `pushes` thing
+
+    fn win(&self);
+    fn delete<'a>(&'a self, e: &'a NewLiveEntity);
+    fn moved<'a>(&'a self, e: &'a NewLiveEntity, to: (usize, usize), dir: Direction);
+
     // fn set_dir(muts: &mut Muts, e: &NewLiveEntity, d: Direction);
 }
 
+// trait Logic {
+//     fn move_(&self, muts: &mut Muts, e: &NewLiveEntity, dir: Direction) -> bool;
+//     fn delete(&self, muts: &mut Muts, e: &NewLiveEntity);
+//     fn intersect(&self, e: &NewLiveEntity, prop: Adjective) -> impl Iterator<Item = &NewLiveEntity>;
+//     fn intersect_any(&self, e: &NewLiveEntity) -> impl Iterator<Item = &NewLiveEntity>;
+//     fn is_prop(&self, id: u64, prop: Adjective) -> bool;
+//     fn win(&self, muts: &mut Muts);
+//     // fn set_dir(muts: &mut Muts, e: &NewLiveEntity, d: Direction);
+// }
+
+type Muts = Rc<cell::RefCell<Vec<Mut>>>;
+
+struct NeighborsFut<'cell> {
+    cell: Vec<(&'cell NewLiveEntity, bool)>,
+    muts: Muts,
+    cycle: Rc<cell::Cell<bool>>,
+    waker: Rc<cell::Cell<Option<Waker>>>,
+    yx: (usize, usize),
+}
+impl<'cell> Future for NeighborsFut<'cell> {
+    type Output = (Vec<&'cell NewLiveEntity>, (usize, usize));
+
+    fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let muts = self.muts.borrow();
+        let es = self.cell
+            .iter()
+            .copied()
+            .filter(|(e, _)| !muts.iter().any(|m| match m {
+                Mut::Mod(id, _, _) => *id == e.id,
+                _ => false,
+            }))
+            .collect::<Vec<_>>();
+
+        if es.iter().any(|(_, stopper)| *stopper && !self.cycle.get()) {
+            self.waker.set(Some(cx.waker().clone()));
+            Poll::Pending
+        } else {
+            Poll::Ready((es.into_iter().map(|(e, _)| e).collect(), self.yx))
+        }
+    }
+}
+
+// struct NeighborsFut<'a> {
+//     cell: Vec<(&'a NewLiveEntity, bool)>,
+//     muts: Muts,
+//     cycle: Rc<cell::Cell<bool>>,
+// }
+// impl <'a> Future for NeighborsFut<'a> {
+//     type Output = Vec<&'a NewLiveEntity>;
+//     fn poll(self: std::pin::Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+//         let muts = self.muts.borrow();
+//         let es = self.cell
+//             .iter()
+//             .copied()
+//             .filter(|(e, _)| !muts.iter().any(|m| match m {
+//                 Mut::Mod(id, _) => *id == e.id,
+//                 _ => false,
+//             }))
+//             .collect::<Vec<_>>();
+//         if es.iter().any(|(_, stopper)| *stopper && !self.cycle.get()) {
+//             Poll::Pending
+//         } else {
+//             Poll::Ready(es.into_iter().map(|(e, _)| e).collect())
+//         }
+//     }
+// }
+
 fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
     type PropsByEntity = HashMap<EntityRef, [bool; Adjective::COUNT]>;
-    struct State {
+    struct State<'fut> {
         level: NewLevel,
         rules_cache: RulesCache,
         props_by_entity: PropsByEntity,
@@ -243,6 +330,12 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
         height: usize,
         width: usize,
         win: bool,
+        muts: Muts,
+        cycle: Rc<cell::Cell<bool>>,
+        neighbor_futs: Vec<Vec<(
+            Rc<cell::RefCell<Option<future::Shared<NeighborsFut<'fut>>>>>,
+            Rc<cell::Cell<Option<Waker>>>,
+        )>>,
     }
 
     fn scan(level: &NewLevel) -> (RulesCache, PropsByEntity) {
@@ -261,18 +354,28 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
         return (rules_cache, props_by_entity);
     }
 
-    impl State {
+    impl<'fut> State<'fut> {
         fn new(level: &Level) -> Self {
             let new_level = to_new_level(level);
             let (rules_cache, props_by_entity) = scan(&new_level);
+            let height = level.len();
+            let width = level[0].len();
             State {
                 level: new_level,
                 rules_cache,
                 props_by_entity,
                 id: max_id(&level),
-                height: level.len(),
-                width: level[0].len(),
+                height,
+                width,
                 win: false,
+                muts: Default::default(),
+                cycle: Default::default(),
+                neighbor_futs:
+                    (0..height).map(
+                        |_| (0..width).map(
+                            |_| Default::default()
+                        ).collect()
+                    ).collect(),
             }
         }
 
@@ -295,12 +398,100 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             } else { Some((y as usize, x as usize)) }
         }
 
-        fn neighbors(&self, e: &NewLiveEntity, dir: Direction) -> Option<(impl Iterator<Item = &NewLiveEntity>, (usize, usize))> {
-            self.delta(e.coords, dir).map(|(y, x)| (
-                self.level[y][x].iter(),
-                (y, x),
-            ))
+        // TODO: fast-path: if no waiting, then no futures?
+        // fn neighbors(&self, e: &NewLiveEntity, dir: Direction) -> future::OptionFuture<(Vec<&NewLiveEntity>, (usize, usize))> {
+        fn neighbors(&self, e: &NewLiveEntity, dir: Direction) ->
+            future::OptionFuture<future::Shared<NeighborsFut<'fut>>>
+        // where
+            // 'fut: 'f
+        {
+            // TODO: for non-Stop entities, whether they are included
+            //   depends on execution order (since they might or might not
+            //   have already been moved by another future). This seems bad.
+            //
+            //   We could almost fix this by only returning Stop entities,
+            //   but that doesn't work because we need to return Swap.
+
+            future::OptionFuture::from(self.delta(e.coords, dir).map(|(y, x)| {
+                let (shared_fut, waker) = &self.neighbor_futs[y][x];
+                match &*shared_fut.borrow() {
+                    None => {
+                        let fut = NeighborsFut {
+                            cell: vec![],
+
+//                             cell: self.level[y][x].iter()
+//                                 .map(|e| (
+//                                     e,
+//                                     self.is_prop(e.id, Stop) ||
+//                                     self.is_prop(e.id, Push) ||
+//                                     self.is_prop(e.id, Pull),
+//                                 )).collect(),
+
+                            cycle: Rc::clone(&self.cycle),
+                            muts: Rc::clone(&self.muts),
+                            waker: Rc::clone(&waker),
+                            yx: (y, x),
+                        }.shared();
+                        *shared_fut.borrow_mut() = Some(fut.clone());
+                        fut
+                    },
+                    Some(fut) => fut.clone(),
+                }
+            }))
+
+//             let cell = self.delta(e.coords, dir).map(
+//                 |(y, x)| self.level[y][x].iter()
+//                     .map(|e| (
+//                         e,
+//                         self.is_prop(e.id, Stop) ||
+//                         self.is_prop(e.id, Push) ||
+//                         self.is_prop(e.id, Pull),
+//                     )).collect()
+//                 );
+//             let cycle = Rc::clone(&self.cycle);
+//             let muts = Rc::clone(&self.muts);
+//             future::poll_fn(|cx| match cell {
+//                 None => Poll::Ready(None),
+//                 Some(cell) => {
+//                     let muts = muts.borrow();
+//                     let es = cell
+//                         .iter()
+//                         .copied()
+//                         .filter(|(e, _)| !muts.iter().any(|m| match m {
+//                             Mut::Mod(id, _) => *id == e.id,
+//                             _ => false,
+//                         }))
+//                         .collect::<Vec<_>>();
+//                     if es.iter().any(|(_, stopper)| *stopper && !cycle.get()) {
+//                         Poll::Pending
+//                     } else {
+//                         Poll::Ready(Some(es.into_iter().map(|(e, _)| e).collect()))
+//                     }
+//                 },
+//             })
+
+//             future::OptionFuture::from(self.delta(e.coords, dir).map(|(y, x)|
+//                 NeighborsFut{
+//                     cell: self.level[y][x].iter()
+//                         .map(|e| (
+//                             e,
+//                             self.is_prop(e.id, Stop) ||
+//                             self.is_prop(e.id, Push) ||
+//                             self.is_prop(e.id, Pull),
+//                         )).collect(),
+//                     muts: Rc::clone(&self.muts),
+//                     cycle: Rc::clone(&self.cycle),
+//                 }.map(move |ns| (ns, (y, x)))
+//             ))
+
         }
+
+//         fn neighbors(&self, e: &NewLiveEntity, dir: Direction) -> Option<(impl Iterator<Item = &NewLiveEntity>, (usize, usize))> {
+//             self.delta(e.coords, dir).map(|(y, x)| (
+//                 self.level[y][x].iter(),
+//                 (y, x),
+//             ))
+//         }
 
         fn is_or_has(e: &NewLiveEntity, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> impl Iterator<Item = Entity> {
             let t_or_n = e.e.to_text_or_noun();
@@ -357,7 +548,30 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             }
         }
 
-        fn intersect_(&self, e: &NewLiveEntity, adj: Option<Adjective>) -> impl Iterator<Item = &NewLiveEntity> {
+        // fn intersect_(&self, e: &NewLiveEntity, adj: Option<Adjective>) -> impl Iterator<Item = &NewLiveEntity> {
+        // fn intersect_<'a, 'b, 'c, 'd>(&'a self, e: &'b NewLiveEntity, adj: Option<Adjective>) ->
+            // iter::Filter<std::slice::Iter<'c, NewLiveEntity>, impl FnMut(&'d &'c NewLiveEntity) -> bool>
+
+//         fn intersect_<'a, 'b, 'c>(&'a self, e: &'b NewLiveEntity, adj: Option<Adjective>) ->
+//             iter::Filter<std::slice::Iter<'a, NewLiveEntity>, impl FnMut(&'c &'a NewLiveEntity) -> bool + 'fut>
+//         where
+//             'a: 'fut
+
+//         fn intersect_<'a>(&'a self, e: &NewLiveEntity, adj: Option<Adjective>) ->
+//             iter::Filter<std::slice::Iter<'a, NewLiveEntity>, impl FnMut(&&'a NewLiveEntity) -> bool + 'fut>
+//         where
+//             'a: 'fut
+
+
+//         fn intersect_<'a>(&'a self, e: &NewLiveEntity, adj: Option<Adjective>) ->
+//             iter::Filter<std::slice::Iter<'a, NewLiveEntity>, impl FnMut(&&'a NewLiveEntity) -> bool>
+//         where
+//             'a: 'fut
+
+        fn intersect_<'a>(&'a self, e: &NewLiveEntity, adj: Option<Adjective>) -> impl Iterator<Item = &'a NewLiveEntity>
+        where
+            'a: 'fut
+        {
             let ee = e.e;
             self.level[e.coords.0][e.coords.1]
                 .iter()
@@ -367,19 +581,27 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                 })
         }
 
-        fn apply_muts(&mut self, muts: Muts) {
+        fn mutate(&self, m: Mut) {
+            let coords = match m { Mut::Mod(_, coords, _) => Some(coords), _ => None };
+            self.muts.borrow_mut().push(m);
+            coords.map(|(y, x)| {
+                self.neighbor_futs[y][x].1.take().map(|w| w.wake());
+            });
+        }
+
+        fn apply_muts(&mut self) {
             use Mut::*;
             use MutMod::*;
             let (mods, inserts) = {
                 let mut mods = HashMap::new();
                 let mut inserts = vec![];
-                for m in muts {
-                    match m {
-                        Mod(id, m) => {
+                for m in self.muts.borrow().iter() {
+                    match *m {
+                        Mod(id, _, m) => {
                             let e = mods.entry(id).or_insert((vec![], false));
                             match m {
                                 Delete => e.1 = true,
-                                Move(y, x, d) => e.0.push((y, x, d)),
+                                Move(coords, d) => e.0.push((coords, d)),
                             }
                         },
                         Insert(e, c, d) => inserts.push((e, c, d)),
@@ -402,8 +624,8 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                     .0;
                 let mut e = self.level[y][x].remove(ix);
                 if !delete {
-                    let (y, x, dir) = moves[0];
-                    e.coords = (y, x);
+                    let (coords, dir) = moves[0];
+                    e.coords = coords;
                     e.dir = dir;
                     self.level[y][x].push(e);
                 }
@@ -416,98 +638,107 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             }
         }
 
-        fn move_with_ignore(&self, muts: &mut Muts, e: &NewLiveEntity, dir: Direction, ignore: Option<u64>) -> bool {
-            use Mut::*;
-            use MutMod::*;
+        // fn move_boxed<'a>(&'a self, e: &'a NewLiveEntity, dir: Direction) -> future::LocalBoxFuture<'a, bool> {
 
-            let is = |x: &NewLiveEntity, p| self.is_prop(x.id, p);
-            let is_open_shut = |a, b| is(a, Shut) && is(b, Open) || is(a, Open) && is(b, Shut);
+        fn move_boxed<'a, 'b>(&'a self, e: &'b NewLiveEntity, dir: Direction) -> impl Future<Output = bool> + 'b
+        where
+            'a: 'fut,
+            'fut: 'b
+        {
+            async move {
+                let is = |x: &NewLiveEntity, p| self.is_prop(x.id, p);
+                let is_open_shut = |a, b| is(a, Shut) && is(b, Open) || is(a, Open) && is(b, Shut);
 
-            // Check if we get stopped.
-            let proceed = 'proceed: {
-                let (neighbors, (y_, x_)) = match self.neighbors(e, dir) {
-                    Some((n, c)) => (
-                        n.filter(
-                            |x| ignore.map(|id| x.id != id).unwrap_or(true)
-                        ).collect::<Vec<_>>(),
-                        c,
-                    ),
-                    None => break 'proceed None, // stopped by level border
+                // TODO: break Weak by moving into it
+
+                // Check if we get stopped.
+                let proceed = 'proceed: {
+                    let (neighbors, coords) = match self.neighbors(e, dir).await {
+                        Some(x) => x,
+                        None => break 'proceed None, // stopped by level border
+                    };
+                    if neighbors.iter().any(|x| is(x, Stop) && !is_open_shut(x, e)) {
+                        break 'proceed None; // stopped by Stop
+                    }
+                    if neighbors.iter().any(|x| is(x, Pull) && !is_open_shut(x, e)) {
+                        break 'proceed None; // stopped by Pull
+                    }
+                    for x in &neighbors {
+                        // TODO: join over these move_'s instead of doing them sequentially?
+                        if is(x, Push) && !is_open_shut(x, e) && !self.move_(x, dir).await {
+                            break 'proceed None; // stopped by Push that was itself stopped by something
+                        }
+                    }
+                    self.moved(e, coords, dir);
+                    Some(neighbors)
                 };
-                if neighbors.iter().any(|x| is(x, Stop) && !is_open_shut(x, e)) {
-                    break 'proceed None; // stopped by Stop
-                }
-                if neighbors.iter().any(|x| is(x, Pull) && !is_open_shut(x, e)) {
-                    break 'proceed None; // stopped by Pull
-                }
-                let mut pushes = vec![];
-                if neighbors.iter().any(|x|
-                    is(x, Push) && !is_open_shut(x, e) && !self.move_(&mut pushes, x, dir))
-                {
-                    break 'proceed None; // stopped by Push that was itself stopped by something
-                }
-                muts.extend(pushes);
-                muts.push(Mod(e.id, Move(y_, x_, dir)));
-                Some(neighbors)
-            };
 
-            // Break if stopped and Weak.
-            let broken = proceed.is_none() && is(e, Weak);
-            if broken {
-                muts.push(Mod(e.id, Delete));
-            }
-
-            if let Some(ref neighbors) = proceed {
-                // Do open/shut.
-                if let Some(x) = neighbors.iter().find(|x| is_open_shut(x, e)) {
-                    muts.push(Mod(x.id, Delete));
-                    muts.push(Mod(e.id, Delete));
+                // Break if stopped and Weak.
+                let broken = proceed.is_none() && is(e, Weak);
+                if broken {
+                    self.delete(e);
                 }
-                // Do swap.
-                for n in neighbors.iter().filter(|n| is(n, Swap) || is(e, Swap)) {
-                    // TODO: ignore everything in this cell that is moving, not just e
-                    self.move_with_ignore(muts, n, dir.reverse(), Some(e.id));
-                }
-            }
 
-            if proceed.is_some() || broken {
-                // Do pull.
-                if let Some((ns, _)) = self.neighbors(e, dir.reverse()) {
-                    for n in ns {
-                        if is(n, Pull) {
-                            // TODO: ignore everything in this cell that is moving, not just e
-                            self.move_with_ignore(muts, n, dir, Some(e.id));
+                if let Some(ref neighbors) = proceed {
+                    // Do open/shut.
+                    if let Some(x) = neighbors.iter().find(|x| is_open_shut(x, e)) {
+                        self.delete(x);
+                        self.delete(e);
+                    }
+                    // Do swap.
+                    // TODO: join over these move_'s instead of doing them sequentially?
+                    for n in neighbors.iter().filter(|n| is(n, Swap) || is(e, Swap)) {
+                        self.move_(n, dir.reverse()).await;
+                    }
+                }
+
+                if proceed.is_some() || broken {
+                    // Do pull.
+                    if let Some((ns, _)) = self.neighbors(e, dir.reverse()).await {
+                        // TODO: join over these move_'s instead of doing them sequentially?
+                        for n in ns {
+                            if is(n, Pull) {
+                                self.move_(n, dir).await;
+                            }
                         }
                     }
                 }
-            }
 
-            return proceed.is_some() || broken;
+                proceed.is_some() || broken
+            }.boxed_local()
         }
     }
 
-    impl Logic for State {
-        fn move_(&self, muts: &mut Muts, e: &NewLiveEntity, dir: Direction) -> bool {
-            self.move_with_ignore(muts, e, dir, None)
+    impl<'fut> Logic<'fut> for State<'fut> {
+        async fn move_<'a, 'e>(&'a self, e: &'e NewLiveEntity, dir: Direction) -> bool
+        where
+            'a: 'fut,
+            'fut: 'e
+        {
+            self.move_boxed(e, dir).await
         }
 
-        fn delete(&self, muts: &mut Muts, e: &NewLiveEntity) {
-            muts.push(Mut::Mod(e.id, MutMod::Delete));
+        fn delete<'a>(&'a self, e: &'a NewLiveEntity) {
+            self.mutate(Mut::Mod(e.id, e.coords, MutMod::Delete));
             for x in self.has(&e) {
-                muts.push(Mut::Insert(x, e.coords, e.dir));
+                self.mutate(Mut::Insert(x, e.coords, e.dir));
             }
         }
 
-        fn intersect(&self, e: &NewLiveEntity, prop: Adjective) -> impl Iterator<Item = &NewLiveEntity> {
+        fn moved<'a>(&'a self, e: &'a NewLiveEntity, to: (usize, usize), dir: Direction) {
+            self.mutate(Mut::Mod(e.id, e.coords, MutMod::Move(to, dir)));
+        }
+
+        fn win(&self) {
+            self.mutate(Mut::Win);
+        }
+
+        fn intersect<'a: 'fut>(&'a self, e: &NewLiveEntity, prop: Adjective) -> impl Iterator<Item = &NewLiveEntity> {
             self.intersect_(e, Some(prop))
         }
 
-        fn intersect_any(&self, e: &NewLiveEntity) -> impl Iterator<Item = &NewLiveEntity> {
+        fn intersect_any<'a: 'fut>(&'a self, e: &NewLiveEntity) -> impl Iterator<Item = &NewLiveEntity> {
             self.intersect_(e, None)
-        }
-
-        fn win(&self, muts: &mut Muts) {
-            muts.push(Mut::Win);
         }
 
         fn is_prop(&self, id: u64, adj: Adjective) -> bool {
@@ -556,10 +787,11 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
 
     let mut state = State::new(l);
 
-    impl State {
-        fn do_props(&mut self, props: Vec<Adjective>, input: Input) {
+    impl<'fut> State<'fut> {
+        fn do_props<'a>(&'a mut self, props: Vec<Adjective>, input: Input) {
             for prop in props {
                 let mut es: Vec<&NewLiveEntity> = vec![];
+
                 for row in &self.level {
                     for cell in row {
                         for e in cell {
@@ -569,11 +801,44 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                         }
                     }
                 }
-                let mut muts = vec![];
-                for e in es {
-                    do_prop(self, &mut muts, e, prop, input);
+
+                self.muts = Default::default();
+                self.cycle = Default::default();
+
+                let ex = async_executor::LocalExecutor::new();
+
+                ex.spawn(future::join_all(es.into_iter().map(|e| do_prop(self, e, prop, input))));
+                // ex.spawn_many(es.into_iter().map(|e| do_prop(self, e, prop, input)));
+
+                while !ex.is_empty() {
+                    while ex.try_tick() {}
+                    self.cycle.set(true);
+                    for row in &self.neighbor_futs {
+                        for (_, waker) in row {
+                            waker.take().map(|w| w.wake());
+                        }
+                    }
+                    self.cycle = Default::default();
                 }
-                self.apply_muts(muts);
+
+
+//                 let mut pool = futures::executor::LocalPool::new();
+//                 pool.spawner().spawn_local(
+//                     future::join_all(
+//                         es.into_iter().map(|e| do_prop(self, e, prop, input))
+//                     ).then(|_| async move { done_fut.set(true); })
+//                 ).unwrap();
+//                 while !done.get() {
+//                     // The pool will stall if there is a movement cycle.
+//                     pool.run_until_stalled();
+//                     // Notify all current NeighborFut's that they are in a cycle.
+//                     self.cycle.set(true);
+//                     // TODO: wake?
+//                     // Any new NeighborFut's will use a different cycle.
+//                     // self.cycle = Default::default();
+//                 }
+
+                self.apply_muts();
             }
         }
 
@@ -612,34 +877,34 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
     return (from_new_level(&state.level), state.win);
 }
 
-fn do_prop(l: &impl Logic, muts: &mut Muts, this: &NewLiveEntity, prop: Adjective, input: Input) {
+fn do_prop<'b, 'a: 'b>(l: &'b impl Logic<'a>, this: &'a NewLiveEntity, prop: Adjective, input: Input) -> impl Future<Output = ()> { async move {
     match prop {
         You => if let Go(d) = input {
-            l.move_(muts, this, d);
+            l.move_(this, d).await;
         },
         Sink => {
             for x in l.intersect_any(this) {
-                l.delete(muts, x);
-                l.delete(muts, this);
+                l.delete(x);
+                l.delete(this);
                 break;
             }
         },
-        Defeat => for x in l.intersect(this, You) { l.delete(muts, x); },
-        Hot => for x in l.intersect(this, Melt) { l.delete(muts, x); },
+        Defeat => for x in l.intersect(this, You) { l.delete(x); },
+        Hot => for x in l.intersect(this, Melt) { l.delete(x); },
         Move =>
-            if !l.move_(muts, this, this.dir) {
-                l.move_(muts, this, this.dir.reverse());
+            if !l.move_(this, this.dir).await {
+                l.move_(this, this.dir.reverse()).await;
             },
         Shut => {
             for x in l.intersect(this, Open) {
-                l.delete(muts, x);
-                l.delete(muts, this);
+                l.delete(x);
+                l.delete(this);
                 break;
             }
         },
         Weak =>
             for _ in l.intersect_any(this) {
-                l.delete(muts, this);
+                l.delete(this);
                 break;
             },
         // Tele =>
@@ -647,12 +912,13 @@ fn do_prop(l: &impl Logic, muts: &mut Muts, this: &NewLiveEntity, prop: Adjectiv
         //         tele(x, this);
         //     },
         Shift =>
+            // TODO: join over these move_'s instead of doing them sequentially?
             for x in l.intersect_any(this) {
-                l.move_(muts, x, this.dir);
+                l.move_(x, this.dir).await;
             },
         Win =>
             for _ in l.intersect(this, You) {
-                l.win(muts);
+                l.win();
                 break;
             },
 
@@ -663,7 +929,7 @@ fn do_prop(l: &impl Logic, muts: &mut Muts, this: &NewLiveEntity, prop: Adjectiv
 
         _ => {},
     }
-}
+} }
 
 #[derive_the_basics]
 #[derive(EnumIter, EnumString, EnumCount, IntoStaticStr, BabaProps)]
