@@ -580,7 +580,6 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                 let mut mods = HashMap::new();
                 let mut inserts = vec![];
                 for m in self.muts.borrow().iter() {
-                    println!("{m:?}");
                     match *m {
                         Mod(id, _, m) => {
                             let e = mods.entry(id).or_insert((vec![], false));
@@ -601,7 +600,6 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                 id_to_cell
             };
             for (id, (moves, delete)) in mods {
-                println!("{id} {moves:?} {delete:?}");
                 let (y, x) = id_to_cell[&id];
                 let ix = self.level[y][x].iter()
                     .enumerate()
@@ -645,7 +643,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                         Some(x) => x,
                         None => break 'proceed None, // stopped by level border
                     };
-                    if neighbors.iter().any(|x| is(x, Stop) && !self.is_open_shut(x, e)) {
+                    if neighbors.iter().any(|x| is(x, Stop) && !is(x, Push) &&  !self.is_open_shut(x, e)) {
                         break 'proceed None; // stopped by Stop
                     }
                     if neighbors.iter().any(|x| is(x, Pull) && !self.is_open_shut(x, e)) {
@@ -1525,6 +1523,7 @@ mod tests {
     #[test]
     fn replay_tests() {
         let goldens = walkdir::WalkDir::new("goldens")
+            .sort_by_file_name()
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| !e.file_type().is_dir())
@@ -1537,7 +1536,7 @@ mod tests {
         }
         use Failure::*;
 
-        let first_failure = goldens.par_iter().find_map_any(|entry| {
+        let first_failure = goldens.par_iter().find_map_first(|entry| {
             println!("{}", entry.path().display());
             let (screens, inputs, palette_name) = load::<_, Replay>(entry.path()).unwrap();
             let mut got_screens = vec![screens[0].clone()];
@@ -1562,11 +1561,11 @@ mod tests {
                 }
 
                 got_screens.push(history[history.len()-1].clone());
-                if got_screens[i] != screens[i] {
+                if got_screens[i+1] != screens[i+1] {
                     return Some((entry.path(), ReplayMismatch((
-                        screens[i-1].clone(),
                         screens[i].clone(),
-                        got_screens[i].clone(),
+                        screens[i+1].clone(),
+                        got_screens[i+1].clone(),
                         palette_name.to_string(),
                         *input,
                     ), (
