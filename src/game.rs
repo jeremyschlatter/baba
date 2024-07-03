@@ -229,7 +229,6 @@ enum MutMod {
 #[derive(Debug)]
 enum Mut {
     Mod(u64, (usize, usize), MutMod),
-    Insert(Entity, (usize, usize), Direction),
     Win,
 }
 
@@ -576,49 +575,77 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
         fn apply_muts(&mut self) {
             use Mut::*;
             use MutMod::*;
-            let (mods, inserts) = {
-                let mut mods = HashMap::new();
-                let mut inserts = vec![];
-                for m in self.muts.borrow().iter() {
-                    match *m {
-                        Mod(id, _, m) => {
-                            let e = mods.entry(id).or_insert((vec![], false));
-                            match m {
-                                Delete => e.1 = true,
-                                Move(coords, d) => e.0.push((coords, d)),
-                            }
-                        },
-                        Insert(e, c, d) => inserts.push((e, c, d)),
-                        Win => self.win = true,
-                    };
+
+            // Canonize.
+            // If multiple mutations apply to one entity, only one of them will happen.
+            fn canon(a: MutMod, b: MutMod) -> MutMod {
+                match (a, b) {
+                    (Delete, _) => Delete,
+                    (_, Delete) => Delete,
+                    (Move((ya, xa), da), Move((yb, xb), db)) =>
+                        if ya < yb { a }
+                        else if yb < ya { b }
+                        else if xa < xb { a }
+                        else if xb < xa { b }
+                        else { match (da, db) {
+                            (Direction::Right, _) => a,
+                            (_, Direction::Right) => b,
+                            (Direction::Up, _) => a,
+                            (_, Direction::Up) => b,
+                            (Direction::Left, _) => a,
+                            (_, Direction::Left) => b,
+                            (Direction::Down, Direction::Down) => a,
+                        }},
                 }
-                (mods, inserts)
-            };
-            let id_to_cell = {
-                let mut id_to_cell = HashMap::new();
-                level_map(&self.level, |(y, x, _), e| { id_to_cell.insert(e.id, (y, x)); });
-                id_to_cell
-            };
-            for (id, (moves, delete)) in mods {
-                let (y, x) = id_to_cell[&id];
+            }
+
+            let mut mods = HashMap::new();
+            for m in self.muts.borrow().iter() {
+                match *m {
+                    Mod(id, _, m) => {
+                        mods.entry(id)
+                            .and_modify(|v| *v = canon(*v, m))
+                            .or_insert(m);
+                    },
+                    Win => self.win = true,
+                }
+            }
+
+            // order mods up-to-down, left-to-right, bottom-to-top
+            let mut ordered = vec![];
+            for row in &self.level {
+                for cell in row {
+                    for e in cell {
+                        if let Some(m) = mods.remove(&e.id) {
+                            ordered.push((e.id, e.coords, m));
+                        }
+                    }
+                }
+            }
+
+            for (id, (y, x), m) in ordered {
                 let ix = self.level[y][x].iter()
                     .enumerate()
                     .find(|(_, e)| e.id == id)
                     .unwrap()
                     .0;
                 let mut e = self.level[y][x].remove(ix);
-                if !delete {
-                    let ((y, x), dir) = moves[0];
-                    e.coords = (y, x);
-                    e.dir = dir;
-                    self.level[y][x].push(e);
+                match m {
+                    MutMod::Delete =>
+                        for thing in self.has(&e) {
+                            self.level[y][x].insert(ix, NewLiveEntity{
+                                dir: e.dir,
+                                id: { self.id += 1; self.id },
+                                e: thing,
+                                coords: (y, x),
+                            })
+                        },
+                    MutMod::Move((y, x), dir) => {
+                        e.coords = (y, x);
+                        e.dir = dir;
+                        self.level[y][x].push(e);
+                    },
                 }
-            }
-            for (e, (y, x), dir) in inserts {
-                let id = { self.id += 1; self.id };
-                self.level[y][x].push(NewLiveEntity{
-                    e, dir, id, coords: (y, x),
-                })
             }
         }
 
@@ -716,9 +743,6 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
 
         fn delete(&self, e: &NewLiveEntity) {
             self.mutate(Mut::Mod(e.id, e.coords, MutMod::Delete));
-            for x in self.has(&e) {
-                self.mutate(Mut::Insert(x, e.coords, e.dir));
-            }
         }
 
         fn moved(&self, e: &NewLiveEntity, to: (usize, usize), dir: Direction) {
@@ -2501,6 +2525,9 @@ pub async fn render_diff(path: &str) {
             for y in 0..bad.len() {
                 for x in 0..bad[0].len() {
                     if bad[y][x] != good[y][x] {
+                        println!("({y}, {x})");
+                        println!("good: {:?}", good[y][x]);
+                        println!("bad: {:?}", bad[y][x]);
                         let sq_w = bad_bounds.w / bad[0].len() as f32;
                         let sq_h = bad_bounds.h / bad.len() as f32;
                         draw_rectangle(
