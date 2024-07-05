@@ -224,7 +224,7 @@ type EntityRef = u64;
 #[derive(Clone, Copy, Debug)]
 enum MutMod {
     Delete,
-    Move((usize, usize), Direction), // the Direction is a rotation
+    Move(Direction),
 }
 #[derive(Debug)]
 enum Mut {
@@ -247,7 +247,7 @@ trait Logic {
 
     fn win(&self);
     fn delete(&self, e: &NewLiveEntity);
-    fn moved(&self, e: &NewLiveEntity, to: (usize, usize), dir: Direction);
+    fn moved(&self, e: &NewLiveEntity, dir: Direction);
 
     // fn set_dir(muts: &mut Muts, e: &NewLiveEntity, d: Direction);
 }
@@ -269,10 +269,9 @@ struct NeighborsFut {
     muts: Muts,
     cycle: Rc<cell::Cell<bool>>,
     waker: Rc<cell::Cell<Option<Waker>>>,
-    yx: (usize, usize),
 }
 impl Future for NeighborsFut {
-    type Output = (Vec<NewLiveEntity>, (usize, usize));
+    type Output = Vec<NewLiveEntity>;
 
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let muts = self.muts.borrow();
@@ -289,7 +288,7 @@ impl Future for NeighborsFut {
             self.waker.set(Some(cx.waker().clone()));
             Poll::Pending
         } else {
-            Poll::Ready((es.into_iter().map(|(e, _)| e).collect(), self.yx))
+            Poll::Ready(es.into_iter().map(|(e, _)| e).collect())
         }
     }
 }
@@ -426,7 +425,6 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                       cycle: Rc::clone(&self.cycle),
                       muts: Rc::clone(&self.muts),
                       waker: Rc::clone(&waker),
-                      yx: (y, x),
                   }.shared();
                   *shared_fut.borrow_mut() = Some(fut.clone());
                   fut
@@ -585,15 +583,15 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             // Canonize.
             // If multiple mutations apply to one entity, only one of them will happen.
             fn canon(a: MutMod, b: MutMod) -> MutMod {
-                fn weight(x: MutMod) -> (u8, ((usize, usize), u8)) {
+                fn weight(x: MutMod) -> (u8, u8) {
                     match x {
-                        Delete => (1, Default::default()),
-                        Move(yx, d) => (0, (yx, match d {
+                        Delete => (1, 0),
+                        Move(d) => (0, match d {
                             Direction::Right => 0,
                             Direction::Left => 1,
                             Direction::Up => 2,
                             Direction::Down => 3,
-                        })),
+                        }),
                     }
                 }
                 if weight(a) >= weight(b) { a } else { b }
@@ -635,7 +633,13 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                         for thing in self.has(e) {
                             self.level[y][x].insert(ix, thing)
                         },
-                    MutMod::Move((y, x), dir) => {
+                    MutMod::Move(dir) => {
+                        let (y, x) = match dir {
+                            Direction::Up =>    (y - 1, x),
+                            Direction::Down =>  (y + 1, x),
+                            Direction::Left =>  (y,     x - 1),
+                            Direction::Right => (y,     x + 1)
+                        };
                         e.coords = (y, x);
                         e.dir = dir;
                         self.level[y][x].push(e);
@@ -661,7 +665,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
 
                 // Check if we get stopped.
                 let proceed = 'proceed: {
-                    let (neighbors, coords) = match self.neighbors(e, dir).await {
+                    let neighbors = match self.neighbors(e, dir).await {
                         Some(x) => x,
                         None => break 'proceed None, // stopped by level border
                     };
@@ -677,7 +681,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                             break 'proceed None; // stopped by Push that was itself stopped by something
                         }
                     }
-                    self.moved(e, coords, dir);
+                    self.moved(e, dir);
                     Some(neighbors)
                 };
 
@@ -697,7 +701,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
 
                 if proceed.is_some() || broken {
                     // Do pull.
-                    if let Some((ns, _)) = self.neighbors(e, dir.reverse()).await {
+                    if let Some(ns) = self.neighbors(e, dir.reverse()).await {
                         // TODO: join over these move_'s instead of doing them sequentially?
                         for n in ns {
                             if is(&n, Pull) {
@@ -737,8 +741,8 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             self.mutate(Mut::Mod(e.id, e.coords, MutMod::Delete));
         }
 
-        fn moved(&self, e: &NewLiveEntity, to: (usize, usize), dir: Direction) {
-            self.mutate(Mut::Mod(e.id, e.coords, MutMod::Move(to, dir)));
+        fn moved(&self, e: &NewLiveEntity, dir: Direction) {
+            self.mutate(Mut::Mod(e.id, e.coords, MutMod::Move(dir)));
         }
 
         fn win(&self) {
@@ -816,6 +820,11 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
 
                 self.muts = Default::default();
                 self.cycle = Default::default();
+                for y in 0..self.height {
+                    for x in 0..self.width {
+                        self.neighbor_futs[y][x] = Default::default();
+                    }
+                }
 
                 {
                     let ex = async_executor::LocalExecutor::new();
@@ -1537,6 +1546,7 @@ mod tests {
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| !e.file_type().is_dir())
+            // .filter(|e| &e.path().display().to_string() == "goldens/2/7-0.ron.br")
             .collect::<Vec<_>>();
 
         enum Failure {
