@@ -692,13 +692,8 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                     self.delete(e);
                 }
 
+                // Do swap.
                 if let Some(ref neighbors) = proceed {
-                    // Do open/shut.
-                    if let Some(x) = neighbors.iter().find(|x| self.is_open_shut(x, e)) {
-                        self.delete(x);
-                        self.delete(e);
-                    }
-                    // Do swap.
                     // TODO: join over these move_'s instead of doing them sequentially?
                     for n in neighbors.iter().filter(|n| is(n, Swap) || is(e, Swap)) {
                         self.move_(n, dir.reverse()).await;
@@ -1620,7 +1615,10 @@ mod tests {
                     (&["run", "replay", "replay.ron.br"], "no win")
                 }
             };
-            println!("{} failed: {msg}", test.display());
+            // workaround to print to terminal despite test harness buffering everything
+            let _ = std::process::Command::new("echo")
+                .arg(format!("{} failed: {msg}", test.display()))
+                .status();
             assert!(std::process::Command::new("cargo")
                 .args(args)
                 .status()
@@ -2471,6 +2469,7 @@ pub async fn render_diff(path: &str) {
     );
     let font_size = 20.;
     let font_color = WHITE;
+    let mut did_print = false;
     loop {
         let width = screen_width();
         let height = screen_height();
@@ -2525,9 +2524,12 @@ pub async fn render_diff(path: &str) {
             for y in 0..bad.len() {
                 for x in 0..bad[0].len() {
                     if bad[y][x] != good[y][x] {
-                        println!("({y}, {x})");
-                        println!("good: {:?}", good[y][x]);
-                        println!("bad: {:?}", bad[y][x]);
+                        if !did_print {
+                            println!("({y}, {x})");
+                            println!("good: {:?}", good[y][x]);
+                            println!("bad: {:?}", bad[y][x]);
+                        }
+                        did_print = true;
                         let sq_w = bad_bounds.w / bad[0].len() as f32;
                         let sq_h = bad_bounds.h / bad.len() as f32;
                         draw_rectangle(
