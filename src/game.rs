@@ -579,24 +579,18 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             // Canonize.
             // If multiple mutations apply to one entity, only one of them will happen.
             fn canon(a: MutMod, b: MutMod) -> MutMod {
-                match (a, b) {
-                    (Delete, _) => Delete,
-                    (_, Delete) => Delete,
-                    (Move((ya, xa), da), Move((yb, xb), db)) =>
-                        if ya < yb { a }
-                        else if yb < ya { b }
-                        else if xa < xb { a }
-                        else if xb < xa { b }
-                        else { match (da, db) {
-                            (Direction::Right, _) => a,
-                            (_, Direction::Right) => b,
-                            (Direction::Up, _) => a,
-                            (_, Direction::Up) => b,
-                            (Direction::Left, _) => a,
-                            (_, Direction::Left) => b,
-                            (Direction::Down, Direction::Down) => a,
-                        }},
+                fn weight(x: MutMod) -> (u8, ((usize, usize), u8)) {
+                    match x {
+                        Delete => (1, Default::default()),
+                        Move(yx, d) => (0, (yx, match d {
+                            Direction::Right => 0,
+                            Direction::Left => 1,
+                            Direction::Up => 2,
+                            Direction::Down => 3,
+                        })),
+                    }
                 }
+                if weight(a) >= weight(b) { a } else { b }
             }
 
             let mut mods = HashMap::new();
