@@ -487,7 +487,7 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
 //             ))
 //         }
 
-        fn is_or_has(e: &NewLiveEntity, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> impl Iterator<Item = Entity> {
+        fn is_or_has(id: &mut u64, e: NewLiveEntity, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> impl Iterator<Item = NewLiveEntity> {
             let t_or_n = e.e.to_text_or_noun();
             let [yes, no] = array_map_ref(&rules,
                 |v| v.iter()
@@ -498,24 +498,30 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
             let mut result = yes.difference(&no).cloned().collect::<Vec<TextOrNoun>>();
             result.sort();
             result
-              .into_iter()
-              .map(move |x| match x {
-                  TextOrNoun::Noun(n) => Entity::Noun(n),
-                  TextOrNoun::Text => Entity::Text(match t_or_n {
-                      TextOrNoun::Noun(n) => Text::Object(n),
-                      TextOrNoun::Text => Text::Text,
-                  }),
-
-              })
+                .into_iter()
+                .map(move |x| NewLiveEntity{
+                    e: match x {
+                        TextOrNoun::Noun(n) => Entity::Noun(n),
+                        TextOrNoun::Text => Entity::Text(match t_or_n {
+                            TextOrNoun::Noun(n) => Text::Object(n),
+                            TextOrNoun::Text => Text::Text,
+                        }),
+                    },
+                    dir: e.dir,
+                    id: { *id += 1; *id },
+                    coords: e.coords,
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
         }
 
-        fn has(&self, e: &NewLiveEntity) -> impl Iterator<Item = Entity> {
-            State::is_or_has(e, &self.rules_cache.1)
+        fn has(&mut self, e: NewLiveEntity) -> impl Iterator<Item = NewLiveEntity> {
+            State::is_or_has(&mut self.id, e, &self.rules_cache.1)
         }
 
-        fn is_noun(&self, e: &NewLiveEntity) -> impl Iterator<Item = Entity> {
-            let v = State::is_or_has(e, &self.rules_cache.2).collect::<Vec<_>>();
-            if v.iter().any(|x| *x == e.e) {
+        fn is_noun(&mut self, e: NewLiveEntity) -> impl Iterator<Item = NewLiveEntity> {
+            let v = State::is_or_has(&mut self.id, e, &self.rules_cache.2).collect::<Vec<_>>();
+            if v.iter().any(|x| x.e == e.e) {
                 vec![] // x is x
             } else {
                 v
@@ -626,13 +632,8 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                 let mut e = self.level[y][x].remove(ix);
                 match m {
                     MutMod::Delete =>
-                        for thing in self.has(&e) {
-                            self.level[y][x].insert(ix, NewLiveEntity{
-                                dir: e.dir,
-                                id: { self.id += 1; self.id },
-                                e: thing,
-                                coords: (y, x),
-                            })
+                        for thing in self.has(e) {
+                            self.level[y][x].insert(ix, thing)
                         },
                     MutMod::Move((y, x), dir) => {
                         e.coords = (y, x);
@@ -854,20 +855,14 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
         }
 
         fn things_are_other_things(&mut self) {
-            for y in 0..self.height {
-                for x in 0..self.width {
+            for x in 0..self.width {
+                for y in 0..self.height {
                     for i in (0..self.level[y][x].len()).rev() {
-                        let changed = self.is_noun(&self.level[y][x][i]).collect::<Vec<_>>();
-                        let n = changed.len();
-                        if n > 0 {
-                            let dir = self.level[y][x].remove(i).dir;
-                            for (i, new) in changed.into_iter().rev().enumerate() {
-                                self.level[y][x].insert(i, NewLiveEntity{
-                                    e: new,
-                                    id: { self.id += 1; self.id },
-                                    coords: (y, x),
-                                    dir,
-                                });
+                        let changed = self.is_noun(self.level[y][x][i]).collect::<Vec<_>>();
+                        if !changed.is_empty() {
+                            self.level[y][x].remove(i);
+                            for new in changed.into_iter().rev() {
+                                self.level[y][x].insert(i, new)
                             }
                         }
                     }
@@ -2523,7 +2518,6 @@ pub async fn render_diff(path: &str) {
                             println!("good: {:?}", good[y][x]);
                             println!("bad: {:?}", bad[y][x]);
                         }
-                        did_print = true;
                         let sq_w = bad_bounds.w / bad[0].len() as f32;
                         let sq_h = bad_bounds.h / bad.len() as f32;
                         draw_rectangle(
@@ -2543,6 +2537,7 @@ pub async fn render_diff(path: &str) {
                     }
                 }
             }
+            did_print = true;
         }
 
         next_frame().await;
