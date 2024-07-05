@@ -714,8 +714,10 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
         fn intersect_(&self, e: &NewLiveEntity, adj: Option<Adjective>) -> std::vec::IntoIter<&NewLiveEntity> {
         // fn intersect_<'a>(&'a self, e: &NewLiveEntity, adj: Option<Adjective>) -> iter::Filter<std::slice::Iter<'_, NewLiveEntity>, impl FnMut(&&'a NewLiveEntity) -> bool>
             let ee = e.e;
+            let is_float = self.is_prop(e.id, Float);
             self.level[e.coords.0][e.coords.1]
                 .iter()
+                .filter(|a| self.is_prop(a.id, Float) == is_float)
                 .filter(move |x| match adj {
                     None => x.e != ee,
                     Some(a) => self.is_prop(x.id, a),
