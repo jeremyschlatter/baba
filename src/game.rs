@@ -682,6 +682,13 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
                         }
                     }
                     self.moved(e, dir);
+                    for x in &neighbors {
+                        if self.is_open_shut(x, e) {
+                            self.delete(x);
+                            self.delete(e);
+                        }
+                        break;
+                    }
                     Some(neighbors)
                 };
 
@@ -894,6 +901,23 @@ fn step(l: &Level, input: Input, _n: u32) -> (Level, bool) {
     return (from_new_level(&state.level), state.win);
 }
 
+// fn move_into(l: &impl Logic, this: NewLiveEntity, that: NewLiveEntity, prop: Adjective, dir: Direction) -> (Bool, fn) {
+//     if is_open_shut(l, this, that) {
+//         return (
+//             True,
+//             || {
+//                 l.delete(this);
+//                 l.delete(that);
+//             }
+//         );
+//     }
+//     if is(this, Weak) {
+//     }
+//     match prop {
+//         Stop =>
+//     }
+// }
+
 fn do_prop(l: &impl Logic, this: NewLiveEntity, prop: Adjective, input: Input) -> impl Future<Output = ()> + '_ { async move {
     let this = &this;
     match prop {
@@ -1066,6 +1090,81 @@ impl Adjective {
         if active { (p.2, p.3) } else { (p.0, p.1) }
     }
 }
+
+
+/*
+
+
+struct Move {
+  id
+  dir
+}
+
+fn move(id, dir) {
+  for obj in front {
+    receive(obj, id, dir)
+  }
+}
+
+
+You move in the input direction.
+if something moves into Stop:
+  - its movement is stopped
+    - unless is_open_shut or this is Weak
+if something moves into Push
+  - Push moves in the same direction
+    - unless is_open_shut
+    - if that move is stopped,
+      then the incoming move is also stopped
+if You intersect Win, then win
+if something intersects Sink, this and that get deleted
+if You intersect Defeat, You get deleted
+if Melt intersects Hot, Melt gets deleted
+Move moves in its current direction
+  - if its movement is stopped, it reverses direction and moves
+      (nothing happens if that second move gets stopped)
+If Open intersects Shut, both Open and Shut get deleted
+Float things are on a separate dimension for all game logic
+if Weak gets stopped or intersects anything, it gets deleted
+if anything intersects Tele, that thing moves to a random other Tele
+if something adjacent to Pull moves away from it, Pull moves in the same direction
+if anything intersects Shift, that thing moves in the direction of Shift
+if something moves into Swap, Swap moves in the opposite direction
+
+
+
+concepts:
+- move:
+  - can be stopped
+    - resolving this requires recursion
+    - stopping can cause deletion
+    - stopping can stop previous moves
+  - can move objects behind it (Pull)
+    - if these are stopped, the original move is NOT stopped
+  - can move objects in front of it (Push)
+    - if these are stopped, the original move is stopped
+- deletion
+
+
+primary challenge: resolving move
+
+fn can_move(id, dir) -> bool {
+  if at_edge(id, dir) {
+    return false
+  }
+  if
+}
+
+
+struct Move {
+  id
+  dir
+  moves
+  deletes
+}
+
+
+*/
 
 #[derive_the_basics]
 #[derive(IntoStaticStr, BabaProps)]
