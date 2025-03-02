@@ -2550,7 +2550,7 @@ fn is(t_or_n: TextOrNoun, rules: &RulesCache, quality: Adjective) -> bool {
 
 type Diff = (Level, Level, Level, String, Input);
 
-pub async fn render_diff(path: &str) {
+pub async fn render_diff(path: String) {
     let (start, good, bad, palette_name, input) = load::<_, Diff>(path).unwrap();
     let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
     let sprites = load_sprite_map();
@@ -2698,7 +2698,7 @@ fn step_animation(s: &AnimationState, prev: &Level, new: &Level) -> AnimationSta
     r
 }
 
-pub async fn replay(path: &str) {
+pub async fn replay(path: String) {
     let (screens, inputs, palette_name) = load::<_, Replay>(path).unwrap();
     let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
     let sprites = load_sprite_map();
@@ -3695,9 +3695,9 @@ void main() {
 }
 ";
 
-pub async fn record_golden(level: &str, output: &str) {
+pub async fn record_golden(level: String, output: String) {
     let sprites = load_sprite_map();
-    let (result, _) = play_level(&sprites, (0., None), level, None).await;
+    let (result, _) = play_level(&sprites, (0., None), &level, None).await;
     if let LevelResult::Win(history) = result {
         save(&format!("goldens/{output}.ron.br"), &history).unwrap();
     }

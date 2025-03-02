@@ -23,6 +23,7 @@
           rm target/debug/info.plist
           rm 'Baba Is Clone.app'
         '';
+        "baba" = "cargo run --bin baba $@";
       };
     in {
       devShell = stdenvNoCC.mkDerivation {
