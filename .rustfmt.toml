@@ -4,10 +4,6 @@
 # Use more aggressive heuristics for keeping things on one line
 use_small_heuristics = "Max"
 
-# Don't reorder imports - keep them as they are
-reorder_imports = false
-reorder_modules = false
-
 # More permissive line width
 max_width = 120
 

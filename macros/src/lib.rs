@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
-use syn::{parse_macro_input, DeriveInput};
 use quote::quote;
+use syn::{parse_macro_input, DeriveInput};
 
 #[proc_macro_attribute]
 pub fn derive_the_basics(_attr: TokenStream, item: TokenStream) -> TokenStream {

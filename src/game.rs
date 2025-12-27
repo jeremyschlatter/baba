@@ -7,13 +7,13 @@ use anyhow::{anyhow, Result};
 use itertools::{iproduct, Itertools};
 use macroquad::prelude::*;
 use miniquad::graphics::*;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use strum::{EnumCount, EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
 
 use std::{
+    collections::{HashMap, HashSet, VecDeque},
     io::{Read, Write},
     iter,
-    collections::{HashMap, HashSet, VecDeque},
     str::FromStr,
 };
 
@@ -410,8 +410,8 @@ where
         Level(LevelName),
         Blank,
     }
-    use Thing::*;
     use self::Text::*;
+    use Thing::*;
 
     fn to_cell(id: &mut u64, legend: &HashMap<String, LegendValue>, c: char) -> Vec<LiveEntity> {
         let mut make_cell = |e| {
@@ -628,8 +628,8 @@ type Rule = (Subject, Negatable<Predicate>);
 
 #[cfg(test)]
 mod tests {
-    use rayon::prelude::*;
     use crate::*;
+    use rayon::prelude::*;
     #[test]
     fn scan_rules() {
         let is_a = |a| Yes(IsAdjective(a));
@@ -804,7 +804,7 @@ fn scan_rules_text(rules: &mut Vec<(Vec<Index>, Rule)>, text: &[(Index, Text)]) 
         Predicates(IsOrHas, ListState, bool, Vec<(Vec<Index>, Subject)>, Option<(Vec<Index>, Predicate)>),
     }
     use ScanState::*;
-    use Text::{Is, And, Not, Has, Object, Adjective};
+    use Text::{Adjective, And, Has, Is, Not, Object};
     let zero = |mut v: Vec<(Vec<Index>, Subject)>| {
         v.clear();
         Subjects(Incomplete(None), v, true)
@@ -2566,7 +2566,7 @@ fn load_sprite_map() -> SpriteMap {
     }
 
     fn load_level_label(icons: &[String], l: LevelName) -> (LevelName, CPUTexture) {
-        use image::{ImageBuffer, imageops};
+        use image::{imageops, ImageBuffer};
         let original_sprite_path = "resources/original/Data/Sprites";
         let custom_sprite_path = "resources";
         fn shrinkwrap(img: image::RgbaImage) -> image::RgbaImage {
