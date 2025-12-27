@@ -1,20 +1,2 @@
-# Rustfmt configuration (stable options only)
-# Goal: tasteful blend of current style and rustfmt defaults
-
-# Use more aggressive heuristics for keeping things on one line
 use_small_heuristics = "Max"
-
-# More permissive line width
 max_width = 120
-
-# Keep chains on one line when possible
-chain_width = 80
-
-# Keep function call arguments compact when possible
-fn_call_width = 100
-
-# Keep struct literals compact
-struct_lit_width = 40
-
-# Keep array and vec compact
-array_width = 100

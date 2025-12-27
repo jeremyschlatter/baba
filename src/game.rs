@@ -388,11 +388,7 @@ where
                                     }
                                 } else {
                                     let d = x.next().and_then(|s| Direction::from_str(s).ok()).unwrap_or(Dir::Right);
-                                    LiveEntity {
-                                        dir: d,
-                                        id: next_id(),
-                                        e: Entity::Noun(Noun::from_str(n).expect(n)),
-                                    }
+                                    LiveEntity { dir: d, id: next_id(), e: Entity::Noun(Noun::from_str(n).expect(n)) }
                                 }
                             })
                             .collect(),
@@ -901,16 +897,15 @@ where
     I: Iterator<Item = ((usize, usize), &'a Cell)>,
 {
     fn chunks(i: Vec<Vec<(Index, Text)>>) -> Vec<Vec<Vec<(Index, Text)>>> {
-        i.iter()
-            .fold(vec![vec![]], |mut acc: Vec<Vec<Vec<(Index, Text)>>>, v: &Vec<(Index, Text)>| {
-                if v.len() == 0 {
-                    acc.push(vec![]);
-                } else {
-                    let l = acc.len();
-                    acc[l - 1].push(v.clone());
-                }
-                acc
-            })
+        i.iter().fold(vec![vec![]], |mut acc: Vec<Vec<Vec<(Index, Text)>>>, v: &Vec<(Index, Text)>| {
+            if v.len() == 0 {
+                acc.push(vec![]);
+            } else {
+                let l = acc.len();
+                acc[l - 1].push(v.clone());
+            }
+            acc
+        })
     }
 
     fn branches(input: Vec<Vec<(Index, Text)>>) -> Vec<Vec<(Index, Text)>> {
@@ -928,12 +923,7 @@ where
                     .collect()
             })
             .iter()
-            .map(|ixs| {
-                ixs.iter()
-                    .enumerate()
-                    .map(|(i, &j)| input[i][j])
-                    .collect::<Vec<(Index, Text)>>()
-            })
+            .map(|ixs| ixs.iter().enumerate().map(|(i, &j)| input[i][j]).collect::<Vec<(Index, Text)>>())
             .collect()
     }
 
@@ -1060,11 +1050,7 @@ pub enum Input {
 use Input::*;
 
 fn max_id(level: &Level) -> u64 {
-    level
-        .iter()
-        .flat_map(|row| row.iter().flat_map(|cell| cell.iter().map(|e| e.id)))
-        .max()
-        .unwrap_or(0)
+    level.iter().flat_map(|row| row.iter().flat_map(|cell| cell.iter().map(|e| e.id))).max().unwrap_or(0)
 }
 
 fn array_map_ref<T, F: Fn(&T) -> U, U>(a: &[T; 2], f: F) -> [U; 2] {
@@ -1126,17 +1112,12 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
             Dir::Left => (-1, 0),
             Dir::Right => (1, 0),
         };
-        (
-            0.max(x as i16 + dx).min(width as i16 - 1) as usize,
-            0.max(y as i16 + dy).min(height as i16 - 1) as usize,
-        )
+        (0.max(x as i16 + dx).min(width as i16 - 1) as usize, 0.max(y as i16 + dy).min(height as i16 - 1) as usize)
     }
 
     fn entities(level: &Level) -> impl Iterator<Item = ((usize, usize, usize), LiveEntity)> + '_ {
         level.iter().enumerate().flat_map(move |(y, row)| {
-            row.iter()
-                .enumerate()
-                .flat_map(move |(x, cell)| cell.iter().enumerate().map(move |(i, e)| ((x, y, i), *e)))
+            row.iter().enumerate().flat_map(move |(x, cell)| cell.iter().enumerate().map(move |(i, e)| ((x, y, i), *e)))
         })
     }
 
@@ -1221,11 +1202,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                         i,
                         d,
                         m| {
-            let arrow = Arrow {
-                dir: d,
-                status: Status::Pending { flipped: false },
-                is_move: m,
-            };
+            let arrow = Arrow { dir: d, status: Status::Pending { flipped: false }, is_move: m };
             queue.push_back((x, y, i));
             movements.insert((x, y, i), arrow);
         };
@@ -1455,11 +1432,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                                     _ => false,
                                 } {
                                     let c = level[col][row].remove(i);
-                                    level[y][x].push(LiveEntity {
-                                        dir: d,
-                                        id: c.id,
-                                        e: Entity::Noun(Noun::Cursor),
-                                    });
+                                    level[y][x].push(LiveEntity { dir: d, id: c.id, e: Entity::Noun(Noun::Cursor) });
                                     break 'top;
                                 }
                             }
@@ -1669,9 +1642,7 @@ type Diff = (Level, Level, Level, String, Input);
 
 pub async fn render_diff(path: &str) {
     let (start, good, bad, palette_name, input) = load::<_, Diff>(path).unwrap();
-    let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png"))
-        .await
-        .unwrap();
+    let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
     let sprites = load_sprite_map();
     let render = |s, x, y, w, h| {
         render_level(
@@ -1787,12 +1758,7 @@ fn step_animation(s: &AnimationState, prev: &Level, new: &Level) -> AnimationSta
     let prev = locations(prev);
     let new = locations(new);
     let mut r = AnimationState {
-        movements: s
-            .movements
-            .iter()
-            .filter(|(id, _)| new.contains_key(id))
-            .map(|(&k, &v)| (k, v))
-            .collect(),
+        movements: s.movements.iter().filter(|(id, _)| new.contains_key(id)).map(|(&k, &v)| (k, v)).collect(),
     };
     for (id, loc) in new {
         r.movements
@@ -1812,9 +1778,7 @@ fn step_animation(s: &AnimationState, prev: &Level, new: &Level) -> AnimationSta
 
 pub async fn replay(path: &str) {
     let (screens, inputs, palette_name) = load::<_, Replay>(path).unwrap();
-    let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png"))
-        .await
-        .unwrap();
+    let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
     let sprites = load_sprite_map();
 
     let mut last_input: (f64, Option<KeyCode>) = (0., None);
@@ -1911,14 +1875,10 @@ where
         (t, Some(x)) => *x != k || repeat(a, now - *t),
         (_, None) => true,
     };
-    keymap
-        .iter()
-        .filter(|(k, a)| is_key_down(*k) && can_repeat(prev, *k, *a))
-        .next()
-        .map(|&(k, a)| {
-            *prev = (now, Some(k));
-            a
-        })
+    keymap.iter().filter(|(k, a)| is_key_down(*k) && can_repeat(prev, *k, *a)).next().map(|&(k, a)| {
+        *prev = (now, Some(k));
+        a
+    })
 }
 
 #[derive(Debug)]
@@ -1929,10 +1889,7 @@ struct LevelGraph {
 
 fn parse_level_graph<P: AsRef<std::path::Path>>(path: P) -> Result<LevelGraph> {
     fn to_level_name(p: &std::path::Path) -> Result<LevelName> {
-        let f = p
-            .file_name()
-            .and_then(|x| x.to_str())
-            .ok_or(anyhow!("un-string-able path: {p:?}"))?;
+        let f = p.file_name().and_then(|x| x.to_str()).ok_or(anyhow!("un-string-able path: {p:?}"))?;
         let nm = f.split("-").next().ok_or(anyhow!("need dashes in level name: {p:?}"))?;
         if p.is_dir() {
             return Ok(SubWorld(nm.parse()?, 0));
@@ -1964,10 +1921,7 @@ fn parse_level_graph<P: AsRef<std::path::Path>>(path: P) -> Result<LevelGraph> {
             },
         }
     } else {
-        LevelGraph {
-            path: path.into(),
-            sub_levels: HashMap::new(),
-        }
+        LevelGraph { path: path.into(), sub_levels: HashMap::new() }
     })
 }
 
@@ -2029,11 +1983,7 @@ where
                 for i in 0..level[y][x].len() {
                     if let Entity::Noun(Level(l)) = level[y][x][i].e {
                         if l == at {
-                            level[y][x].push(LiveEntity {
-                                dir: Dir::Right,
-                                id,
-                                e: Entity::Noun(Cursor),
-                            });
+                            level[y][x].push(LiveEntity { dir: Dir::Right, id, e: Entity::Noun(Cursor) });
                             return true;
                         }
                     }
@@ -2060,9 +2010,7 @@ where
     let mut current_state = &history[0];
     let mut anim_states = vec![AnimationState::from_level(&level)];
 
-    let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png"))
-        .await
-        .unwrap();
+    let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
 
     let anim_time = 2.0;
     let border_color = palette.get_pixel(1, 0);
@@ -2202,10 +2150,7 @@ where
                         bounds.y + (bounds.h - congrats.height() * scale) / 2.,
                         WHITE,
                         DrawTextureParams {
-                            dest_size: Some(Vec2 {
-                                x: congrats.width() * scale,
-                                y: congrats.height() * scale,
-                            }),
+                            dest_size: Some(Vec2 { x: congrats.width() * scale, y: congrats.height() * scale }),
                             ..Default::default()
                         },
                     );
@@ -2266,10 +2211,7 @@ fn render_level(
             x,
             y,
             WHITE,
-            DrawTextureParams {
-                dest_size: Some(Vec2 { x: sq, y: sq }),
-                ..Default::default()
-            },
+            DrawTextureParams { dest_size: Some(Vec2 { x: sq, y: sq }), ..Default::default() },
         );
     };
 
@@ -2281,10 +2223,7 @@ fn render_level(
             offset_x,
             offset_y,
             WHITE,
-            DrawTextureParams {
-                dest_size: Some(Vec2 { x: game_width, y: game_height }),
-                ..Default::default()
-            },
+            DrawTextureParams { dest_size: Some(Vec2 { x: game_width, y: game_height }), ..Default::default() },
         );
     }
 
@@ -2653,23 +2592,14 @@ fn load_sprite_map() -> SpriteMap {
                         .multi_cartesian_product()
                         .map(|n| {
                             if let &[r, a, l, b] = &n[..] {
-                                FuseState(Neighborhood {
-                                    right: *r,
-                                    above: *a,
-                                    left: *l,
-                                    below: *b,
-                                })
+                                FuseState(Neighborhood { right: *r, above: *a, left: *l, below: *b })
                             } else {
                                 panic!("logic error")
                             }
                         })
                         .collect::<Vec<_>>(),
-                    Walk => iproduct!((0..4), Direction::iter())
-                        .map(|(n, d)| WalkState(n, d))
-                        .collect::<Vec<_>>(),
-                    Look => iproduct!((0..4), Direction::iter())
-                        .map(|(n, d)| LookState(n, d))
-                        .collect::<Vec<_>>(),
+                    Walk => iproduct!((0..4), Direction::iter()).map(|(n, d)| WalkState(n, d)).collect::<Vec<_>>(),
+                    Look => iproduct!((0..4), Direction::iter()).map(|(n, d)| LookState(n, d)).collect::<Vec<_>>(),
                     Tick => (0..4).map(|t| TickState(t)).collect::<Vec<_>>(),
                     Diag => [[true, false]; 8]
                         .iter()
@@ -2737,31 +2667,19 @@ lazy_static! {
         BlendFactor::OneMinusValue(BlendValue::SourceAlpha),
     ));
     static ref SPRITES_MATERIAL: Material = load_material(
-        ShaderSource::Glsl {
-            vertex: DEFAULT_VERTEX_SHADER,
-            fragment: SPRITE_FRAGMENT_SHADER,
-        },
+        ShaderSource::Glsl { vertex: DEFAULT_VERTEX_SHADER, fragment: SPRITE_FRAGMENT_SHADER },
         MaterialParams {
             uniforms: vec![("color".to_string(), UniformType::Float3)],
-            pipeline_params: PipelineParams {
-                color_blend: *BLEND_ALPHA,
-                ..Default::default()
-            },
+            pipeline_params: PipelineParams { color_blend: *BLEND_ALPHA, ..Default::default() },
             ..Default::default()
         },
     )
     .unwrap();
     static ref MASK_MATERIAL: Material = load_material(
-        ShaderSource::Glsl {
-            vertex: DEFAULT_VERTEX_SHADER,
-            fragment: MASK_FRAGMENT_SHADER,
-        },
+        ShaderSource::Glsl { vertex: DEFAULT_VERTEX_SHADER, fragment: MASK_FRAGMENT_SHADER },
         MaterialParams {
             uniforms: vec![("radius".to_string(), UniformType::Float1)],
-            pipeline_params: PipelineParams {
-                color_blend: *BLEND_ALPHA,
-                ..Default::default()
-            },
+            pipeline_params: PipelineParams { color_blend: *BLEND_ALPHA, ..Default::default() },
             ..Default::default()
         },
     )
