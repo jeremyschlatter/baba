@@ -9,22 +9,13 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     #[command(about = "Record a golden session")]
-    Golden {
-        level: String,
-        output: String,
-    },
+    Golden { level: String, output: String },
     #[command(about = "Play a specific level")]
-    Level {
-        level: String,
-    },
+    Level { level: String },
     #[command(about = "View a replay file")]
-    Replay {
-        replay: String,
-    },
+    Replay { replay: String },
     #[command(about = "Render a diff (for testing)")]
-    RenderDiff {
-        diff: String,
-    },
+    RenderDiff { diff: String },
 }
 use Commands::*;
 
@@ -33,12 +24,16 @@ async fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        None => { game::play_overworld("levels/").await; },
+        None => {
+            game::play_overworld("levels/").await;
+        }
         Some(c) => match c {
-            Level { level } => { game::play_overworld(&level).await; },
-            Golden{ level, output } => game::record_golden(&level, &output).await,
+            Level { level } => {
+                game::play_overworld(&level).await;
+            }
+            Golden { level, output } => game::record_golden(&level, &output).await,
             Replay { replay } => game::replay(&replay).await,
             RenderDiff { diff } => game::render_diff(&diff).await,
-        }
+        },
     }
 }
