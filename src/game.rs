@@ -10,7 +10,12 @@ use miniquad::graphics::*;
 use serde::{Serialize, Deserialize};
 use strum::{EnumCount, EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
 
-use std::{io::{Read, Write}, iter, collections::{HashMap, HashSet, VecDeque}, str::FromStr};
+use std::{
+    io::{Read, Write},
+    iter,
+    collections::{HashMap, HashSet, VecDeque},
+    str::FromStr,
+};
 
 #[derive_the_basics]
 enum SpriteVariant {
@@ -61,6 +66,7 @@ use SpriteVariantState::*;
 #[derive(EnumIter, EnumString, IntoStaticStr, BabaProps)]
 #[strum(serialize_all = "snake_case")]
 #[props(u32, u32, u32, u32, u32, u32, SpriteVariant)]
+#[rustfmt::skip]
 pub enum Noun {
     #[props(0, 3, 4, 0, 4, 1, Walk)] Baba,
     #[props(2, 2, 2, 1, 2, 2, Walk)] Keke,
@@ -131,7 +137,11 @@ impl Noun {
     }
     fn text_color(&self, active: bool) -> (u32, u32) {
         let p = self.props();
-        if active { (p.4, p.5) } else { (p.2, p.3) }
+        if active {
+            (p.4, p.5)
+        } else {
+            (p.2, p.3)
+        }
     }
     fn sprite_variant(&self) -> SpriteVariant {
         self.props().6
@@ -158,6 +168,7 @@ impl Default for LevelName {
 #[derive(EnumIter, EnumString, EnumCount, IntoStaticStr, BabaProps)]
 #[strum(serialize_all = "snake_case")]
 #[props(u32, u32, u32, u32)]
+#[rustfmt::skip]
 pub enum Adjective {
     #[props(4, 0, 4, 1)] You,
     #[props(5, 0, 5, 1)] Stop,
@@ -191,7 +202,11 @@ use Adjective::*;
 impl Adjective {
     fn color(&self, active: bool) -> (u32, u32) {
         let p = self.props();
-        if active { (p.2, p.3) } else { (p.0, p.1) }
+        if active {
+            (p.2, p.3)
+        } else {
+            (p.0, p.1)
+        }
     }
 }
 
@@ -199,6 +214,7 @@ impl Adjective {
 #[derive(IntoStaticStr, BabaProps)]
 #[props(u32, u32, u32, u32)]
 #[strum(serialize_all = "snake_case")]
+#[rustfmt::skip]
 pub enum Text {
     #[props(0, 1, 0, 3)] Is,
     #[props(0, 1, 0, 3)] And,
@@ -212,7 +228,11 @@ pub enum Text {
 impl Text {
     fn color(&self, active: bool) -> (u32, u32) {
         let p = self.props();
-        if active { (p.2, p.3) } else { (p.0, p.1) }
+        if active {
+            (p.2, p.3)
+        } else {
+            (p.0, p.1)
+        }
     }
 }
 impl FromStr for Text {
@@ -223,9 +243,10 @@ impl FromStr for Text {
             "and" => Ok(Text::And),
             "has" => Ok(Text::Has),
             "not" => Ok(Text::Not),
-            _ => Noun::from_str(s).map(Text::Object)
-                  .or(Adjective::from_str(s).map(Text::Adjective))
-                  .or(Err(format!("can't parse this as Text: '{s}'"))),
+            _ => Noun::from_str(s)
+                .map(Text::Object)
+                .or(Adjective::from_str(s).map(Text::Adjective))
+                .or(Err(format!("can't parse this as Text: '{s}'"))),
         }
     }
 }
@@ -283,43 +304,40 @@ impl Entity {
     }
 }
 
-fn all_entities() -> impl Iterator<Item=Entity> {
-    Noun::iter().map(Entity::Noun)
-    .chain(iter::once(Entity::Text(Text::Is)))
-    .chain(iter::once(Entity::Text(Text::Not)))
-    .chain(iter::once(Entity::Text(Text::And)))
-    .chain(iter::once(Entity::Text(Text::Has)))
-    .chain(iter::once(Entity::Text(Text::Text)))
-    .chain(iter::once(Entity::Text(Text::Empty)))
-    .chain(Noun::iter().map(move |n| Entity::Text(Text::Object(n))))
-    .chain(Adjective::iter().map(move |a| Entity::Text(Text::Adjective(a))))
+fn all_entities() -> impl Iterator<Item = Entity> {
+    Noun::iter()
+        .map(Entity::Noun)
+        .chain(iter::once(Entity::Text(Text::Is)))
+        .chain(iter::once(Entity::Text(Text::Not)))
+        .chain(iter::once(Entity::Text(Text::And)))
+        .chain(iter::once(Entity::Text(Text::Has)))
+        .chain(iter::once(Entity::Text(Text::Text)))
+        .chain(iter::once(Entity::Text(Text::Empty)))
+        .chain(Noun::iter().map(move |n| Entity::Text(Text::Object(n))))
+        .chain(Adjective::iter().map(move |a| Entity::Text(Text::Adjective(a))))
 }
 
 type Cell = Vec<LiveEntity>;
 type Level = Vec<Vec<Cell>>;
 
-pub fn parse_level<P>(name: P) -> (
-    Level,
-    String,
-    Vec<String>,
-    HashMap<Noun, (u32, u32)>,
-    HashMap<Text, [(u32, u32); 2]>,
-)
+pub fn parse_level<P>(
+    name: P,
+) -> (Level, String, Vec<String>, HashMap<Noun, (u32, u32)>, HashMap<Text, [(u32, u32); 2]>)
 where
-    P: AsRef<std::path::Path>
+    P: AsRef<std::path::Path>,
 {
     let s = std::fs::read_to_string(name).unwrap();
-    let metas: HashMap<&str, &str> =
-        s.lines()
-             .take_while(|&s| s != "---" && s != "+++")
-             .map(|s| {
-                 let mut x = s.split(" = ");
-                 (x.next().unwrap(), x.next().unwrap())
-             })
-             .collect();
-    let right_pad: usize =
-        metas.get("right pad").and_then(|s| s.parse().ok()).unwrap_or_default();
-    let backgrounds = metas.get("background")
+    let metas: HashMap<&str, &str> = s
+        .lines()
+        .take_while(|&s| s != "---" && s != "+++")
+        .map(|s| {
+            let mut x = s.split(" = ");
+            (x.next().unwrap(), x.next().unwrap())
+        })
+        .collect();
+    let right_pad: usize = metas.get("right pad").and_then(|s| s.parse().ok()).unwrap_or_default();
+    let backgrounds = metas
+        .get("background")
         .unwrap_or(&"")
         .split(" ")
         .map(|x| x.to_string())
@@ -332,56 +350,57 @@ where
     let icons = level_icon_names();
     use LegendValue::*;
     let mut id = 0;
-    let mut next_id = || -> u64 { id += 1; id };
-    let legend: HashMap<String, LegendValue> =
-        metas.iter()
-             .filter(|(&k, _)| k.chars().count() == 1)
-             .map(|(&k, &c)| (
-                k.to_string(), {
-                    if let Ok(n) = Noun::from_str(c) {
-                        Abbreviation(n)
-                    } else {
-                        FullCell(
-                            c.split(" on ")
-                             .collect::<Vec<&str>>()
-                             .iter()
-                             .rev()
-                             .map(|s| {
-                                 let mut x = s.split(" ");
-                                 let n = x.next().unwrap();
-                                 let unquoted = n.trim_matches('"');
-                                 if n == "map" {
-                                     let n = x.next().unwrap().parse().unwrap();
-                                     let icon = x.next().unwrap();
-                                     let icon = icons.iter().position(|i| i == icon).unwrap();
-                                     LiveEntity {
-                                         dir: Dir::Right,
-                                         id: next_id(),
-                                         e: Entity::Noun(Noun::Level(SubWorld(n, icon))),
-                                     }
-                                 } else if unquoted != n {
-                                     LiveEntity {
-                                         dir: Dir::Right,
-                                         id: next_id(),
-                                         e: Entity::Text(unquoted.parse().unwrap()),
-                                     }
-                                 } else {
-                                     let d = x.next()
-                                         .and_then(|s| Direction::from_str(s).ok())
-                                         .unwrap_or(Dir::Right);
-                                     LiveEntity {
-                                         dir: d,
-                                         id: next_id(),
-                                         e: Entity::Noun(Noun::from_str(n).expect(n)),
-                                     }
+    let mut next_id = || -> u64 {
+        id += 1;
+        id
+    };
+    let legend: HashMap<String, LegendValue> = metas
+        .iter()
+        .filter(|(&k, _)| k.chars().count() == 1)
+        .map(|(&k, &c)| {
+            (k.to_string(), {
+                if let Ok(n) = Noun::from_str(c) {
+                    Abbreviation(n)
+                } else {
+                    FullCell(
+                        c.split(" on ")
+                            .collect::<Vec<&str>>()
+                            .iter()
+                            .rev()
+                            .map(|s| {
+                                let mut x = s.split(" ");
+                                let n = x.next().unwrap();
+                                let unquoted = n.trim_matches('"');
+                                if n == "map" {
+                                    let n = x.next().unwrap().parse().unwrap();
+                                    let icon = x.next().unwrap();
+                                    let icon = icons.iter().position(|i| i == icon).unwrap();
+                                    LiveEntity {
+                                        dir: Dir::Right,
+                                        id: next_id(),
+                                        e: Entity::Noun(Noun::Level(SubWorld(n, icon))),
+                                    }
+                                } else if unquoted != n {
+                                    LiveEntity {
+                                        dir: Dir::Right,
+                                        id: next_id(),
+                                        e: Entity::Text(unquoted.parse().unwrap()),
+                                    }
+                                } else {
+                                    let d = x.next().and_then(|s| Direction::from_str(s).ok()).unwrap_or(Dir::Right);
+                                    LiveEntity {
+                                        dir: d,
+                                        id: next_id(),
+                                        e: Entity::Noun(Noun::from_str(n).expect(n)),
+                                    }
                                 }
-                             })
-                             .collect()
-                        )
-                    }
+                            })
+                            .collect(),
+                    )
                 }
-             ))
-             .collect();
+            })
+        })
+        .collect();
     let map: Vec<&str> = s.lines().skip_while(|s| *s != "---").skip(1).collect();
 
     enum Thing {
@@ -395,10 +414,13 @@ where
     use self::Text::*;
 
     fn to_cell(id: &mut u64, legend: &HashMap<String, LegendValue>, c: char) -> Vec<LiveEntity> {
-        let mut make_cell = |e| { *id += 1; vec![LiveEntity{ dir: Dir::Right, id: *id, e}] };
+        let mut make_cell = |e| {
+            *id += 1;
+            vec![LiveEntity { dir: Dir::Right, id: *id, e }]
+        };
         match (
-            legend.get(c.to_string().to_lowercase().as_str())
-            , match c {
+            legend.get(c.to_string().to_lowercase().as_str()),
+            match c {
                 '✥' => Adj(You),
                 '⊘' => Adj(Stop),
                 '↦' => Adj(Push),
@@ -467,22 +489,26 @@ where
 
                 '•' => Level(Parent),
 
-                _ => Blank
-            })
-        {
-            (Some(FullCell(cell)), _) => if c.is_uppercase() {
-                if let Entity::Noun(n) = cell[cell.len() - 1].e {
-                    make_cell(Entity::Text(Object(n)))
+                _ => Blank,
+            },
+        ) {
+            (Some(FullCell(cell)), _) => {
+                if c.is_uppercase() {
+                    if let Entity::Noun(n) = cell[cell.len() - 1].e {
+                        make_cell(Entity::Text(Object(n)))
+                    } else {
+                        vec![]
+                    }
                 } else {
-                    vec![]
+                    cell.clone()
                 }
-            } else {
-                cell.clone()
             }
-            (Some(Abbreviation(noun)), _) => if c.is_uppercase() {
-                make_cell(Entity::Text(Object(*noun)))
-            } else {
-                make_cell(Entity::Noun(*noun))
+            (Some(Abbreviation(noun)), _) => {
+                if c.is_uppercase() {
+                    make_cell(Entity::Text(Object(*noun)))
+                } else {
+                    make_cell(Entity::Noun(*noun))
+                }
             }
             (_, Adj(adj)) => make_cell(Entity::Text(Adjective(adj))),
             (_, Txt(txt)) => make_cell(Entity::Text(txt)),
@@ -493,19 +519,28 @@ where
     }
 
     let max = map.iter().map(|l| l.chars().count()).max().unwrap_or_default() + right_pad;
-    let level = map.split(|s| *s == "---")
-        .map(|layer| layer.iter().map(
-            |line| line.chars()
-                .map(|c| to_cell(&mut id, &legend, c))
-                .chain(iter::repeat(vec![]))
-                .take(max)
-                .collect::<Vec<Vec<LiveEntity>>>()).collect::<Vec<Vec<Vec<LiveEntity>>>>())
-        .fold(vec![], |level: Vec<Vec<Vec<LiveEntity>>>, layer: Vec<Vec<Vec<LiveEntity>>>|
-            level.into_iter()
-                 .zip_longest(layer.into_iter())
-                 .map(|x| x.or_default())
-                 .map(|(level_line, layer_line)|
-                     level_line.into_iter()
+    let level = map
+        .split(|s| *s == "---")
+        .map(|layer| {
+            layer
+                .iter()
+                .map(|line| {
+                    line.chars()
+                        .map(|c| to_cell(&mut id, &legend, c))
+                        .chain(iter::repeat(vec![]))
+                        .take(max)
+                        .collect::<Vec<Vec<LiveEntity>>>()
+                })
+                .collect::<Vec<Vec<Vec<LiveEntity>>>>()
+        })
+        .fold(vec![], |level: Vec<Vec<Vec<LiveEntity>>>, layer: Vec<Vec<Vec<LiveEntity>>>| {
+            level
+                .into_iter()
+                .zip_longest(layer.into_iter())
+                .map(|x| x.or_default())
+                .map(|(level_line, layer_line)| {
+                    level_line
+                        .into_iter()
                         .zip_longest(layer_line.into_iter())
                         .map(|x| x.or_default())
                         .map(|(mut level_cell, layer_cell)| {
@@ -513,8 +548,9 @@ where
                             level_cell
                         })
                         .collect::<Vec<Vec<LiveEntity>>>()
-                     )
-                 .collect::<Vec<Vec<Vec<LiveEntity>>>>());
+                })
+                .collect::<Vec<Vec<Vec<LiveEntity>>>>()
+        });
 
     (
         level,
@@ -541,17 +577,13 @@ where
             let mut text_color_overrides = HashMap::new();
             for (k, v) in metas.iter() {
                 if k.starts_with("+ ") && k.contains('"') {
-                    let v: [u32; 4] = [0..1, 2..3, 4..5, 6..7].map(
-                        |x| v[x].parse().unwrap());
+                    let v: [u32; 4] = [0..1, 2..3, 4..5, 6..7].map(|x| v[x].parse().unwrap());
                     for k in k[2..].split(",") {
                         let k = k.trim_matches('"');
                         if k != "" {
                             let c = to_cell(&mut id, &legend, k.chars().next().unwrap());
                             if let Entity::Noun(n) = c[0].e {
-                                text_color_overrides.insert(
-                                    crate::Text::Object(n),
-                                    [(v[0], v[1]), (v[2], v[3])],
-                                );
+                                text_color_overrides.insert(crate::Text::Object(n), [(v[0], v[1]), (v[2], v[3])]);
                             }
                         }
                     }
@@ -605,13 +637,7 @@ mod tests {
         let n = |n| Yes(TextOrNoun::Noun(n));
         let tests = [
             (vec!["baba", "is", "you"], vec![(n(Baba), is_a(You))]),
-            (
-                vec!["baba", "is", "wall", "is", "push"],
-                vec![
-                    (n(Baba), is(Wall)),
-                    (n(Wall), is_a(Push)),
-                ]
-            ),
+            (vec!["baba", "is", "wall", "is", "push"], vec![(n(Baba), is(Wall)), (n(Wall), is_a(Push))]),
             (vec!["baba", "and"], vec![]),
             (vec!["wall", "and", "keke", "is", "push"], vec![(n(Wall), is_a(Push)), (n(Keke), is_a(Push))]),
             (vec!["wall", "is", "push", "and", "stop"], vec![(n(Wall), is_a(Push)), (n(Wall), is_a(Stop))]),
@@ -625,10 +651,9 @@ mod tests {
                     (n(Keke), is(Wall)),
                     // notably absent: (Rock, is(Door))
                     (n(Wall), is(Door)),
-                ]
+                ],
             ),
             (vec!["baba", "flag", "is", "win"], vec![(n(Flag), is_a(Win))]),
-
             // TODO
             // (
             //     vec!["baba", "is", "not", "wall", "is", "push"],
@@ -637,32 +662,37 @@ mod tests {
             //         (not wall is push),
             //     ]
             // ),
-
         ];
         for (input, output) in tests {
             let mut id = 0;
             let mut result = vec![];
-            let input_ =
-                input.iter()
-                     .map(|s| match (s, Text::from_str(s)) {
-                         (&"", _)   => vec![],
-                         (_, Ok(t)) => vec![t],
-                         _ => panic!("unrecognized word: '{}'", s),
-                     })
-                     .map(|t| t.iter()
-                               .map(|t| LiveEntity {
-                                   dir: Dir::Right,
-                                   id: { id += 1; id },
-                                   e: Entity::Text(*t)
-                               })
-                               .collect::<Vec<LiveEntity>>())
-                     .map(|c| ((0, 0), c))
-                     .collect::<Vec<((usize, usize), Vec<LiveEntity>)>>();
+            let input_ = input
+                .iter()
+                .map(|s| match (s, Text::from_str(s)) {
+                    (&"", _) => vec![],
+                    (_, Ok(t)) => vec![t],
+                    _ => panic!("unrecognized word: '{}'", s),
+                })
+                .map(|t| {
+                    t.iter()
+                        .map(|t| LiveEntity {
+                            dir: Dir::Right,
+                            id: {
+                                id += 1;
+                                id
+                            },
+                            e: Entity::Text(*t),
+                        })
+                        .collect::<Vec<LiveEntity>>()
+                })
+                .map(|c| ((0, 0), c))
+                .collect::<Vec<((usize, usize), Vec<LiveEntity>)>>();
             scan_rules_line(&mut result, input_.iter().map(|(i, c)| (*i, c)));
             assert_eq!(
                 output.into_iter().collect::<HashSet<Rule>>(),
                 result.into_iter().map(|x| x.1).collect::<HashSet<Rule>>(),
-                "input: {:?}", input,
+                "input: {:?}",
+                input,
             );
         }
     }
@@ -694,36 +724,40 @@ mod tests {
                             history.pop();
                         }
                     } else {
-                        let (screen, win) = step(
-                            &history[history.len()-1], *input, history.len() as u32);
+                        let (screen, win) = step(&history[history.len() - 1], *input, history.len() as u32);
                         if i < inputs.len() - 1 && win {
-                            return Some((entry.path(), EarlyWin((screens, inputs[..i+1].to_vec(), palette_name.to_string()))))
+                            return Some((
+                                entry.path(),
+                                EarlyWin((screens, inputs[..i + 1].to_vec(), palette_name.to_string())),
+                            ));
                         }
                         if i == inputs.len() - 1 && !win {
-                            return Some((entry.path(), NoWin((screens, inputs, palette_name.to_string()))))
+                            return Some((entry.path(), NoWin((screens, inputs, palette_name.to_string()))));
                         }
-                        if screen != history[history.len()-1] {
+                        if screen != history[history.len() - 1] {
                             history.push(screen);
                         }
                     }
-                    screens.push(history[history.len()-1].clone());
+                    screens.push(history[history.len() - 1].clone());
                 }
                 screens
             };
             for i in 0..screens.len() - 1 {
                 if got_screens[i + 1] != screens[i + 1] {
                     println!("{}", entry.path().display());
-                    return Some((entry.path(), ReplayMismatch((
-                        screens[i].clone(),
-                        screens[i+1].clone(),
-                        got_screens[i+1].clone(),
-                        palette_name.to_string(),
-                        inputs[i],
-                    ), (
-                        got_screens,
-                        inputs,
-                        palette_name.to_string(),
-                    ))));
+                    return Some((
+                        entry.path(),
+                        ReplayMismatch(
+                            (
+                                screens[i].clone(),
+                                screens[i + 1].clone(),
+                                got_screens[i + 1].clone(),
+                                palette_name.to_string(),
+                                inputs[i],
+                            ),
+                            (got_screens, inputs, palette_name.to_string()),
+                        ),
+                    ));
                 }
             }
             None
@@ -735,22 +769,18 @@ mod tests {
                     save::<_, Diff>("diff.ron.br", &diff).unwrap();
                     save::<_, Replay>("replay.ron.br", &replay).unwrap();
                     (&["run", "render-diff", "diff.ron.br"], "replay mismatch. saved diff and replay")
-                },
+                }
                 EarlyWin(replay) => {
                     save::<_, Replay>("replay.ron.br", &replay).unwrap();
                     (&["run", "replay", "replay.ron.br"], "early win")
-                },
+                }
                 NoWin(replay) => {
                     save::<_, Replay>("replay.ron.br", &replay).unwrap();
                     (&["run", "replay", "replay.ron.br"], "no win")
                 }
             };
             println!("{} failed: {msg}", test.display());
-            assert!(std::process::Command::new("cargo")
-                .args(args)
-                .status()
-                .unwrap()
-                .success());
+            assert!(std::process::Command::new("cargo").args(args).status().unwrap().success());
             assert!(false, "{}", msg)
         }
     }
@@ -764,7 +794,10 @@ fn scan_rules_text(rules: &mut Vec<(Vec<Index>, Rule)>, text: &[(Index, Text)]) 
     }
     use ListState::*;
     #[derive(Debug)]
-    enum IsOrHas { Is, Has }
+    enum IsOrHas {
+        Is,
+        Has,
+    }
     #[derive(Debug)]
     enum ScanState {
         Subjects(ListState, Vec<(Vec<Index>, Subject)>, bool),
@@ -779,10 +812,18 @@ fn scan_rules_text(rules: &mut Vec<(Vec<Index>, Rule)>, text: &[(Index, Text)]) 
     let mut state = zero(vec![]);
     let mut i = 0;
     fn cat_ixs(head: Option<Index>, tail: Index) -> Vec<Index> {
-        if let Some(ix) = head { vec![ix, tail] } else { vec![tail] }
+        if let Some(ix) = head {
+            vec![ix, tail]
+        } else {
+            vec![tail]
+        }
     }
     fn from_bool<T>(b: bool, t: T) -> Negatable<T> {
-        if b { Yes(t) } else { No(t) }
+        if b {
+            Yes(t)
+        } else {
+            No(t)
+        }
     }
     while i < text.len() {
         let (ix, t) = text[i];
@@ -794,27 +835,28 @@ fn scan_rules_text(rules: &mut Vec<(Vec<Index>, Rule)>, text: &[(Index, Text)]) 
                     Object(noun) => {
                         subjs.push((cat_ixs(opt_ix, ix), from_bool(yes_or_no, TextOrNoun::Noun(noun))));
                         Subjects(Complete, subjs, true)
-                    },
+                    }
                     Text::Text => {
                         subjs.push((cat_ixs(opt_ix, ix), from_bool(yes_or_no, TextOrNoun::Text)));
                         Subjects(Complete, subjs, true)
-                    },
+                    }
                     _ => zero(subjs),
                 },
                 Complete => match t {
                     Is => Predicates(IsOrHas::Is, Incomplete(Some(ix)), true, subjs, None),
                     Has => Predicates(IsOrHas::Has, Incomplete(Some(ix)), true, subjs, None),
                     And => Subjects(Incomplete(Some(ix)), subjs, true),
-                    _ => { i -= 1; zero(subjs) },
+                    _ => {
+                        i -= 1;
+                        zero(subjs)
+                    }
                 },
             },
             Predicates(is_or_has, s, yes_or_no, subjs, pred) => match s {
                 Incomplete(opt_ix) => match (pred, t) {
                     (_, Not) => Predicates(is_or_has, s, !yes_or_no, subjs, None),
-                    (Some(_), Is) =>
-                        Predicates(IsOrHas::Is, Incomplete(Some(ix)), true, subjs, None),
-                    (Some(_), Has) =>
-                        Predicates(IsOrHas::Has, Incomplete(Some(ix)), true, subjs, None),
+                    (Some(_), Is) => Predicates(IsOrHas::Is, Incomplete(Some(ix)), true, subjs, None),
+                    (Some(_), Has) => Predicates(IsOrHas::Has, Incomplete(Some(ix)), true, subjs, None),
                     _ => match match is_or_has {
                         IsOrHas::Is => match t {
                             Object(noun) => Some(IsNoun(TextOrNoun::Noun(noun))),
@@ -826,7 +868,7 @@ fn scan_rules_text(rules: &mut Vec<(Vec<Index>, Rule)>, text: &[(Index, Text)]) 
                             Object(noun) => Some(HasNoun(TextOrNoun::Noun(noun))),
                             Text::Text => Some(HasNoun(TextOrNoun::Text)),
                             _ => None,
-                        }
+                        },
                     } {
                         Some(pred) => {
                             for (ixs, s) in &subjs {
@@ -835,8 +877,11 @@ fn scan_rules_text(rules: &mut Vec<(Vec<Index>, Rule)>, text: &[(Index, Text)]) 
                                 rules.push((ixs, (*s, from_bool(yes_or_no, pred))));
                             }
                             Predicates(is_or_has, Complete, true, subjs, Some((cat_ixs(opt_ix, ix), pred)))
-                        },
-                        None => { i -= 1; zero(subjs) },
+                        }
+                        None => {
+                            i -= 1;
+                            zero(subjs)
+                        }
                     },
                 },
                 Complete => match t {
@@ -844,7 +889,7 @@ fn scan_rules_text(rules: &mut Vec<(Vec<Index>, Rule)>, text: &[(Index, Text)]) 
                     _ => {
                         i -= 2; // to pick up the last subject word, if present
                         zero(subjs)
-                    },
+                    }
                 },
             },
         };
@@ -856,44 +901,53 @@ where
     I: Iterator<Item = ((usize, usize), &'a Cell)>,
 {
     fn chunks(i: Vec<Vec<(Index, Text)>>) -> Vec<Vec<Vec<(Index, Text)>>> {
-        i.iter().fold(vec![vec![]], |mut acc: Vec<Vec<Vec<(Index, Text)>>>, v: &Vec<(Index, Text)>| {
-            if v.len() == 0 {
-                acc.push(vec![]);
-            } else {
-                let l = acc.len();
-                acc[l - 1].push(v.clone());
-            }
-            acc
-        })
+        i.iter()
+            .fold(vec![vec![]], |mut acc: Vec<Vec<Vec<(Index, Text)>>>, v: &Vec<(Index, Text)>| {
+                if v.len() == 0 {
+                    acc.push(vec![]);
+                } else {
+                    let l = acc.len();
+                    acc[l - 1].push(v.clone());
+                }
+                acc
+            })
     }
 
     fn branches(input: Vec<Vec<(Index, Text)>>) -> Vec<Vec<(Index, Text)>> {
-        input.iter()
-         .fold(vec![vec![]], |acc: Vec<Vec<usize>>, v: &Vec<(Index, Text)>| {
-             (0..v.len()).flat_map(|j| {
-                 let mut x = acc.clone();
-                 for xx in &mut x {
-                     xx.push(j);
-                 }
-                 x
-             }).collect()
-         })
-         .iter()
-         .map(|ixs| ixs.iter()
-                       .enumerate()
-                       .map(|(i, &j)| input[i][j])
-                       .collect::<Vec<(Index, Text)>>())
-         .collect()
+        input
+            .iter()
+            .fold(vec![vec![]], |acc: Vec<Vec<usize>>, v: &Vec<(Index, Text)>| {
+                (0..v.len())
+                    .flat_map(|j| {
+                        let mut x = acc.clone();
+                        for xx in &mut x {
+                            xx.push(j);
+                        }
+                        x
+                    })
+                    .collect()
+            })
+            .iter()
+            .map(|ixs| {
+                ixs.iter()
+                    .enumerate()
+                    .map(|(i, &j)| input[i][j])
+                    .collect::<Vec<(Index, Text)>>()
+            })
+            .collect()
     }
 
-    let x: Vec<Vec<(Index, Text)>> =
-       line.map(|((x, y), c)| c.iter()
-                     .enumerate()
-                     .filter_map(|(i, &e)| match e.e {
-                         Entity::Text(t) => Some(((x, y, i), t)),
-                         _ => None,
-                     }).collect()
-           ).collect();
+    let x: Vec<Vec<(Index, Text)>> = line
+        .map(|((x, y), c)| {
+            c.iter()
+                .enumerate()
+                .filter_map(|(i, &e)| match e.e {
+                    Entity::Text(t) => Some(((x, y, i), t)),
+                    _ => None,
+                })
+                .collect()
+        })
+        .collect();
 
     for chunk in chunks(x) {
         for branch in branches(chunk) {
@@ -909,11 +963,7 @@ fn scan_rules(l: &Level) -> Vec<(Vec<Index>, Rule)> {
 
     if l.len() > 0 {
         for (y, row) in l.iter().enumerate() {
-            scan_rules_line(
-                &mut rules,
-                row.iter()
-                   .enumerate()
-                   .map(|(x, cell)| ((x, y), cell)));
+            scan_rules_line(&mut rules, row.iter().enumerate().map(|(x, cell)| ((x, y), cell)));
         }
         for col in 0..l[0].len() {
             let mut row: i32 = -1;
@@ -926,7 +976,7 @@ fn scan_rules(l: &Level) -> Vec<(Vec<Index>, Rule)> {
                     } else {
                         Some(((col, row as usize), &l[row as usize][col]))
                     }
-                })
+                }),
             );
         }
     }
@@ -940,9 +990,7 @@ fn scan_rules_no_index(l: &Level) -> Vec<Rule> {
     rules.into_iter().map(|x| x.1).collect()
 }
 
-fn partition_overridden_rules<A>(rules: Vec<(A, Rule)>)
-    -> (Vec<(A, Rule)>, Vec<(A, Rule)>)
-{
+fn partition_overridden_rules<A>(rules: Vec<(A, Rule)>) -> (Vec<(A, Rule)>, Vec<(A, Rule)>) {
     let (no, yes) = {
         let mut no = vec![];
         let mut yes = vec![];
@@ -955,15 +1003,17 @@ fn partition_overridden_rules<A>(rules: Vec<(A, Rule)>)
         (no, yes)
     };
 
-    let (vetoed, the_rest): (Vec<_>, _) = yes.into_iter().partition(|(_, (s, p))|
-        no.iter().any(|(_, (ns, np))| np == p && {
-            // need to yield true iff ns is a superset of s
-            match (s, ns) {
-                (Yes(s), No(ns)) => s != ns,
-                (s, ns) => s == ns,
+    let (vetoed, the_rest): (Vec<_>, _) = yes.into_iter().partition(|(_, (s, p))| {
+        no.iter().any(|(_, (ns, np))| {
+            np == p && {
+                // need to yield true iff ns is a superset of s
+                match (s, ns) {
+                    (Yes(s), No(ns)) => s != ns,
+                    (s, ns) => s == ns,
+                }
             }
         })
-    );
+    });
 
     // x is x
     let (x_is_x, the_rest): (Vec<_>, _) = the_rest.into_iter().partition(|r| match r.1 {
@@ -971,8 +1021,12 @@ fn partition_overridden_rules<A>(rules: Vec<(A, Rule)>)
         _ => false,
     });
 
-    let unchanging = x_is_x.iter()
-        .map(|(_, (x, _))| match x { Yes(x) => *x, No(_) => panic!("logic error") })
+    let unchanging = x_is_x
+        .iter()
+        .map(|(_, (x, _))| match x {
+            Yes(x) => *x,
+            No(_) => panic!("logic error"),
+        })
         .collect::<HashSet<TextOrNoun>>();
 
     let (overridden, the_rest) = the_rest.into_iter().partition(|r| match r.1 {
@@ -982,7 +1036,7 @@ fn partition_overridden_rules<A>(rules: Vec<(A, Rule)>)
 
     fn reapply<A, C>(v: Vec<(A, (Subject, Predicate))>, c: C) -> Vec<(A, Rule)>
     where
-        C: Fn(Predicate) -> Negatable<Predicate>
+        C: Fn(Predicate) -> Negatable<Predicate>,
     {
         v.into_iter().map(|(a, (s, p))| (a, (s, c(p)))).collect()
     }
@@ -1006,9 +1060,9 @@ pub enum Input {
 use Input::*;
 
 fn max_id(level: &Level) -> u64 {
-    level.iter()
-        .flat_map(|row| row.iter()
-            .flat_map(|cell| cell.iter().map(|e| e.id)))
+    level
+        .iter()
+        .flat_map(|row| row.iter().flat_map(|cell| cell.iter().map(|e| e.id)))
         .max()
         .unwrap_or(0)
 }
@@ -1019,16 +1073,12 @@ fn array_map_ref<T, F: Fn(&T) -> U, U>(a: &[T; 2], f: F) -> [U; 2] {
 
 type RulesCache = (
     [[Vec<Subject>; 2]; Adjective::COUNT], // is adjective
-    [Vec<(Subject, TextOrNoun)>; 2], // has noun
-    [Vec<(Subject, TextOrNoun)>; 2], // is noun
+    [Vec<(Subject, TextOrNoun)>; 2],       // has noun
+    [Vec<(Subject, TextOrNoun)>; 2],       // is noun
 );
 
 fn cache_rules(rules: &Vec<Rule>) -> RulesCache {
-    let mut result: RulesCache = (
-        core::array::from_fn(|_| [vec![], vec![]]),
-        [vec![], vec![]],
-        [vec![], vec![]],
-    );
+    let mut result: RulesCache = (core::array::from_fn(|_| [vec![], vec![]]), [vec![], vec![]], [vec![], vec![]]);
     result.0[Push as usize][0].push(Yes(TextOrNoun::Text));
     for (s, p) in rules {
         let (yes, p) = p.elim();
@@ -1052,8 +1102,9 @@ fn subject_match(level: &Level, x: usize, y: usize, i: usize, s: &Subject) -> bo
 }
 
 fn is(level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache, quality: Adjective) -> bool {
-    let [yes, no] = array_map_ref(&rules.0[quality as usize],
-        |v: &Vec<Subject>| v.iter().any(|s| subject_match(level, x, y, i, s)));
+    let [yes, no] = array_map_ref(&rules.0[quality as usize], |v: &Vec<Subject>| {
+        v.iter().any(|s| subject_match(level, x, y, i, s))
+    });
     yes && !no
 }
 
@@ -1070,52 +1121,61 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
         let width = level[0].len();
         let height = level.len();
         let (dx, dy) = match d {
-            Dir::Up    => (0, -1),
-            Dir::Down  => (0,  1),
-            Dir::Left  => (-1, 0),
-            Dir::Right => ( 1, 0),
+            Dir::Up => (0, -1),
+            Dir::Down => (0, 1),
+            Dir::Left => (-1, 0),
+            Dir::Right => (1, 0),
         };
-        (0.max(x as i16 + dx).min(width as i16 - 1) as usize,
-         0.max(y as i16 + dy).min(height as i16 - 1) as usize)
+        (
+            0.max(x as i16 + dx).min(width as i16 - 1) as usize,
+            0.max(y as i16 + dy).min(height as i16 - 1) as usize,
+        )
     }
 
-    fn entities(level: &Level) -> impl Iterator<Item=((usize, usize, usize), LiveEntity)> + '_ {
-        level.iter()
-             .enumerate()
-             .flat_map(move |(y, row)|
-                 row.iter()
-                    .enumerate()
-                    .flat_map(move |(x, cell)|
-                        cell.iter()
-                            .enumerate()
-                            .map(move |(i, e)| ((x, y, i), *e))))
+    fn entities(level: &Level) -> impl Iterator<Item = ((usize, usize, usize), LiveEntity)> + '_ {
+        level.iter().enumerate().flat_map(move |(y, row)| {
+            row.iter()
+                .enumerate()
+                .flat_map(move |(x, cell)| cell.iter().enumerate().map(move |(i, e)| ((x, y, i), *e)))
+        })
     }
 
-    fn is_or_has(id: &mut u64, level: &Level, x: usize, y: usize, i: usize, rules: &[Vec<(Subject, TextOrNoun)>; 2]) -> Vec<LiveEntity> {
-        let [yes, no] = array_map_ref(&rules,
-            |v| v.iter()
-                 .filter(|(s, _)| subject_match(level, x, y, i, s))
-                 .map(|(_, e)| e)
-                 .copied()
-                 .collect::<HashSet<TextOrNoun>>());
+    fn is_or_has(
+        id: &mut u64,
+        level: &Level,
+        x: usize,
+        y: usize,
+        i: usize,
+        rules: &[Vec<(Subject, TextOrNoun)>; 2],
+    ) -> Vec<LiveEntity> {
+        let [yes, no] = array_map_ref(&rules, |v| {
+            v.iter()
+                .filter(|(s, _)| subject_match(level, x, y, i, s))
+                .map(|(_, e)| e)
+                .copied()
+                .collect::<HashSet<TextOrNoun>>()
+        });
 
         let mut result = yes.difference(&no).copied().collect::<Vec<TextOrNoun>>();
         result.sort();
         let e = level[y][x][i];
         result
-          .iter()
-          .map(|x| LiveEntity {
-              dir: e.dir,
-              id: {*id += 1; *id},
-              e: match x {
-                  TextOrNoun::Noun(n) => Entity::Noun(*n),
-                  TextOrNoun::Text => Entity::Text(match e.e {
-                      Entity::Noun(n) => Text::Object(n),
-                      Entity::Text(_) => Text::Text,
-                  }),
-              }
-          })
-          .collect()
+            .iter()
+            .map(|x| LiveEntity {
+                dir: e.dir,
+                id: {
+                    *id += 1;
+                    *id
+                },
+                e: match x {
+                    TextOrNoun::Noun(n) => Entity::Noun(*n),
+                    TextOrNoun::Text => Entity::Text(match e.e {
+                        Entity::Noun(n) => Text::Object(n),
+                        Entity::Text(_) => Text::Text,
+                    }),
+                },
+            })
+            .collect()
     }
 
     fn has(id: &mut u64, level: &Level, x: usize, y: usize, i: usize, rules: &RulesCache) -> Vec<LiveEntity> {
@@ -1132,7 +1192,12 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
     }
 
     // move things
-    fn move_things(id: &mut u64, level: &mut Level, rules: &Vec<Rule>, movers: Vec<(usize, usize, usize, Direction, bool)>) {
+    fn move_things(
+        id: &mut u64,
+        level: &mut Level,
+        rules: &Vec<Rule>,
+        movers: Vec<(usize, usize, usize, Direction, bool)>,
+    ) {
         let rules_cache = cache_rules(rules);
         let width = level[0].len();
         let height = level.len();
@@ -1149,7 +1214,13 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
             is_move: bool,
         }
 
-        let try_move = |queue: &mut VecDeque<(usize, usize, usize)>, movements: &mut HashMap<(usize, usize, usize), Arrow>, x, y, i, d, m| {
+        let try_move = |queue: &mut VecDeque<(usize, usize, usize)>,
+                        movements: &mut HashMap<(usize, usize, usize), Arrow>,
+                        x,
+                        y,
+                        i,
+                        d,
+                        m| {
             let arrow = Arrow {
                 dir: d,
                 status: Status::Pending { flipped: false },
@@ -1222,8 +1293,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                     if tombstones.contains(&(x_, y_, j)) {
                         continue;
                     }
-                    let open = is(x_, y_, j, Open) && is(x, y, i, Shut)
-                            || is(x_, y_, j, Shut) && is(x, y, i, Open);
+                    let open = is(x_, y_, j, Open) && is(x, y, i, Shut) || is(x_, y_, j, Shut) && is(x, y, i, Open);
                     if open {
                         // add tombstones to both
                         tombstones.insert((x, y, i));
@@ -1239,22 +1309,32 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                     }
                     result = match movements.get(&(x_, y_, j)) {
                         Some(b) if a.dir == b.dir => match b.status {
-                            Status::Resolved { moving } =>
-                                if moving { result } else { Some(true) },
+                            Status::Resolved { moving } => {
+                                if moving {
+                                    result
+                                } else {
+                                    Some(true)
+                                }
+                            }
                             _ => None,
                         },
-                        _ => if stop || pull { Some(true) } else { result },
+                        _ => {
+                            if stop || pull {
+                                Some(true)
+                            } else {
+                                result
+                            }
+                        }
                     }
                 }
                 result
             };
 
-            let flipped =
-                if let Status::Pending { flipped } = a.status {
-                    flipped
-                } else {
-                    continue; // should be impossible
-                };
+            let flipped = if let Status::Pending { flipped } = a.status {
+                flipped
+            } else {
+                continue; // should be impossible
+            };
 
             match at_unmoving_stop {
                 Some(true) => {
@@ -1271,11 +1351,11 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                         a.status = Status::Resolved { moving: false };
                     }
                     continue;
-                },
+                }
                 None => {
                     queue.push_back((x, y, i));
                     continue;
-                },
+                }
                 Some(false) => (),
             }
 
@@ -1321,7 +1401,9 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                         let ix = n_inserts + r - i;
                         let inserts = if tombstones.contains(&(x, y, ix)) {
                             has(id, &level, x, y, ix, &rules_cache)
-                        } else { vec![] };
+                        } else {
+                            vec![]
+                        };
                         level[y][x].remove(ix);
                         for e in &inserts {
                             level[y][x].insert(ix, *e)
@@ -1337,7 +1419,7 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
                     for &(_, o) in cell {
                         if let Some((e, d)) = o {
                             let (x, y) = delta(&level, d, x, y);
-                            level[y][x].push(LiveEntity { dir: d, id: e.id, e: e.e, });
+                            level[y][x].push(LiveEntity { dir: d, id: e.id, e: e.e });
                         }
                     }
                 }
@@ -1353,26 +1435,30 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
             .filter_map(|((x, y, i), _)| match is(&level, x, y, i, &rules_cache, You) {
                 true => Some((x, y, i, d, false)),
                 false => None,
-            }).collect();
+            })
+            .collect();
         move_things(&mut id, &mut level, &rules, m);
     }
 
     // move cursor
     if let Go(d) = input {
-        'top:
-        for col in 0..level.len() {
+        'top: for col in 0..level.len() {
             for row in 0..level[0].len() {
                 for i in 0..level[col][row].len() {
                     if let Entity::Noun(Noun::Cursor) = level[col][row][i].e {
                         let (x, y) = delta(&level, d, row, col);
                         for j in 0..level[y][x].len() {
                             if let Entity::Noun(n) = level[y][x][j].e {
-                                if match n { Line => true, Level(_) => true, _ => false } {
+                                if match n {
+                                    Line => true,
+                                    Level(_) => true,
+                                    _ => false,
+                                } {
                                     let c = level[col][row].remove(i);
                                     level[y][x].push(LiveEntity {
                                         dir: d,
                                         id: c.id,
-                                        e: Entity::Noun(Noun::Cursor)
+                                        e: Entity::Noun(Noun::Cursor),
                                     });
                                     break 'top;
                                 }
@@ -1390,14 +1476,13 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
             .filter_map(|((x, y, i), e)| match is(&level, x, y, i, &rules_cache, Move) {
                 true => Some((x, y, i, e.dir, true)),
                 false => None,
-            }).collect();
+            })
+            .collect();
         move_things(&mut id, &mut level, &rules, m);
     }
 
     type SelectT = ((usize, usize), Vec<usize>, Vec<usize>);
-    fn select(
-        level: &Level, rules_cache: &RulesCache, a: Adjective, b: Option<Adjective>,
-    ) -> Vec<SelectT> {
+    fn select(level: &Level, rules_cache: &RulesCache, a: Adjective, b: Option<Adjective>) -> Vec<SelectT> {
         let mut result = vec![];
         let is = |x, y, i, q| is(&level, x, y, i, rules_cache, q);
         for y in 0..level.len() {
@@ -1491,13 +1576,19 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
         let select_intersecting = |a, b| select(&level, &rules_cache, a, Some(b));
 
         // sink
-        for (xy, _, ixs) in select_occupied(Sink) { delete_all(xy, ixs) }
+        for (xy, _, ixs) in select_occupied(Sink) {
+            delete_all(xy, ixs)
+        }
 
         // defeat
-        for (xy, _, yous) in select_intersecting(Defeat, You) { delete_all(xy, yous) }
+        for (xy, _, yous) in select_intersecting(Defeat, You) {
+            delete_all(xy, yous)
+        }
 
         // melt
-        for (xy, _, melts) in select_intersecting(Hot, Melt) { delete_all(xy, melts) }
+        for (xy, _, melts) in select_intersecting(Hot, Melt) {
+            delete_all(xy, melts)
+        }
 
         // open and shut
         for (xy, mut opens, mut shuts) in select_intersecting(Open, Shut) {
@@ -1509,7 +1600,9 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
         }
 
         // weak
-        for (xy, weaks, _) in select_occupied(Weak) { delete_all(xy, weaks) }
+        for (xy, weaks, _) in select_occupied(Weak) {
+            delete_all(xy, weaks)
+        }
 
         // flush deletions
         for y in 0..height {
@@ -1534,22 +1627,20 @@ fn step(l: &Level, input: Input, n: u32) -> (Level, bool) {
     {
         let mut rng = oorandom::Rand32::new(n as u64);
         fn tele_dest(rng: &mut oorandom::Rand32, pads: &Vec<(usize, usize)>, x: usize, y: usize) -> (usize, usize) {
-            let dests = pads.iter()
-                .filter(|xy| **xy != (x, y))
-                .collect::<Vec<_>>();
+            let dests = pads.iter().filter(|xy| **xy != (x, y)).collect::<Vec<_>>();
             *dests[rng.rand_range(0..dests.len() as u32) as usize]
         }
         let teles = select(&level, &rules_cache, Tele, None);
         let mut pads = teles.iter().map(|x| x.0).collect::<Vec<(usize, usize)>>();
         pads.dedup();
         if pads.len() > 1 {
-            let mut travelers: HashMap<(usize, usize), Vec<(usize, LiveEntity, (usize, usize))>>
-                = HashMap::new();
+            let mut travelers: HashMap<(usize, usize), Vec<(usize, LiveEntity, (usize, usize))>> = HashMap::new();
             for ((x, y), _, all) in teles {
                 for i in all {
                     if !is(&level, x, y, i, &rules_cache, Tele) {
                         travelers.entry((x, y)).or_insert(vec![]).push((
-                            i, level[y][x][i],
+                            i,
+                            level[y][x][i],
                             tele_dest(&mut rng, &pads, x, y),
                         ));
                     }
@@ -1578,21 +1669,25 @@ type Diff = (Level, Level, Level, String, Input);
 
 pub async fn render_diff(path: &str) {
     let (start, good, bad, palette_name, input) = load::<_, Diff>(path).unwrap();
-    let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
+    let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png"))
+        .await
+        .unwrap();
     let sprites = load_sprite_map();
-    let render = |s, x, y, w, h| render_level(
-        s,
-        &AnimationState::zero(),
-        0,
-        &palette,
-        &sprites,
-        &[],
-        &HashMap::new(),
-        &HashMap::new(),
-        true,
-        Rect::new(x, y, w, h),
-        20.,
-    );
+    let render = |s, x, y, w, h| {
+        render_level(
+            s,
+            &AnimationState::zero(),
+            0,
+            &palette,
+            &sprites,
+            &[],
+            &HashMap::new(),
+            &HashMap::new(),
+            true,
+            Rect::new(x, y, w, h),
+            20.,
+        )
+    };
     let font_size = 20.;
     let font_color = WHITE;
     loop {
@@ -1612,14 +1707,17 @@ pub async fn render_diff(path: &str) {
             {
                 let bounds = render(&start, 0., 0., width / 2., height);
                 draw_text(
-                    &format!("input: {}", match input {
-                        Go(Dir::Down) => "down",
-                        Go(Dir::Up) => "up",
-                        Go(Dir::Left) => "left",
-                        Go(Dir::Right) => "right",
-                        Wait => "wait",
-                        Undo => "undo",
-                    }),
+                    &format!(
+                        "input: {}",
+                        match input {
+                            Go(Dir::Down) => "down",
+                            Go(Dir::Up) => "up",
+                            Go(Dir::Left) => "left",
+                            Go(Dir::Right) => "right",
+                            Wait => "wait",
+                            Undo => "undo",
+                        }
+                    ),
                     width / 4. - 40.,
                     bounds.y + bounds.h + 20.,
                     font_size,
@@ -1629,23 +1727,11 @@ pub async fn render_diff(path: &str) {
 
             // after (good)
             let good_bounds = render(&good, width / 2., 0., width / 2., height / 2.);
-            draw_text(
-                "good:",
-                width / 2. - 50.,
-                10. + good_bounds.y,
-                font_size,
-                font_color,
-            );
+            draw_text("good:", width / 2. - 50., 10. + good_bounds.y, font_size, font_color);
 
             // after (maybe bad)
             let bad_bounds = render(&bad, width / 2., height / 2., width / 2., height / 2.);
-            draw_text(
-                "bad:",
-                width / 2. - 50.,
-                bad_bounds.y + bad_bounds.h - (font_size / 2.),
-                font_size,
-                font_color,
-            );
+            draw_text("bad:", width / 2. - 50., bad_bounds.y + bad_bounds.h - (font_size / 2.), font_size, font_color);
             for y in 0..bad.len() {
                 for x in 0..bad[0].len() {
                     if bad[y][x] != good[y][x] {
@@ -1700,15 +1786,22 @@ fn step_animation(s: &AnimationState, prev: &Level, new: &Level) -> AnimationSta
     }
     let prev = locations(prev);
     let new = locations(new);
-    let mut r = AnimationState{
-        movements: s.movements.iter()
+    let mut r = AnimationState {
+        movements: s
+            .movements
+            .iter()
             .filter(|(id, _)| new.contains_key(id))
             .map(|(&k, &v)| (k, v))
-            .collect()
+            .collect(),
     };
     for (id, loc) in new {
-        r.movements.entry(id)
-            .and_modify(|n| if prev[&id] != loc { *n += 1})
+        r.movements
+            .entry(id)
+            .and_modify(|n| {
+                if prev[&id] != loc {
+                    *n += 1
+                }
+            })
             .or_insert(0);
     }
     for v in r.movements.values_mut() {
@@ -1719,7 +1812,9 @@ fn step_animation(s: &AnimationState, prev: &Level, new: &Level) -> AnimationSta
 
 pub async fn replay(path: &str) {
     let (screens, inputs, palette_name) = load::<_, Replay>(path).unwrap();
-    let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
+    let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png"))
+        .await
+        .unwrap();
     let sprites = load_sprite_map();
 
     let mut last_input: (f64, Option<KeyCode>) = (0., None);
@@ -1729,16 +1824,17 @@ pub async fn replay(path: &str) {
 
     loop {
         // update
-        match debounce(
-            &mut last_input,
-            &[
-                (KeyCode::Right, Dir::Right),
-                (KeyCode::Left, Dir::Left),
-            ],
-            |_, t| t > 0.15,
-        ) {
-            Some(Dir::Right) => if i + 1 < screens.len() { i += 1 },
-            Some(Dir::Left) => if i > 0 { i -= 1 },
+        match debounce(&mut last_input, &[(KeyCode::Right, Dir::Right), (KeyCode::Left, Dir::Left)], |_, t| t > 0.15) {
+            Some(Dir::Right) => {
+                if i + 1 < screens.len() {
+                    i += 1
+                }
+            }
+            Some(Dir::Left) => {
+                if i > 0 {
+                    i -= 1
+                }
+            }
             _ => (),
         }
 
@@ -1760,7 +1856,7 @@ pub async fn replay(path: &str) {
 
         if i > 0 {
             draw_text(
-                &format!("{:?}", inputs[i-1]),
+                &format!("{:?}", inputs[i - 1]),
                 screen_width() * 0.05,
                 screen_height() * 0.93,
                 screen_width() * 0.03,
@@ -1785,30 +1881,25 @@ pub type Replay = (Vec<Level>, Vec<Input>, String);
 
 pub fn load<P: AsRef<std::path::Path>, T>(path: P) -> Result<T>
 where
-    T: for<'a> Deserialize<'a>
+    T: for<'a> Deserialize<'a>,
 {
     let mut scratch = String::new();
-    brotli::Decompressor::new(
-        std::fs::File::open(path)?, 4096,
-    ).read_to_string(&mut scratch)?;
+    brotli::Decompressor::new(std::fs::File::open(path)?, 4096).read_to_string(&mut scratch)?;
     Ok(ron::from_str(&scratch)?)
 }
 
 pub fn save<P: AsRef<std::path::Path>, T>(path: P, x: &T) -> Result<()>
 where
-    T: ?Sized + Serialize
+    T: ?Sized + Serialize,
 {
-    Ok(
-        brotli::CompressorWriter::new(
-            std::fs::File::create(path)?, 4096, 9, 20,
-        ).write_all(ron::to_string(x)?.as_bytes())?
-    )
+    Ok(brotli::CompressorWriter::new(std::fs::File::create(path)?, 4096, 9, 20)
+        .write_all(ron::to_string(x)?.as_bytes())?)
 }
 
 fn debounce<A, R>(prev: &mut (f64, Option<KeyCode>), keymap: &[(KeyCode, A)], repeat: R) -> Option<A>
 where
     A: Copy,
-    R: Fn(A, f64) -> bool
+    R: Fn(A, f64) -> bool,
 {
     let now = get_time();
     if let (_, Some(k)) = prev {
@@ -1816,15 +1907,18 @@ where
             *prev = (now, None);
         }
     }
-    let can_repeat = |prev: &(f64, Option<KeyCode>), k: KeyCode, a: A|
-        match prev {
-            (t, Some(x)) => *x != k || repeat(a, now - *t),
-            (_, None) => true,
-        };
-    keymap.iter()
-          .filter(|(k, a)| is_key_down(*k) && can_repeat(prev, *k, *a))
-          .next()
-          .map(|&(k, a)| { *prev = (now, Some(k)); a })
+    let can_repeat = |prev: &(f64, Option<KeyCode>), k: KeyCode, a: A| match prev {
+        (t, Some(x)) => *x != k || repeat(a, now - *t),
+        (_, None) => true,
+    };
+    keymap
+        .iter()
+        .filter(|(k, a)| is_key_down(*k) && can_repeat(prev, *k, *a))
+        .next()
+        .map(|&(k, a)| {
+            *prev = (now, Some(k));
+            a
+        })
 }
 
 #[derive(Debug)]
@@ -1835,7 +1929,10 @@ struct LevelGraph {
 
 fn parse_level_graph<P: AsRef<std::path::Path>>(path: P) -> Result<LevelGraph> {
     fn to_level_name(p: &std::path::Path) -> Result<LevelName> {
-        let f = p.file_name().and_then(|x| x.to_str()).ok_or(anyhow!("un-string-able path: {p:?}"))?;
+        let f = p
+            .file_name()
+            .and_then(|x| x.to_str())
+            .ok_or(anyhow!("un-string-able path: {p:?}"))?;
         let nm = f.split("-").next().ok_or(anyhow!("need dashes in level name: {p:?}"))?;
         if p.is_dir() {
             return Ok(SubWorld(nm.parse()?, 0));
@@ -1847,7 +1944,6 @@ fn parse_level_graph<P: AsRef<std::path::Path>>(path: P) -> Result<LevelGraph> {
         } else if nm == "extra" {
             let nm = f.split("-").skip(1).next().ok_or(anyhow!("need dashes in level name: {p:?}"))?;
             Ok(Extra(nm.parse::<u8>()?))
-
         } else {
             anyhow::bail!("level name doesn't fit normal pattern: {p:?}")
         }
@@ -1868,7 +1964,10 @@ fn parse_level_graph<P: AsRef<std::path::Path>>(path: P) -> Result<LevelGraph> {
             },
         }
     } else {
-        LevelGraph{ path: path.into(), sub_levels: HashMap::new() }
+        LevelGraph {
+            path: path.into(),
+            sub_levels: HashMap::new(),
+        }
     })
 }
 
@@ -1887,7 +1986,11 @@ pub async fn play_overworld(level: &str) {
     let mut stack = vec![(&level, None)];
     let mut last_input = (0., None);
     loop {
-        let (level, ix) = if let Some(x) = stack.pop() { x } else { return; };
+        let (level, ix) = if let Some(x) = stack.pop() {
+            x
+        } else {
+            return;
+        };
         let (result, input) = play_level(&sprites, last_input, &level.path, ix).await;
         last_input = input;
         match result {
@@ -1897,7 +2000,7 @@ pub async fn play_overworld(level: &str) {
             Enter(lvl) => {
                 stack.push((&level, Some(lvl)));
                 stack.push((&level.sub_levels[&erase_icon(lvl)], None));
-            },
+            }
         };
     }
 }
@@ -1908,14 +2011,16 @@ pub enum LevelResult {
     Enter(LevelName),
 }
 
-async fn play_level<P>
-    (sprites: &SpriteMap, mut last_input: (f64, Option<KeyCode>), level: P, cursor: Option<LevelName>)
-    -> (LevelResult, (f64, Option<KeyCode>))
+async fn play_level<P>(
+    sprites: &SpriteMap,
+    mut last_input: (f64, Option<KeyCode>),
+    level: P,
+    cursor: Option<LevelName>,
+) -> (LevelResult, (f64, Option<KeyCode>))
 where
-    P: AsRef<std::path::Path>
+    P: AsRef<std::path::Path>,
 {
-    let (mut level, palette_name, backgrounds, color_overrides, text_color_overrides) =
-        parse_level(level);
+    let (mut level, palette_name, backgrounds, color_overrides, text_color_overrides) = parse_level(level);
 
     fn place_cursor(level: &mut Level, at: LevelName) -> bool {
         let id = max_id(&level) + 1;
@@ -1927,7 +2032,7 @@ where
                             level[y][x].push(LiveEntity {
                                 dir: Dir::Right,
                                 id,
-                                e: Entity::Noun(Cursor)
+                                e: Entity::Noun(Cursor),
                             });
                             return true;
                         }
@@ -1955,7 +2060,9 @@ where
     let mut current_state = &history[0];
     let mut anim_states = vec![AnimationState::from_level(&level)];
 
-    let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
+    let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png"))
+        .await
+        .unwrap();
 
     let anim_time = 2.0;
     let border_color = palette.get_pixel(1, 0);
@@ -2012,23 +2119,22 @@ where
                         history.pop();
                         anim_states.pop();
                     }
-                },
+                }
                 Some(Control(i)) => {
                     let (next, win) = step(&current_state, i, history.len() as u32);
                     if win && win_time.is_none() {
                         win_time = Some(get_time());
                     }
                     if &next != current_state {
-                        anim_states.push(
-                            step_animation(
-                                &anim_states[anim_states.len() - 1],
-                                &history[history.len() - 1],
-                                &next,
-                            ));
+                        anim_states.push(step_animation(
+                            &anim_states[anim_states.len() - 1],
+                            &history[history.len() - 1],
+                            &next,
+                        ));
                         history.push(next);
                     }
                     input_count += 1;
-                },
+                }
                 Some(Pause) => return (LevelResult::Exit, last_input),
                 // Some(Pause) => paused = !paused,
                 Some(Enter) => {
@@ -2047,7 +2153,7 @@ where
                             }
                         }
                     }
-                },
+                }
                 Some(ToggleRenderMods) => render_mods = !render_mods,
             };
             current_state = &history[history.len() - 1];
@@ -2087,10 +2193,8 @@ where
                         return (LevelResult::Win((views, inputs, palette_name.to_string())), last_input);
                     }
                     gl_use_material(&MASK_MATERIAL);
-                    MASK_MATERIAL.set_uniform(
-                        "radius",
-                        (((get_time() - anim_start) / anim_time) as f32).min(0.5_f32.sqrt()),
-                    );
+                    MASK_MATERIAL
+                        .set_uniform("radius", (((get_time() - anim_start) / anim_time) as f32).min(0.5_f32.sqrt()));
                     let scale = (bounds.w * 0.65) / congrats.width();
                     draw_texture_ex(
                         &congrats,
@@ -2098,7 +2202,7 @@ where
                         bounds.y + (bounds.h - congrats.height() * scale) / 2.,
                         WHITE,
                         DrawTextureParams {
-                            dest_size: Some(Vec2{
+                            dest_size: Some(Vec2 {
                                 x: congrats.width() * scale,
                                 y: congrats.height() * scale,
                             }),
@@ -2106,7 +2210,7 @@ where
                         },
                     );
                     gl_use_default_material();
-                },
+                }
             }
         }
 
@@ -2137,17 +2241,18 @@ fn render_level(
 
     let rules = scan_rules(level);
 
-    let active_texts = rules
-        .iter()
-        .flat_map(|x| x.0.clone())
-        .collect::<HashSet<Index>>();
+    let active_texts = rules.iter().flat_map(|x| x.0.clone()).collect::<HashSet<Index>>();
 
     let (active_rules, overridden_rules) = partition_overridden_rules(rules);
 
     let overridden_texts = {
-        overridden_rules.into_iter().flat_map(|x| x.0).collect::<HashSet<Index>>().difference(
-            &active_rules.iter().flat_map(|x| x.0.clone()).collect::<HashSet<Index>>()
-        ).copied().collect::<HashSet<Index>>()
+        overridden_rules
+            .into_iter()
+            .flat_map(|x| x.0)
+            .collect::<HashSet<Index>>()
+            .difference(&active_rules.iter().flat_map(|x| x.0.clone()).collect::<HashSet<Index>>())
+            .copied()
+            .collect::<HashSet<Index>>()
     };
 
     let rules_cache = cache_rules(&active_rules.into_iter().map(|x| x.1).collect());
@@ -2157,8 +2262,12 @@ fn render_level(
     let draw_sprite = |x, y, sq, sprite, c: Color| {
         SPRITES_MATERIAL.set_uniform("color", [c.r, c.g, c.b]);
         draw_texture_ex(
-            sprite, x, y, WHITE, DrawTextureParams {
-                dest_size: Some(Vec2{x: sq, y: sq}),
+            sprite,
+            x,
+            y,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(Vec2 { x: sq, y: sq }),
                 ..Default::default()
             },
         );
@@ -2168,8 +2277,12 @@ fn render_level(
 
     for b in backgrounds {
         draw_texture_ex(
-            &sprites.3[b][anim_frame], offset_x, offset_y, WHITE, DrawTextureParams {
-                dest_size: Some(Vec2{x: game_width, y: game_height}),
+            &sprites.3[b][anim_frame],
+            offset_x,
+            offset_y,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(Vec2 { x: game_width, y: game_height }),
                 ..Default::default()
             },
         );
@@ -2182,10 +2295,8 @@ fn render_level(
             let y = offset_y + sq_size * row as f32;
             for (i, e) in level[row][col].iter().enumerate() {
                 let anim_frame = (row + col + i + anim_frame) % 3;
-                let cs = [
-                    (Red, (2, 2)),
-                    (Blue, (3, 2)),
-                ].into_iter()
+                let cs = [(Red, (2, 2)), (Blue, (3, 2))]
+                    .into_iter()
                     .filter(|c| is(&level, col, row, i, &rules_cache, c.0))
                     .map(|c| c.1)
                     .next();
@@ -2193,9 +2304,9 @@ fn render_level(
                 let (cx, cy) = match (cs, e.e) {
                     (Some(ix), _) => Some(ix),
                     (None, Entity::Noun(n)) => color_overrides.get(&n).copied(),
-                    (None, Entity::Text(t)) => text_color_overrides.get(&t)
-                        .map(|x| x[active as usize]),
-                }.unwrap_or_else(|| e.e.default_color(active));
+                    (None, Entity::Text(t)) => text_color_overrides.get(&t).map(|x| x[active as usize]),
+                }
+                .unwrap_or_else(|| e.e.default_color(active));
                 let c = palette.get_pixel(cx, cy);
                 if let Entity::Noun(Cursor) = e.e {
                     // draw it at the end so it's on top of everything
@@ -2233,7 +2344,7 @@ fn render_level(
                             Fuse => {
                                 let (right, above, left, below) = neighborhood();
                                 FuseState(Neighborhood { right, above, left, below })
-                            },
+                            }
                             Walk => WalkState(*anim_state.movements.get(&e.id).unwrap_or(&0), e.dir),
                             Look => LookState(physics_step as u8 % 4, e.dir),
                             Tick => TickState(physics_step as u8 % 4),
@@ -2250,25 +2361,17 @@ fn render_level(
                                     below_right: seamless && below && right && fuse(1, 1),
                                     below_left: seamless && below && left && fuse(1, -1),
                                 })
-                            },
+                            }
                         },
                     };
-                    draw_sprite(
-                        x, y, sq_size,
-                        &sprites.0[&(s, sprite_state)][anim_frame],
-                        c,
-                    );
+                    draw_sprite(x, y, sq_size, &sprites.0[&(s, sprite_state)][anim_frame], c);
                 }
                 if let Entity::Noun(Level(l)) = e.e {
                     let (x, y, sq) = match l {
                         Extra(_) => (x, y, sq_size),
                         Parent => (x, y, sq_size),
                         SubWorld(_, _) => (x, y, sq_size),
-                        _ => (
-                            x + sq_size * 0.175,
-                            y + sq_size * 0.175,
-                            sq_size * 0.6,
-                        ),
+                        _ => (x + sq_size * 0.175, y + sq_size * 0.175, sq_size * 0.6),
                     };
                     let l = match l {
                         SubWorld(_, i) => SubWorld(0, i),
@@ -2279,22 +2382,8 @@ fn render_level(
                 if overridden_texts.contains(&(col, row, i)) {
                     let c = palette.get_pixel(2, 1);
                     SPRITES_MATERIAL.set_uniform("color", [c.r, c.g, c.b]);
-                    draw_line(
-                        x,
-                        y,
-                        x + sq_size,
-                        y + sq_size,
-                        sq_size / 10.,
-                        c,
-                    );
-                    draw_line(
-                        x + sq_size,
-                        y,
-                        x,
-                        y + sq_size,
-                        sq_size / 10.,
-                        c,
-                    );
+                    draw_line(x, y, x + sq_size, y + sq_size, sq_size / 10., c);
+                    draw_line(x + sq_size, y, x, y + sq_size, sq_size / 10., c);
                 }
             }
         }
@@ -2322,14 +2411,13 @@ fn render_level(
                 let y = offset_y + sq_size * row as f32;
                 let l = level[row][col].len();
                 if l > 0 {
-                    draw_rectangle(
-                        x + sq_size * 0.2, y + sq_size * 0.25,
-                        sq_size * 0.6, sq_size * 0.5, BLACK,
-                    );
+                    draw_rectangle(x + sq_size * 0.2, y + sq_size * 0.25, sq_size * 0.6, sq_size * 0.5, BLACK);
                     draw_text(
                         &format!("{:02}", level[row][col][l - 1].id),
-                        x + sq_size * 0.25, y + sq_size * 0.6,
-                        sq_size * 0.5, WHITE,
+                        x + sq_size * 0.25,
+                        y + sq_size * 0.6,
+                        sq_size * 0.5,
+                        WHITE,
                     );
                 }
             }
@@ -2339,12 +2427,7 @@ fn render_level(
     Rect::new(offset_x, offset_y, game_width, game_height)
 }
 
-type SpriteMapT<T> = (
-    HashMap<(Entity, SpriteVariantState), [T; 3]>,
-    HashMap<LevelName, T>,
-    T,
-    HashMap<String, [T; 3]>,
-);
+type SpriteMapT<T> = (HashMap<(Entity, SpriteVariantState), [T; 3]>, HashMap<LevelName, T>, T, HashMap<String, [T; 3]>);
 type SpriteMap = SpriteMapT<Texture2D>;
 
 fn level_icon_names() -> Vec<String> {
@@ -2367,8 +2450,8 @@ fn load_sprite_map() -> SpriteMap {
 
         if let Ok(mut b) = std::fs::read(&cache) {
             let l = b.len() - 1;
-            let w = u16::from_be_bytes([b[l-3], b[l-2]]);
-            let h = u16::from_be_bytes([b[l-1], b[l-0]]);
+            let w = u16::from_be_bytes([b[l - 3], b[l - 2]]);
+            let h = u16::from_be_bytes([b[l - 1], b[l - 0]]);
             b.truncate(b.len() - 4);
             return Ok((w, h, b));
         }
@@ -2406,31 +2489,36 @@ fn load_sprite_map() -> SpriteMap {
             (Entity::Noun(Anni), _) => "resources/original/Data/Worlds/baba/Sprites",
             (Entity::Text(Text::Object(Anni)), _) => "resources/original/Data/Worlds/baba/Sprites",
             (Entity::Noun(Level(_)), _) => "resources",
-            (_, DiagState(n)) =>
+            (_, DiagState(n)) => {
                 if n.above_right || n.above_left || n.below_right || n.below_left {
                     "resources"
                 } else {
                     "resources/original/Data/Sprites"
                 }
+            }
             (Entity::Text(Text::Object(Violet)), _) => "resources/original/Data/Worlds/baba/Sprites",
             _ => "resources/original/Data/Sprites",
         };
         let base_name = match e {
-            Entity::Text(t) => "text_".to_string() + match t {
-                Text::Adjective(a) => a.into(),
-                Text::Object(o) => match o {
-                    Level(_) => "level",
-                    Seastar => "star",
-                    _ => o.into(),
-                },
-                _ => t.into(),
-            },
+            Entity::Text(t) => {
+                "text_".to_string()
+                    + match t {
+                        Text::Adjective(a) => a.into(),
+                        Text::Object(o) => match o {
+                            Level(_) => "level",
+                            Seastar => "star",
+                            _ => o.into(),
+                        },
+                        _ => t.into(),
+                    }
+            }
             Entity::Noun(n) => match n {
                 Bog => "water",
                 Lava => "water",
                 Violet => "flower",
                 _ => n.into(),
-            }.to_string(),
+            }
+            .to_string(),
         };
         fn face_ix(d: Direction) -> u8 {
             8 * match d {
@@ -2443,31 +2531,38 @@ fn load_sprite_map() -> SpriteMap {
         let variant = match d {
             IdleState => 0,
             FaceState(d) => face_ix(d),
-            FuseState(Neighborhood { left, above, right, below }) =>
-                (below as u8) << 3 |
-                (left  as u8) << 2 |
-                (above as u8) << 1 |
-                (right as u8),
+            FuseState(Neighborhood { left, above, right, below }) => {
+                (below as u8) << 3 | (left as u8) << 2 | (above as u8) << 1 | (right as u8)
+            }
             WalkState(n, d) => face_ix(d) + (n % 4),
             LookState(n, d) => face_ix(d) + (n % 4),
             TickState(n) => n % 4,
             DiagState(NeighborhoodDiag {
-                left, above, right, below,
-                below_left, below_right, above_left, above_right,
-            }) =>
-                (below_left  as u8) << 7 |
-                (below_right as u8) << 6 |
-                (above_left  as u8) << 5 |
-                (above_right as u8) << 4 |
-
-                (below as u8) << 3 |
-                (left  as u8) << 2 |
-                (above as u8) << 1 |
-                (right as u8),
+                left,
+                above,
+                right,
+                below,
+                below_left,
+                below_right,
+                above_left,
+                above_right,
+            }) => {
+                (below_left as u8) << 7
+                    | (below_right as u8) << 6
+                    | (above_left as u8) << 5
+                    | (above_right as u8) << 4
+                    | (below as u8) << 3
+                    | (left as u8) << 2
+                    | (above as u8) << 1
+                    | (right as u8)
+            }
         };
-        ((e, d), core::array::from_fn(|i| {
-            load_texture_sync(
-                &format!("{asset_dir}/{base_name}_{variant}_{}.png", i + 1)).unwrap()}))
+        (
+            (e, d),
+            core::array::from_fn(|i| {
+                load_texture_sync(&format!("{asset_dir}/{base_name}_{variant}_{}.png", i + 1)).unwrap()
+            }),
+        )
     }
 
     fn load_level_label(icons: &[String], l: LevelName) -> (LevelName, CPUTexture) {
@@ -2485,63 +2580,59 @@ fn load_sprite_map() -> SpriteMap {
             let bottom = h().max().unwrap();
             imageops::crop_imm(&img, left, top, right - left, bottom - top).to_image()
         }
-        (l, match l {
-            Number(n) => memo(&format!("level_number_{n}"), || {
-                let load = |n| image::open(
-                    &if n == 0 {
-                        format!("{original_sprite_path}/text_o_0_1.png")
-                    } else {
-                        format!("{original_sprite_path}/text_{n}_0_1.png")
-                    }
-                ).unwrap().into_rgba8();
-                let a = load(n / 10);
-                let b = load(n % 10);
-                assert!(a.width() == b.width() && a.height() == b.height());
-                let width = a.width();
-                let height = a.width();
-                let mut result = ImageBuffer::new(width, height);
-                let mut overlay = |img: image::RgbaImage, x| imageops::overlay(
-                    &mut result,
-                    &imageops::resize(
-                        &img, width / 2, height, imageops::Lanczos3,
-                    ),
-                    x, 0,
-                );
-                overlay(shrinkwrap(a), 0);
-                overlay(shrinkwrap(b), (width / 2).into());
-                Ok(image::DynamicImage::ImageRgba8(result))
-            }).unwrap(),
-            Extra(n) => load_texture_sync(
-                &format!("{custom_sprite_path}/pip_{n}.png")
-            ).unwrap(),
+        (
+            l,
+            match l {
+                Number(n) => memo(&format!("level_number_{n}"), || {
+                    let load = |n| {
+                        image::open(&if n == 0 {
+                            format!("{original_sprite_path}/text_o_0_1.png")
+                        } else {
+                            format!("{original_sprite_path}/text_{n}_0_1.png")
+                        })
+                        .unwrap()
+                        .into_rgba8()
+                    };
+                    let a = load(n / 10);
+                    let b = load(n % 10);
+                    assert!(a.width() == b.width() && a.height() == b.height());
+                    let width = a.width();
+                    let height = a.width();
+                    let mut result = ImageBuffer::new(width, height);
+                    let mut overlay = |img: image::RgbaImage, x| {
+                        imageops::overlay(
+                            &mut result,
+                            &imageops::resize(&img, width / 2, height, imageops::Lanczos3),
+                            x,
+                            0,
+                        )
+                    };
+                    overlay(shrinkwrap(a), 0);
+                    overlay(shrinkwrap(b), (width / 2).into());
+                    Ok(image::DynamicImage::ImageRgba8(result))
+                })
+                .unwrap(),
+                Extra(n) => load_texture_sync(&format!("{custom_sprite_path}/pip_{n}.png")).unwrap(),
 
-            Letter(l) => memo(&format!("level_letter_{l}"), || {
-                let bytes = std::fs::read(format!(
-                    "{original_sprite_path}/text_{l}_0_1.png",
-                ))?;
-                let img = image::load_from_memory_with_format(&bytes[..], ImageFormat::Png)?;
-                Ok(image::DynamicImage::ImageRgba8(shrinkwrap(img.into_rgba8())))
-            }).unwrap(),
-            SubWorld(_, icon) => load_texture_sync(
-                &format!(
+                Letter(l) => memo(&format!("level_letter_{l}"), || {
+                    let bytes = std::fs::read(format!("{original_sprite_path}/text_{l}_0_1.png",))?;
+                    let img = image::load_from_memory_with_format(&bytes[..], ImageFormat::Png)?;
+                    Ok(image::DynamicImage::ImageRgba8(shrinkwrap(img.into_rgba8())))
+                })
+                .unwrap(),
+                SubWorld(_, icon) => load_texture_sync(&format!(
                     "resources/original/Data/Worlds/baba/Sprites/icon_{}_1.png",
                     icons[icon],
-                )
-            ).unwrap(),
-            Parent => load_texture_sync(
-                &format!("{custom_sprite_path}/up.png")
-            ).unwrap(),
-
-        })
+                ))
+                .unwrap(),
+                Parent => load_texture_sync(&format!("{custom_sprite_path}/up.png")).unwrap(),
+            },
+        )
     }
 
     fn load_background(img: &str) -> (String, [CPUTexture; 3]) {
         fn load(img: &str, n: u8) -> CPUTexture {
-            load_texture_sync(
-                &format!(
-                    "resources/original/Data/Worlds/Baba/Images/{img}_{n}.png"
-                )
-            ).unwrap()
+            load_texture_sync(&format!("resources/original/Data/Worlds/Baba/Images/{img}_{n}.png")).unwrap()
         }
         (img.to_string(), [load(img, 1), load(img, 2), load(img, 3)])
     }
@@ -2550,58 +2641,71 @@ fn load_sprite_map() -> SpriteMap {
 
     let r: SpriteMapT<CPUTexture> = (
         all_entities()
-            .flat_map(|e| match match e { Entity::Text(_) => Idle, Entity::Noun(n) => n.sprite_variant() } {
-                Idle => vec![IdleState],
-                Face => Direction::iter().map(FaceState).collect::<Vec<_>>(),
-                Fuse => [[true, false]; 4].iter()
-                    .multi_cartesian_product()
-                    .map(|n| {
-                        if let &[r, a, l, b] = &n[..] {
-                            FuseState(Neighborhood {
-                                right: *r,
-                                above: *a,
-                                left: *l,
-                                below: *b,
-                            })
-                        } else { panic!("logic error") }
-                    })
-                    .collect::<Vec<_>>(),
-                Walk => iproduct!((0..4), Direction::iter())
-                    .map(|(n, d)| WalkState(n, d))
-                    .collect::<Vec<_>>(),
-                Look => iproduct!((0..4), Direction::iter())
-                    .map(|(n, d)| LookState(n, d))
-                    .collect::<Vec<_>>(),
-                Tick => (0..4).map(|t| TickState(t)).collect::<Vec<_>>(),
-                Diag => [[true, false]; 8].iter()
-                    .multi_cartesian_product()
-                    .filter(|n| {
-                        if let &[r, a, l, b, ar, al, br, bl] = &n[..] {
-                            (!*ar || *a && *r) &&
-                                (!*al || *a && *l) &&
-                                (!*br || *b && *r) &&
-                                (!*bl || *b && *l)
-                        } else { panic!("logic error") }
-                    })
-                    .map(|n| {
-                        if let &[r, a, l, b, ar, al, br, bl] = &n[..] {
-                            DiagState(NeighborhoodDiag {
-                                right: *r,
-                                above: *a,
-                                left: *l,
-                                below: *b,
-                                above_right: *ar,
-                                above_left: *al,
-                                below_right: *br,
-                                below_left: *bl,
-                            })
-                        } else { panic!("logic error") }
-                    })
-                    .collect::<Vec<_>>(),
-            }.into_iter().map(move |s| (e, s)))
+            .flat_map(|e| {
+                match match e {
+                    Entity::Text(_) => Idle,
+                    Entity::Noun(n) => n.sprite_variant(),
+                } {
+                    Idle => vec![IdleState],
+                    Face => Direction::iter().map(FaceState).collect::<Vec<_>>(),
+                    Fuse => [[true, false]; 4]
+                        .iter()
+                        .multi_cartesian_product()
+                        .map(|n| {
+                            if let &[r, a, l, b] = &n[..] {
+                                FuseState(Neighborhood {
+                                    right: *r,
+                                    above: *a,
+                                    left: *l,
+                                    below: *b,
+                                })
+                            } else {
+                                panic!("logic error")
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                    Walk => iproduct!((0..4), Direction::iter())
+                        .map(|(n, d)| WalkState(n, d))
+                        .collect::<Vec<_>>(),
+                    Look => iproduct!((0..4), Direction::iter())
+                        .map(|(n, d)| LookState(n, d))
+                        .collect::<Vec<_>>(),
+                    Tick => (0..4).map(|t| TickState(t)).collect::<Vec<_>>(),
+                    Diag => [[true, false]; 8]
+                        .iter()
+                        .multi_cartesian_product()
+                        .filter(|n| {
+                            if let &[r, a, l, b, ar, al, br, bl] = &n[..] {
+                                (!*ar || *a && *r) && (!*al || *a && *l) && (!*br || *b && *r) && (!*bl || *b && *l)
+                            } else {
+                                panic!("logic error")
+                            }
+                        })
+                        .map(|n| {
+                            if let &[r, a, l, b, ar, al, br, bl] = &n[..] {
+                                DiagState(NeighborhoodDiag {
+                                    right: *r,
+                                    above: *a,
+                                    left: *l,
+                                    below: *b,
+                                    above_right: *ar,
+                                    above_left: *al,
+                                    below_right: *br,
+                                    below_left: *bl,
+                                })
+                            } else {
+                                panic!("logic error")
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                }
+                .into_iter()
+                .map(move |s| (e, s))
+            })
             .map(|(e, s)| load(e, s))
             .collect(),
-        (0..20).map(move |x| Number(x))
+        (0..20)
+            .map(move |x| Number(x))
             .chain(('a'..'f').map(move |x| Letter(x)))
             .chain((1..7).map(move |x| Extra(x)))
             .chain((0..icons.len()).map(|x| SubWorld(0, x)))
@@ -2609,8 +2713,7 @@ fn load_sprite_map() -> SpriteMap {
             .map(|l| load_level_label(&icons, l))
             .collect(),
         load_texture_sync("resources/congratulations.png").unwrap(),
-        ["island", "island_decor", "flower"]
-            .into_iter().map(load_background).collect(),
+        ["island", "island_decor", "flower"].into_iter().map(load_background).collect(),
     );
 
     fn l((w, h, b): CPUTexture) -> Texture2D {
@@ -2628,15 +2731,11 @@ fn load_sprite_map() -> SpriteMap {
 }
 
 lazy_static! {
-
-    static ref BLEND_ALPHA: Option<BlendState> = Some(
-        BlendState::new(
-            Equation::Add,
-            BlendFactor::Value(BlendValue::SourceAlpha),
-            BlendFactor::OneMinusValue(BlendValue::SourceAlpha),
-        )
-    );
-
+    static ref BLEND_ALPHA: Option<BlendState> = Some(BlendState::new(
+        Equation::Add,
+        BlendFactor::Value(BlendValue::SourceAlpha),
+        BlendFactor::OneMinusValue(BlendValue::SourceAlpha),
+    ));
     static ref SPRITES_MATERIAL: Material = load_material(
         ShaderSource::Glsl {
             vertex: DEFAULT_VERTEX_SHADER,
@@ -2650,8 +2749,8 @@ lazy_static! {
             },
             ..Default::default()
         },
-    ).unwrap();
-
+    )
+    .unwrap();
     static ref MASK_MATERIAL: Material = load_material(
         ShaderSource::Glsl {
             vertex: DEFAULT_VERTEX_SHADER,
@@ -2665,8 +2764,8 @@ lazy_static! {
             },
             ..Default::default()
         },
-    ).unwrap();
-
+    )
+    .unwrap();
 }
 
 const SPRITE_FRAGMENT_SHADER: &'static str = "#version 100
