@@ -28,6 +28,7 @@
         name = "shell";
         buildInputs = lib.attrsets.mapAttrsToList writeShellScriptBin scripts ++ [
           cargo
+          rustfmt
         ];
       };
     });
