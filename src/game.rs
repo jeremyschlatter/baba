@@ -15,6 +15,7 @@ use std::{
     io::{Read, Write},
     iter,
     str::FromStr,
+    sync::mpsc::{Receiver, Sender},
 };
 
 #[derive_the_basics]
@@ -1049,6 +1050,94 @@ pub enum Input {
 }
 use Input::*;
 
+// LLM API types for HTTP-controlled gameplay
+pub enum LlmCommand {
+    Move(Input),
+    GetState,
+    Enter,
+}
+
+pub struct LlmContext {
+    cmd_rx: Receiver<LlmCommand>,
+    resp_tx: Sender<String>,
+    pending_response: bool,
+    response_buffer: String,
+}
+
+impl LlmContext {
+    pub fn new(cmd_rx: Receiver<LlmCommand>, resp_tx: Sender<String>) -> Self {
+        Self { cmd_rx, resp_tx, pending_response: false, response_buffer: String::new() }
+    }
+
+    fn try_recv(&mut self) -> Option<LlmCommand> {
+        if let Ok(cmd) = self.cmd_rx.try_recv() {
+            self.pending_response = true;
+            self.response_buffer.clear();
+            Some(cmd)
+        } else {
+            None
+        }
+    }
+
+    fn append(&mut self, text: &str) {
+        self.response_buffer.push_str(text);
+    }
+
+    fn respond(&mut self, text: &str) {
+        if self.pending_response {
+            self.response_buffer.push_str(text);
+            self.resp_tx.send(std::mem::take(&mut self.response_buffer)).unwrap();
+            self.pending_response = false;
+        }
+    }
+}
+
+pub fn run_llm_server(cmd_tx: Sender<LlmCommand>, resp_rx: Receiver<String>, port: u16) {
+    let server = tiny_http::Server::http(format!("127.0.0.1:{}", port)).expect("Failed to start LLM API server");
+    println!("LLM API listening on http://127.0.0.1:{}", port);
+
+    for mut request in server.incoming_requests() {
+        let action = {
+            let mut body = String::new();
+            if request.as_reader().read_to_string(&mut body).is_err() {
+                let _ = request.respond(tiny_http::Response::from_string("Failed to read body").with_status_code(400));
+                continue;
+            }
+            body.trim().to_lowercase()
+        };
+
+        let cmd = match request.method() {
+            tiny_http::Method::Get => Some(LlmCommand::GetState),
+            tiny_http::Method::Post => match action.as_str() {
+                "up" => Some(LlmCommand::Move(Go(Direction::Up))),
+                "down" => Some(LlmCommand::Move(Go(Direction::Down))),
+                "left" => Some(LlmCommand::Move(Go(Direction::Left))),
+                "right" => Some(LlmCommand::Move(Go(Direction::Right))),
+                "wait" => Some(LlmCommand::Move(Wait)),
+                "undo" => Some(LlmCommand::Move(Undo)),
+                "enter" => Some(LlmCommand::Enter),
+                _ => None,
+            },
+            _ => None,
+        };
+
+        let cmd = match cmd {
+            Some(c) => c,
+            None => {
+                let _ = request.respond(
+                    tiny_http::Response::from_string("Invalid action. Valid: up, down, left, right, wait, undo, enter")
+                        .with_status_code(400),
+                );
+                continue;
+            }
+        };
+
+        cmd_tx.send(cmd).expect("Game loop disconnected");
+        let response = resp_rx.recv().expect("Game loop disconnected");
+        let _ = request.respond(tiny_http::Response::from_string(response));
+    }
+}
+
 fn max_id(level: &Level) -> u64 {
     level.iter().flat_map(|row| row.iter().flat_map(|cell| cell.iter().map(|e| e.id))).max().unwrap_or(0)
 }
@@ -1925,7 +2014,7 @@ fn parse_level_graph<P: AsRef<std::path::Path>>(path: P) -> Result<LevelGraph> {
     })
 }
 
-pub async fn play_overworld(level: &str) {
+pub async fn play_overworld(level: &str, mut llm_ctx: Option<LlmContext>) {
     let sprites = load_sprite_map();
 
     fn erase_icon(l: LevelName) -> LevelName {
@@ -1943,15 +2032,26 @@ pub async fn play_overworld(level: &str) {
         let (level, ix) = if let Some(x) = stack.pop() {
             x
         } else {
+            // Game over - respond if there's a pending request
+            if let Some(ref mut llm) = llm_ctx {
+                llm.respond("Game Over - You Won!");
+            }
             return;
         };
-        let (result, input) = play_level(&sprites, last_input, &level.path, ix).await;
+        let (result, input) = play_level(&sprites, last_input, &level.path, ix, &mut llm_ctx).await;
         last_input = input;
         match result {
-            Win(_) => (),
+            Win(_) => {
+                if let Some(ref mut llm) = llm_ctx {
+                    llm.append("Level Complete!\n\n");
+                }
+            }
             Exit => (),
             Enter(Parent) => (),
             Enter(lvl) => {
+                if let Some(ref mut llm) = llm_ctx {
+                    llm.append(&format!("Entered: {:?}\n\n", lvl));
+                }
                 stack.push((&level, Some(lvl)));
                 stack.push((&level.sub_levels[&erase_icon(lvl)], None));
             }
@@ -1970,6 +2070,7 @@ async fn play_level<P>(
     mut last_input: (f64, Option<KeyCode>),
     level: P,
     cursor: Option<LevelName>,
+    llm_ctx: &mut Option<LlmContext>,
 ) -> (LevelResult, (f64, Option<KeyCode>))
 where
     P: AsRef<std::path::Path>,
@@ -2034,26 +2135,36 @@ where
 
     loop {
         // update
-        let current_input = debounce(
-            &mut last_input,
-            &[
-                (KeyCode::Right, Control(Go(Dir::Right))),
-                (KeyCode::Left, Control(Go(Dir::Left))),
-                (KeyCode::Up, Control(Go(Dir::Up))),
-                (KeyCode::Down, Control(Go(Dir::Down))),
-                (KeyCode::Space, Control(Wait)),
-                (KeyCode::Z, Control(Undo)),
-                (KeyCode::Escape, Pause),
-                (KeyCode::Enter, Enter),
-                (KeyCode::W, ToggleRenderMods),
-            ],
-            |i, t| match i {
-                Control(Undo) => t > 0.075,
-                Pause => false,
-                ToggleRenderMods => false,
-                _ => t > 0.15,
-            },
-        );
+        let current_input: Option<UIInput> = if let Some(ref mut llm) = llm_ctx {
+            // LLM API mode - get input from HTTP API
+            llm.try_recv().and_then(|cmd| match cmd {
+                LlmCommand::Move(input) => Some(Control(input)),
+                LlmCommand::GetState => None, // no action, response at render
+                LlmCommand::Enter => Some(Enter),
+            })
+        } else {
+            // Keyboard mode
+            debounce(
+                &mut last_input,
+                &[
+                    (KeyCode::Right, Control(Go(Dir::Right))),
+                    (KeyCode::Left, Control(Go(Dir::Left))),
+                    (KeyCode::Up, Control(Go(Dir::Up))),
+                    (KeyCode::Down, Control(Go(Dir::Down))),
+                    (KeyCode::Space, Control(Wait)),
+                    (KeyCode::Z, Control(Undo)),
+                    (KeyCode::Escape, Pause),
+                    (KeyCode::Enter, Enter),
+                    (KeyCode::W, ToggleRenderMods),
+                ],
+                |i, t| match i {
+                    Control(Undo) => t > 0.075,
+                    Pause => false,
+                    ToggleRenderMods => false,
+                    _ => t > 0.15,
+                },
+            )
+        };
         if paused {
             if let Some(Pause) = current_input {
                 paused = !paused;
@@ -2067,9 +2178,12 @@ where
                         history.pop();
                         anim_states.pop();
                     }
+                    let current_state = &history[history.len() - 1];
+                    println!("{}", llm_renderer::render_for_llm(&current_state));
                 }
                 Some(Control(i)) => {
                     let (next, win) = step(&current_state, i, history.len() as u32);
+                    println!("{}", llm_renderer::render_for_llm(&next));
                     if win && win_time.is_none() {
                         win_time = Some(get_time());
                     }
@@ -2156,6 +2270,13 @@ where
                     );
                     gl_use_default_material();
                 }
+            }
+        }
+
+        // LLM API response - send state if there's a pending request and we haven't won yet
+        if let Some(ref mut llm) = llm_ctx {
+            if llm.pending_response && win_time.is_none() {
+                llm.respond(&render_for_llm_with_status(current_state));
             }
         }
 
@@ -2733,7 +2854,7 @@ void main() {
 
 pub async fn record_golden(level: &str, output: &str) {
     let sprites = load_sprite_map();
-    let (result, _) = play_level(&sprites, (0., None), level, None).await;
+    let (result, _) = play_level(&sprites, (0., None), level, None, &mut None).await;
     if let LevelResult::Win(history) = result {
         save(&format!("goldens/{output}.ron.br"), &history).unwrap();
     }
@@ -3093,6 +3214,27 @@ mod llm_renderer {
 }
 
 pub use llm_renderer::render_for_llm;
+
+pub fn render_for_llm_with_status(level: &Level) -> String {
+    let mut output = render_for_llm(level);
+
+    // Check if anything has the YOU property
+    let rules = scan_rules_no_index(level);
+    let rules_cache = cache_rules(&rules);
+    let has_you = level.iter().enumerate().any(|(y, row)| {
+        row.iter()
+            .enumerate()
+            .any(|(x, cell)| cell.iter().enumerate().any(|(i, _)| is(level, x, y, i, &rules_cache, Adjective::You)))
+    });
+
+    output.push_str("\nStatus: ");
+    if !has_you {
+        output.push_str("stuck (nothing is YOU - try undo)");
+    } else {
+        output.push_str("playing");
+    }
+    output
+}
 
 pub fn render_level_for_llm(level_path: &str) -> String {
     let (level, _, _, _, _) = parse_level(level_path);
