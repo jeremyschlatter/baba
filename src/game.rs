@@ -2738,3 +2738,363 @@ pub async fn record_golden(level: &str, output: &str) {
         save(&format!("goldens/{output}.ron.br"), &history).unwrap();
     }
 }
+
+// ============================================================================
+// LLM-Optimized Renderer
+// ============================================================================
+
+mod llm_renderer {
+    use super::*;
+    use std::collections::BTreeMap;
+    use std::fmt::Write;
+
+    fn direction_arrow(dir: &Direction) -> char {
+        match dir {
+            Dir::Up => '↑',
+            Dir::Down => '↓',
+            Dir::Left => '←',
+            Dir::Right => '→',
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+    enum CodeType {
+        Entity,   // lowercase: ba, wa
+        TextNoun, // UPPERCASE: BA, WA
+        TextProp, // Mixed case: Yo, St
+        Operator, // Symbols: ==, &&
+    }
+
+    fn entity_base_name(e: &Entity) -> (&'static str, CodeType) {
+        match e {
+            Entity::Noun(n) => {
+                let name: &'static str = n.into();
+                (name, CodeType::Entity)
+            }
+            Entity::Text(t) => match t {
+                Text::Is => ("is", CodeType::Operator),
+                Text::And => ("and", CodeType::Operator),
+                Text::Has => ("has", CodeType::Operator),
+                Text::Not => ("not", CodeType::Operator),
+                Text::Text => ("text", CodeType::TextNoun),
+                Text::Empty => ("empty", CodeType::TextNoun),
+                Text::Object(n) => {
+                    let name: &'static str = n.into();
+                    (name, CodeType::TextNoun)
+                }
+                Text::Adjective(a) => {
+                    let name: &'static str = a.into();
+                    (name, CodeType::TextProp)
+                }
+            },
+        }
+    }
+
+    fn format_code(code: &str, code_type: CodeType) -> String {
+        match code_type {
+            CodeType::Entity => code.to_lowercase(),
+            CodeType::TextNoun => code.to_uppercase(),
+            CodeType::TextProp => {
+                let mut chars = code.chars();
+                match chars.next() {
+                    Some(c) => c.to_uppercase().chain(chars.flat_map(|c| c.to_lowercase())).collect(),
+                    None => String::new(),
+                }
+            }
+            CodeType::Operator => match code {
+                "is" => "==".to_string(),
+                "and" => "&&".to_string(),
+                "has" => "~~".to_string(),
+                "not" => "!!".to_string(),
+                _ => code.to_uppercase(),
+            },
+        }
+    }
+
+    struct CodeMap {
+        entity_to_code: HashMap<Entity, String>,
+        code_to_name: BTreeMap<String, String>,
+    }
+
+    fn build_code_map(level: &Level) -> CodeMap {
+        let mut entities_seen: HashSet<Entity> = HashSet::new();
+        for row in level {
+            for cell in row {
+                for live_entity in cell {
+                    entities_seen.insert(live_entity.e);
+                }
+            }
+        }
+
+        let mut entity_to_code: HashMap<Entity, String> = HashMap::new();
+        let mut used_codes: HashSet<String> = HashSet::new();
+        let mut code_to_name: BTreeMap<String, String> = BTreeMap::new();
+
+        let mut sorted_entities: Vec<Entity> = entities_seen.into_iter().collect();
+        sorted_entities.sort_by_key(|e| {
+            let (name, code_type) = entity_base_name(e);
+            (code_type, name.to_string())
+        });
+
+        for entity in sorted_entities {
+            let (base_name, code_type) = entity_base_name(&entity);
+
+            let chars: Vec<char> = base_name.chars().collect();
+            let mut code = if chars.len() >= 2 {
+                format!("{}{}", chars[0], chars[1])
+            } else if chars.len() == 1 {
+                format!("{}x", chars[0])
+            } else {
+                "xx".to_string()
+            };
+
+            let formatted = format_code(&code, code_type);
+            if used_codes.contains(&formatted) {
+                let mut found = false;
+                for i in 2..chars.len() {
+                    code = format!("{}{}", chars[0], chars[i]);
+                    let formatted = format_code(&code, code_type);
+                    if !used_codes.contains(&formatted) {
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    for c in 'a'..='z' {
+                        code = format!("{}{}", chars[0], c);
+                        let formatted = format_code(&code, code_type);
+                        if !used_codes.contains(&formatted) {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            let formatted = format_code(&code, code_type);
+            used_codes.insert(formatted.clone());
+            entity_to_code.insert(entity, formatted.clone());
+            code_to_name.insert(formatted, base_name.to_string());
+        }
+
+        CodeMap { entity_to_code, code_to_name }
+    }
+
+    fn render_legend(code_map: &CodeMap) -> String {
+        let mut output = String::from("Legend:\n");
+
+        let mut entities: Vec<(&String, &String)> = vec![];
+        let mut text_nouns: Vec<(&String, &String)> = vec![];
+        let mut properties: Vec<(&String, &String)> = vec![];
+        let mut operators: Vec<(&String, &String)> = vec![];
+
+        for (code, name) in &code_map.code_to_name {
+            let first_char = code.chars().next().unwrap_or('a');
+            if code == "==" || code == "&&" || code == "~~" || code == "!!" {
+                operators.push((code, name));
+            } else if first_char.is_lowercase() {
+                entities.push((code, name));
+            } else if first_char.is_uppercase() {
+                let second_char = code.chars().nth(1).unwrap_or('A');
+                if second_char.is_lowercase() {
+                    properties.push((code, name));
+                } else {
+                    text_nouns.push((code, name));
+                }
+            }
+        }
+
+        if !entities.is_empty() {
+            let _ = write!(output, "  Entities: ");
+            output.push_str(&entities.iter().map(|(c, n)| format!("{}={}", c, n)).collect::<Vec<_>>().join(", "));
+            output.push('\n');
+        }
+        if !text_nouns.is_empty() {
+            let _ = write!(output, "  Text nouns: ");
+            output.push_str(
+                &text_nouns.iter().map(|(c, n)| format!("{}={}", c, n.to_uppercase())).collect::<Vec<_>>().join(", "),
+            );
+            output.push('\n');
+        }
+        if !properties.is_empty() {
+            let _ = write!(output, "  Properties: ");
+            output.push_str(
+                &properties.iter().map(|(c, n)| format!("{}={}", c, n.to_uppercase())).collect::<Vec<_>>().join(", "),
+            );
+            output.push('\n');
+        }
+        if !operators.is_empty() {
+            let _ = write!(output, "  Operators: ");
+            output.push_str(
+                &operators.iter().map(|(c, n)| format!("{}={}", c, n.to_uppercase())).collect::<Vec<_>>().join(", "),
+            );
+            output.push('\n');
+        }
+
+        output
+    }
+
+    fn render_grid(level: &Level, code_map: &CodeMap) -> String {
+        let mut output = String::from("\nGrid:\n");
+
+        if level.is_empty() || level[0].is_empty() {
+            return output;
+        }
+
+        let width = level[0].len();
+
+        let _ = write!(output, "    ");
+        for col in 0..width {
+            let _ = write!(output, " {:02} ", col + 1);
+        }
+        output.push('\n');
+
+        for (row_idx, row) in level.iter().enumerate() {
+            let _ = write!(output, " {:02} ", row_idx + 1);
+
+            for cell in row {
+                if cell.is_empty() {
+                    output.push_str(" ...");
+                } else {
+                    let top_entity = &cell[cell.len() - 1];
+                    let code = code_map.entity_to_code.get(&top_entity.e).unwrap_or(&"??".to_string()).clone();
+                    let arrow = direction_arrow(&top_entity.dir);
+                    let _ = write!(output, " {}{}", code, arrow);
+                }
+            }
+            output.push('\n');
+        }
+
+        output
+    }
+
+    fn render_stacks(level: &Level, code_map: &CodeMap) -> String {
+        let mut output = String::from("\nStacks (top to bottom):\n");
+        let mut has_stacks = false;
+
+        for (row_idx, row) in level.iter().enumerate() {
+            for (col_idx, cell) in row.iter().enumerate() {
+                if cell.len() > 1 {
+                    has_stacks = true;
+                    let _ = write!(output, "  ({:02},{:02}): ", row_idx + 1, col_idx + 1);
+                    let items: Vec<String> = cell
+                        .iter()
+                        .rev()
+                        .map(|e| {
+                            let code = code_map.entity_to_code.get(&e.e).unwrap_or(&"??".to_string()).clone();
+                            let arrow = direction_arrow(&e.dir);
+                            format!("{}{}", code, arrow)
+                        })
+                        .collect();
+                    output.push_str(&items.join(", "));
+                    output.push('\n');
+                }
+            }
+        }
+
+        if !has_stacks {
+            output.push_str("  (none)\n");
+        }
+
+        output
+    }
+
+    fn format_rule(rule: &Rule) -> String {
+        let (subject, predicate) = rule;
+
+        let subject_str = match subject {
+            Yes(TextOrNoun::Noun(n)) => {
+                let name: &'static str = n.into();
+                name.to_uppercase()
+            }
+            Yes(TextOrNoun::Text) => "TEXT".to_string(),
+            No(TextOrNoun::Noun(n)) => {
+                let name: &'static str = n.into();
+                format!("NOT {}", name.to_uppercase())
+            }
+            No(TextOrNoun::Text) => "NOT TEXT".to_string(),
+        };
+
+        let predicate_str = match predicate {
+            Yes(IsAdjective(a)) => {
+                let name: &'static str = a.into();
+                format!("IS {}", name.to_uppercase())
+            }
+            Yes(IsNoun(TextOrNoun::Noun(n))) => {
+                let name: &'static str = n.into();
+                format!("IS {}", name.to_uppercase())
+            }
+            Yes(IsNoun(TextOrNoun::Text)) => "IS TEXT".to_string(),
+            Yes(HasNoun(TextOrNoun::Noun(n))) => {
+                let name: &'static str = n.into();
+                format!("HAS {}", name.to_uppercase())
+            }
+            Yes(HasNoun(TextOrNoun::Text)) => "HAS TEXT".to_string(),
+            No(IsAdjective(a)) => {
+                let name: &'static str = a.into();
+                format!("IS NOT {}", name.to_uppercase())
+            }
+            No(IsNoun(TextOrNoun::Noun(n))) => {
+                let name: &'static str = n.into();
+                format!("IS NOT {}", name.to_uppercase())
+            }
+            No(IsNoun(TextOrNoun::Text)) => "IS NOT TEXT".to_string(),
+            No(HasNoun(TextOrNoun::Noun(n))) => {
+                let name: &'static str = n.into();
+                format!("HAS NOT {}", name.to_uppercase())
+            }
+            No(HasNoun(TextOrNoun::Text)) => "HAS NOT TEXT".to_string(),
+        };
+
+        format!("{} {}", subject_str, predicate_str)
+    }
+
+    fn render_rules(level: &Level) -> String {
+        let rules = scan_rules(level);
+        let (active, canceled) = partition_overridden_rules(rules);
+
+        let mut output = String::from("\nActive rules:\n");
+        if active.is_empty() {
+            output.push_str("  (none)\n");
+        } else {
+            let mut formatted: Vec<String> = active.iter().map(|(_, r)| format_rule(r)).collect();
+            formatted.sort();
+            formatted.dedup();
+            for rule in formatted {
+                let _ = writeln!(output, "  {}", rule);
+            }
+        }
+
+        output.push_str("\nCanceled rules:\n");
+        if canceled.is_empty() {
+            output.push_str("  (none)\n");
+        } else {
+            let mut formatted: Vec<String> = canceled.iter().map(|(_, r)| format_rule(r)).collect();
+            formatted.sort();
+            formatted.dedup();
+            for rule in formatted {
+                let _ = writeln!(output, "  {}", rule);
+            }
+        }
+
+        output
+    }
+
+    pub fn render_for_llm(level: &Level) -> String {
+        let code_map = build_code_map(level);
+        let mut output = String::new();
+
+        output.push_str(&render_legend(&code_map));
+        output.push_str(&render_grid(level, &code_map));
+        output.push_str(&render_stacks(level, &code_map));
+        output.push_str(&render_rules(level));
+
+        output
+    }
+}
+
+pub use llm_renderer::render_for_llm;
+
+pub fn render_level_for_llm(level_path: &str) -> String {
+    let (level, _, _, _, _) = parse_level(level_path);
+    render_for_llm(&level)
+}

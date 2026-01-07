@@ -16,6 +16,8 @@ enum Commands {
     Replay { replay: String },
     #[command(about = "Render a diff (for testing)")]
     RenderDiff { diff: String },
+    #[command(about = "Render a level in LLM-optimized text format")]
+    RenderLlm { level: String },
 }
 use Commands::*;
 
@@ -34,6 +36,10 @@ async fn main() {
             Golden { level, output } => game::record_golden(&level, &output).await,
             Replay { replay } => game::replay(&replay).await,
             RenderDiff { diff } => game::render_diff(&diff).await,
+            RenderLlm { level } => {
+                let output = game::render_level_for_llm(&level);
+                print!("{}", output);
+            }
         },
     }
 }
