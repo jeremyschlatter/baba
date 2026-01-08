@@ -9,17 +9,15 @@ This skill enables you to play Baba Is You autonomously through an HTTP API.
 
 ## Starting the Game
 
-First, start the game with the LLM API enabled:
+Start the game with the LLM API enabled:
 
 ```bash
-# Start from the overworld (recommended)
-cargo run -- level levels/ --llm-api --llm-port 8080
-
-# Or start a specific level directly
-cargo run -- level levels/0-baba-is-you.txt --llm-api --llm-port 8080
+start-baba
 ```
 
-The game window will open (for visual observation) and the API will listen on the specified port.
+This builds and launches the game from the overworld with the API listening on port 8080 (or `$BABA_PORT` if set). The game window will open for visual observation.
+
+This command waits for the game to start. When it returns, the game is immediately playable.
 
 ## API Commands
 
