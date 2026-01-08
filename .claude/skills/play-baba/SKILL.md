@@ -7,12 +7,25 @@ description: Play Baba Is You autonomously through an HTTP API.
 
 This skill enables you to play Baba Is You autonomously through an HTTP API.
 
+## Picking a level
+
+You can browse available levels in the levels/ directory. I recommend one of the first eight:
+
+levels/0-baba-is-you.txt
+levels/1-where-do-i-go.txt
+levels/2-now-what-is-this.txt
+levels/3-out-of-reach.txt
+levels/4-forest-of-fall/
+levels/5-deep-forest/
+levels/6-off-limits.txt
+levels/7-grass-yard.txt
+
 ## Starting the Game
 
 Start the game with the LLM API enabled:
 
 ```bash
-start-baba
+start-baba <path/to/level.txt>
 ```
 
 This builds and launches the game from the overworld with the API listening on port 8080 (or `$BABA_PORT` if set). The game window will open for visual observation.
@@ -38,7 +51,7 @@ Valid actions:
 - `up`, `down`, `left`, `right` - movement
 - `wait` - pass turn
 - `undo` - revert last move
-- `enter` - enter level (in overworld)
+- `enter` - enter level (only works in an overworld)
 
 Set `BABA_PORT` environment variable if using a non-default port (default: 8080).
 

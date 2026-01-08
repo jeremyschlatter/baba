@@ -1,4 +1,11 @@
 {
+  "permissions": {
+    "allow": [
+      "Skill(play-baba)",
+      "Bash(start-baba)",
+      "Bash(baba:*)"
+    ]
+  },
   "hooks": {
     "PostToolUse": [
       {

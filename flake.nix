@@ -29,7 +29,7 @@
           </plist>
           EOF
           port="''${BABA_PORT:-8080}"
-          'Baba Is Clone.app'/baba_is_clone level levels/ --llm-api --llm-port "$port" &
+          'Baba Is Clone.app'/baba_is_clone level "$1" --llm-api --llm-port "$port" &
           pid=$!
           # Wait for server to be ready
           for i in $(seq 1 30); do
