@@ -18,14 +18,17 @@ The game window will open (for visual observation) and the API will listen on th
 
 ## API Commands
 
+Use the `baba` wrapper script (available in the nix dev shell):
+
 **Get current state:**
 ```bash
-curl http://127.0.0.1:8080/state
+baba state
+# or just: baba
 ```
 
 **Make a move:**
 ```bash
-curl -X POST http://127.0.0.1:8080/move -d 'ACTION'
+baba ACTION
 ```
 
 Valid actions:
@@ -33,6 +36,8 @@ Valid actions:
 - `wait` - pass turn
 - `undo` - revert last move
 - `enter` - enter level (in overworld)
+
+Set `BABA_PORT` environment variable if using a non-default port (default: 8080).
 
 ## Understanding the Output
 

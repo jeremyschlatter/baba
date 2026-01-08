@@ -5,6 +5,16 @@
     let
       scripts = {
         "check" = "cargo test";
+        "baba" = ''
+          set -eu
+          action="''${1:-state}"
+          port="''${BABA_PORT:-8080}"
+          if [ "$action" = "state" ]; then
+            curl -s "http://127.0.0.1:$port/state"
+          else
+            curl -s -X POST "http://127.0.0.1:$port/move" -d "$action"
+          fi
+        '';
         "run" = ''
           set -eu
           cargo build
@@ -28,6 +38,7 @@
         name = "shell";
         buildInputs = lib.attrsets.mapAttrsToList writeShellScriptBin scripts ++ [
           cargo
+          curl
           rustfmt
         ];
       };
