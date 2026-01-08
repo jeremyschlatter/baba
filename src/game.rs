@@ -1092,9 +1092,21 @@ impl LlmContext {
     }
 }
 
-pub fn run_llm_server(cmd_tx: Sender<LlmCommand>, resp_rx: Receiver<String>, port: u16) {
-    let server = tiny_http::Server::http(format!("127.0.0.1:{}", port)).expect("Failed to start LLM API server");
+pub fn run_llm_server(
+    cmd_tx: Sender<LlmCommand>,
+    resp_rx: Receiver<String>,
+    port: u16,
+    startup_tx: Sender<Result<(), String>>,
+) {
+    let server = match tiny_http::Server::http(format!("127.0.0.1:{}", port)) {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = startup_tx.send(Err(format!("Failed to start LLM API server on port {}: {}", port, e)));
+            return;
+        }
+    };
     println!("LLM API listening on http://127.0.0.1:{}", port);
+    let _ = startup_tx.send(Ok(()));
 
     for mut request in server.incoming_requests() {
         let action = {

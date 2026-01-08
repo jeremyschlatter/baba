@@ -42,7 +42,12 @@ async fn main() {
                 let llm_ctx = if llm_api {
                     let (cmd_tx, cmd_rx) = mpsc::channel();
                     let (resp_tx, resp_rx) = mpsc::channel();
-                    thread::spawn(move || game::run_llm_server(cmd_tx, resp_rx, llm_port));
+                    let (startup_tx, startup_rx) = mpsc::channel();
+                    thread::spawn(move || game::run_llm_server(cmd_tx, resp_rx, llm_port, startup_tx));
+                    if let Err(e) = startup_rx.recv().expect("Server thread died unexpectedly") {
+                        eprintln!("{}", e);
+                        std::process::exit(1);
+                    }
                     Some(game::LlmContext::new(cmd_rx, resp_tx))
                 } else {
                     None
