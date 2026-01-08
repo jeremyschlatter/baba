@@ -3218,13 +3218,15 @@ pub use llm_renderer::render_for_llm;
 pub fn render_for_llm_with_status(level: &Level) -> String {
     let mut output = render_for_llm(level);
 
-    // Check if anything has the YOU property
+    // Check if anything has the YOU property or is a Cursor (for overworld navigation)
     let rules = scan_rules_no_index(level);
     let rules_cache = cache_rules(&rules);
     let has_you = level.iter().enumerate().any(|(y, row)| {
-        row.iter()
-            .enumerate()
-            .any(|(x, cell)| cell.iter().enumerate().any(|(i, _)| is(level, x, y, i, &rules_cache, Adjective::You)))
+        row.iter().enumerate().any(|(x, cell)| {
+            cell.iter().enumerate().any(|(i, e)| {
+                is(level, x, y, i, &rules_cache, Adjective::You) || matches!(e.e, Entity::Noun(Noun::Cursor))
+            })
+        })
     });
 
     output.push_str("\nStatus: ");
