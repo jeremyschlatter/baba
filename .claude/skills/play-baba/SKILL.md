@@ -1,3 +1,8 @@
+---
+name: play-baba
+description: Play Baba Is You autonomously through an HTTP API.
+---
+
 # Playing Baba Is You via LLM API
 
 This skill enables you to play Baba Is You autonomously through an HTTP API.
@@ -45,9 +50,9 @@ The API returns a text representation of the game state:
 
 ```
 Legend:
-  Entities: ba=baba, wa=wall, fl=flag
-  Text nouns: BA=BABA, WA=WALL, FL=FLAG
-  Properties: Yo=YOU, St=STOP, Wi=WIN
+  Entities: ba=baba, fl=flag, wa=wall
+  Text nouns: BA=BABA, FL=FLAG, WA=WALL
+  Properties: St=STOP, Wi=WIN, Yo=YOU
   Operators: ===IS
 
 Grid:
