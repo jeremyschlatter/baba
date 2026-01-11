@@ -2288,7 +2288,7 @@ where
         // LLM API response - send state if there's a pending request and we haven't won yet
         if let Some(ref mut llm) = llm_ctx {
             if llm.pending_response && win_time.is_none() {
-                llm.respond(&render_for_llm_with_status(current_state));
+                llm.respond(&render_for_llm(current_state));
             }
         }
 
@@ -3212,43 +3212,36 @@ mod llm_renderer {
         output
     }
 
+    fn render_stuck(level: &Level) -> String {
+        // Check if anything has the YOU property or is a Cursor (for overworld navigation)
+        let rules = scan_rules_no_index(level);
+        let rules_cache = cache_rules(&rules);
+        let you_or_cursor = level.iter().enumerate().any(|(y, row)| {
+            row.iter().enumerate().any(|(x, cell)| {
+                cell.iter().enumerate().any(|(i, e)| {
+                    is(level, x, y, i, &rules_cache, Adjective::You) || matches!(e.e, Entity::Noun(Noun::Cursor))
+                })
+            })
+        });
+        String::from(if !you_or_cursor { "\nNOTE: Nothing is YOU - consider undo\n" } else { "" })
+    }
+
     pub fn render_for_llm(level: &Level) -> String {
         let code_map = build_code_map(level);
-        let mut output = String::new();
+        let mut output = String::from("\n");
 
         output.push_str(&render_legend(&code_map));
         output.push_str(&render_grid(level, &code_map));
         output.push_str(&render_stacks(level, &code_map));
         output.push_str(&render_rules(level));
+        output.push_str(&render_stuck(level));
+        output.push_str("\n---\n");
 
         output
     }
 }
 
 pub use llm_renderer::render_for_llm;
-
-pub fn render_for_llm_with_status(level: &Level) -> String {
-    let mut output = render_for_llm(level);
-
-    // Check if anything has the YOU property or is a Cursor (for overworld navigation)
-    let rules = scan_rules_no_index(level);
-    let rules_cache = cache_rules(&rules);
-    let has_you = level.iter().enumerate().any(|(y, row)| {
-        row.iter().enumerate().any(|(x, cell)| {
-            cell.iter().enumerate().any(|(i, e)| {
-                is(level, x, y, i, &rules_cache, Adjective::You) || matches!(e.e, Entity::Noun(Noun::Cursor))
-            })
-        })
-    });
-
-    output.push_str("\nStatus: ");
-    if !has_you {
-        output.push_str("stuck (nothing is YOU - try undo)");
-    } else {
-        output.push_str("playing");
-    }
-    output
-}
 
 pub fn render_level_for_llm(level_path: &str) -> String {
     let (level, _, _, _, _) = parse_level(level_path);

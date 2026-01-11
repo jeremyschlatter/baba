@@ -60,6 +60,7 @@ Set `BABA_PORT` environment variable if using a non-default port (default: 8080)
 The API returns a text representation of the game state:
 
 ```
+
 Legend:
   Entities: ba=baba, fl=flag, wa=wall
   Text nouns: BA=BABA, FL=FLAG, WA=WALL
@@ -77,7 +78,7 @@ Stacks (top to bottom):
 Active rules:
   BABA IS YOU
 
-Status: playing
+---
 ```
 
 ### Grid Notation
@@ -87,8 +88,7 @@ Status: playing
 - Coordinates are (row, column)
 
 ### Status Values
-- `playing` - normal gameplay, you can move
-- `stuck (nothing is YOU - try undo)` - no controllable entity
+- `NOTE: Nothing is YOU - consider undo` - no controllable entity. `left`, `right`, `up`, and `down` are all equivalent to `wait` in this state.
 
 ### Level Transitions
 When you complete a level or enter a new one:
