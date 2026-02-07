@@ -15,8 +15,8 @@ levels/0-baba-is-you.txt
 levels/1-where-do-i-go.txt
 levels/2-now-what-is-this.txt
 levels/3-out-of-reach.txt
-levels/4-forest-of-fall/
-levels/5-deep-forest/
+levels/4-still-out-of-reach.txt
+levels/5-volcano.txt
 levels/6-off-limits.txt
 levels/7-grass-yard.txt
 
