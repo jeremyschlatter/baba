@@ -165,6 +165,25 @@ impl Default for LevelName {
     }
 }
 
+impl LevelName {
+    // Code and legend label for the LLM renderer. The second character of the
+    // code is the exact character that parses to this level in a level file
+    // (see to_cell in parse_level; keep in sync). SubWorld has no single-char
+    // form (it comes from "x = map 1 lake" legend syntax), so it gets an 'm'
+    // prefix and its map number instead.
+    #[rustfmt::skip]
+    fn llm_code(self) -> (String, String) {
+        match self {
+            Number(n) if n < 10 => (format!("l{n}"), format!("level {n}")),
+            Number(n) => (format!("l{}", ['𝟎', '𝟏', '𝟐', '𝟑', '𝟒', '𝟓', '𝟔', '𝟕', '𝟖', '𝟗'][n as usize - 10]), format!("level {n}")),
+            Letter(c) => (format!("l{}", ['𝔸', '𝔹', 'ℂ', '𝔻', '𝔼'][(c as u8 - b'a') as usize]), format!("level {c}")),
+            Extra(n) => (format!("l{}", ['𝟙', '𝟚', '𝟛', '𝟜', '𝟝', '𝟞'][n as usize - 1]), format!("extra level {n}")),
+            SubWorld(n, _) => (format!("m{n}"), format!("sub-world map {n}")),
+            Parent => ("l•".to_string(), "parent level (exit this map)".to_string()),
+        }
+    }
+}
+
 #[derive_the_basics]
 #[derive(EnumIter, EnumString, EnumCount, IntoStaticStr, BabaProps)]
 #[strum(serialize_all = "snake_case")]
@@ -450,6 +469,7 @@ where
 
                 '.' => Line,
 
+                // NOTE: keep level characters in sync with LevelName::llm_code.
                 '𝟙' => Level(Extra(1)),
                 '𝟚' => Level(Extra(2)),
                 '𝟛' => Level(Extra(3)),
@@ -2970,6 +2990,16 @@ mod llm_renderer {
         });
 
         for entity in sorted_entities {
+            // Level entities get fixed, self-identifying codes derived from
+            // the level file syntax, e.g. Level(Extra(1)) => l𝟙.
+            if let Entity::Noun(Noun::Level(l)) = entity {
+                let (code, label) = l.llm_code();
+                used_codes.insert(code.clone());
+                entity_to_code.insert(entity, code.clone());
+                code_to_name.insert(code, label);
+                continue;
+            }
+
             let (base_name, code_type) = entity_base_name(&entity);
 
             let chars: Vec<char> = base_name.chars().collect();
