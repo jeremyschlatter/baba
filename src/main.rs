@@ -26,6 +26,14 @@ enum Commands {
     RenderDiff { diff: String },
     #[command(about = "Render a level in LLM-optimized text format")]
     RenderLlm { level: String },
+    #[command(about = "Render a single frame of a level to an image file")]
+    RenderFrame {
+        level: String,
+        #[arg(short, long, default_value = "frame.png")]
+        output: String,
+        #[arg(long, help = "Place the cursor on this level number")]
+        cursor: Option<u8>,
+    },
 }
 use Commands::*;
 
@@ -61,6 +69,7 @@ async fn main() {
                 let output = game::render_level_for_llm(&level);
                 print!("{}", output);
             }
+            RenderFrame { level, output, cursor } => game::render_frame(&level, &output, cursor).await,
         },
     }
 }

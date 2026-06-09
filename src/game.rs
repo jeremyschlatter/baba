@@ -1777,7 +1777,7 @@ pub async fn render_diff(path: &str) {
             &HashMap::new(),
             true,
             Rect::new(x, y, w, h),
-            20.,
+            1.,
         )
     };
     let font_size = 20.;
@@ -1936,7 +1936,7 @@ pub async fn replay(path: &str) {
             &HashMap::new(),
             true,
             Rect::new(0., 0., screen_width(), screen_height()),
-            40.,
+            1.,
         );
 
         if i > 0 {
@@ -2046,15 +2046,15 @@ fn parse_level_graph<P: AsRef<std::path::Path>>(path: P) -> Result<LevelGraph> {
     })
 }
 
+fn erase_icon(l: LevelName) -> LevelName {
+    match l {
+        SubWorld(i, _) => SubWorld(i, 0),
+        _ => l,
+    }
+}
+
 pub async fn play_overworld(level: &str, mut llm_ctx: Option<LlmContext>) {
     let sprites = load_sprite_map();
-
-    fn erase_icon(l: LevelName) -> LevelName {
-        match l {
-            SubWorld(i, _) => SubWorld(i, 0),
-            _ => l,
-        }
-    }
 
     use LevelResult::*;
     let level = parse_level_graph(level).unwrap();
@@ -2070,7 +2070,8 @@ pub async fn play_overworld(level: &str, mut llm_ctx: Option<LlmContext>) {
             }
             return;
         };
-        let (result, input) = play_level(&sprites, last_input, &level.path, ix, &mut llm_ctx).await;
+        let (result, input) =
+            play_level(&sprites, last_input, &level.path, ix, sub_level_names(level), &mut llm_ctx).await;
         last_input = input;
         match result {
             Win(_) => {
@@ -2097,34 +2098,54 @@ pub enum LevelResult {
     Enter(LevelName),
 }
 
+// "levels/2-solitary-island/3-bridge-building.txt" -> "bridge building"
+// "levels/1-the-lake/index.txt" -> "the lake"
+// "levels/2-solitary-island/extra-1-boiling-river.txt" -> "boiling river"
+fn sub_level_names(graph: &LevelGraph) -> HashMap<LevelName, String> {
+    graph
+        .sub_levels
+        .iter()
+        .map(|(&l, g)| {
+            let path = match g.path.file_name() == Some(std::ffi::OsStr::new("index.txt")) {
+                true => g.path.parent().unwrap(),
+                false => &g.path,
+            };
+            let stem = path.file_stem().unwrap().to_str().unwrap();
+            let skip = if stem.starts_with("extra-") { 2 } else { 1 };
+            (l, stem.split('-').skip(skip).collect::<Vec<_>>().join(" "))
+        })
+        .collect()
+}
+
+fn place_cursor(level: &mut Level, at: LevelName) -> bool {
+    let id = max_id(&level) + 1;
+    for y in 0..level.len() {
+        for x in 0..level[0].len() {
+            for i in 0..level[y][x].len() {
+                if let Entity::Noun(Level(l)) = level[y][x][i].e {
+                    if l == at {
+                        level[y][x].push(LiveEntity { dir: Dir::Right, id, e: Entity::Noun(Cursor) });
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
 async fn play_level<P>(
     sprites: &SpriteMap,
     mut last_input: (f64, Option<KeyCode>),
     level: P,
     cursor: Option<LevelName>,
+    names: HashMap<LevelName, String>,
     llm_ctx: &mut Option<LlmContext>,
 ) -> (LevelResult, (f64, Option<KeyCode>))
 where
     P: AsRef<std::path::Path>,
 {
     let (mut level, palette_name, backgrounds, color_overrides, text_color_overrides) = parse_level(level);
-
-    fn place_cursor(level: &mut Level, at: LevelName) -> bool {
-        let id = max_id(&level) + 1;
-        for y in 0..level.len() {
-            for x in 0..level[0].len() {
-                for i in 0..level[y][x].len() {
-                    if let Entity::Noun(Level(l)) = level[y][x][i].e {
-                        if l == at {
-                            level[y][x].push(LiveEntity { dir: Dir::Right, id, e: Entity::Noun(Cursor) });
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-        return false;
-    }
 
     if !place_cursor(&mut level, cursor.unwrap_or(Parent)) {
         place_cursor(&mut level, Number(0));
@@ -2271,8 +2292,10 @@ where
                 &text_color_overrides,
                 render_mods,
                 Rect::new(0., 0., screen_width(), screen_height()),
-                20.,
+                1.,
             );
+
+            draw_cursor_level_name(&current_state, &names, sprites, &palette, bounds);
 
             // draw pause menu
             if paused {
@@ -2327,11 +2350,11 @@ fn render_level(
     text_color_overrides: &HashMap<Text, [(u32, u32); 2]>,
     seamless: bool,
     bounds: Rect,
-    min_border: f32,
+    min_border: f32, // in grid squares
 ) -> Rect {
     let width = level[0].len();
     let height = level.len();
-    let sq_size = ((bounds.w - min_border) / width as f32).min((bounds.h - min_border) / height as f32);
+    let sq_size = (bounds.w / (width as f32 + 2. * min_border)).min(bounds.h / (height as f32 + 2. * min_border));
     let game_width = sq_size * width as f32;
     let game_height = sq_size * height as f32;
     let offset_x = bounds.x + (bounds.w - game_width) / 2.;
@@ -2519,7 +2542,63 @@ fn render_level(
     Rect::new(offset_x, offset_y, game_width, game_height)
 }
 
-type SpriteMapT<T> = (HashMap<(Entity, SpriteVariantState), [T; 3]>, HashMap<LevelName, T>, T, HashMap<String, [T; 3]>);
+// Draw the name of the level under the cursor in the top-left corner of the
+// screen, as in the original game.
+fn draw_cursor_level_name(
+    level: &Level,
+    names: &HashMap<LevelName, String>,
+    sprites: &SpriteMap,
+    palette: &Image,
+    bounds: Rect,
+) {
+    let name = level.iter().flatten().find_map(|cell| {
+        if !cell.iter().any(|e| e.e == Entity::Noun(Cursor)) {
+            return None;
+        }
+        cell.iter().find_map(|e| match e.e {
+            Entity::Noun(Level(l)) => names.get(&erase_icon(l)),
+            _ => None,
+        })
+    });
+    if let Some(name) = name {
+        // This follows the original game's writetext/displaylevelname logic
+        // (resources/original/Data/menu.lua): in units of 1/24th of a grid
+        // square, anchored at the outer frame origin (one square outside the
+        // level bounds; render_level's min_border guarantees this is on
+        // screen), each letter is centered at x = tilesize/2 + 10*(i+1) - 4,
+        // y = tilesize/2, with a fixed advance of 10 per character. The
+        // original's letter glyphs are smaller than the 24px text sprites we
+        // draw them from; 14 units matches.
+        let sq = bounds.w / level[0].len() as f32;
+        let s = sq / 24.;
+        let cell = 14. * s;
+        let (ox, oy) = (bounds.x - sq, bounds.y - sq);
+        let c = palette.get_pixel(0, 3);
+        gl_use_material(&SPRITES_MATERIAL);
+        SPRITES_MATERIAL.set_uniform("color", [c.r, c.g, c.b]);
+        for (i, ch) in name.chars().enumerate() {
+            if ch == ' ' {
+                continue;
+            }
+            draw_texture_ex(
+                &sprites.4[&ch],
+                ox + (18. + 10. * i as f32) * s - cell / 2.,
+                oy + 12. * s - cell / 2.,
+                WHITE,
+                DrawTextureParams { dest_size: Some(Vec2 { x: cell, y: cell }), ..Default::default() },
+            );
+        }
+        gl_use_default_material();
+    }
+}
+
+type SpriteMapT<T> = (
+    HashMap<(Entity, SpriteVariantState), [T; 3]>,
+    HashMap<LevelName, T>,
+    T,
+    HashMap<String, [T; 3]>,
+    HashMap<char, T>, // font
+);
 type SpriteMap = SpriteMapT<Texture2D>;
 
 fn level_icon_names() -> Vec<String> {
@@ -2797,6 +2876,10 @@ fn load_sprite_map() -> SpriteMap {
             .collect(),
         load_texture_sync("resources/congratulations.png").unwrap(),
         ["island", "island_decor", "flower"].into_iter().map(load_background).collect(),
+        ('a'..='z')
+            .chain('0'..='9')
+            .map(|c| (c, load_texture_sync(&format!("resources/original/Data/Sprites/text_{c}_0_1.png")).unwrap()))
+            .collect(),
     );
 
     fn l((w, h, b): CPUTexture) -> Texture2D {
@@ -2810,6 +2893,7 @@ fn load_sprite_map() -> SpriteMap {
         r.1.into_iter().map(|(k, v)| (k, l(v))).collect(),
         l(r.2),
         r.3.into_iter().map(|(k, [v0, v1, v2])| (k, [l(v0), l(v1), l(v2)])).collect(),
+        r.4.into_iter().map(|(k, v)| (k, l(v))).collect(),
     )
 }
 
@@ -2884,9 +2968,44 @@ void main() {
 }
 ";
 
+// Render a single frame of a level (or world directory) to an image file,
+// with the cursor placed as in play_level. Lets tools (and LLMs) check
+// rendering without running the interactive game.
+pub async fn render_frame(level: &str, output: &str, cursor: Option<u8>) {
+    let graph = parse_level_graph(level).unwrap();
+    let names = sub_level_names(&graph);
+    let sprites = load_sprite_map();
+    let (mut level, palette_name, backgrounds, color_overrides, text_color_overrides) = parse_level(&graph.path);
+    if !place_cursor(&mut level, cursor.map(Number).unwrap_or(Parent)) {
+        place_cursor(&mut level, Number(0));
+    }
+    let palette = load_image(&format!("resources/original/Data/Palettes/{palette_name}.png")).await.unwrap();
+
+    request_new_screen_size(1600., 900.);
+    next_frame().await;
+    next_frame().await;
+
+    clear_background(palette.get_pixel(1, 0));
+    let bounds = render_level(
+        &level,
+        &AnimationState::from_level(&level),
+        1,
+        &palette,
+        &sprites,
+        &backgrounds,
+        &color_overrides,
+        &text_color_overrides,
+        true,
+        Rect::new(0., 0., screen_width(), screen_height()),
+        1.,
+    );
+    draw_cursor_level_name(&level, &names, &sprites, &palette, bounds);
+    get_screen_data().export_png(output);
+}
+
 pub async fn record_golden(level: &str, output: &str) {
     let sprites = load_sprite_map();
-    let (result, _) = play_level(&sprites, (0., None), level, None, &mut None).await;
+    let (result, _) = play_level(&sprites, (0., None), level, None, HashMap::new(), &mut None).await;
     if let LevelResult::Win(history) = result {
         save(&format!("goldens/{output}.ron.br"), &history).unwrap();
     }

@@ -26,6 +26,9 @@ a simple text file.
 - Build: `cargo build`
 - Run: `cargo run`
 - Play specific level: `cargo run -- level levels/path/to/level.txt`
+- Render one frame to an image (to visually check rendering work):
+  `cargo run -- render-frame levels/2-solitary-island -o frame.png --cursor 3`
+  (takes a level file or world directory; `--cursor N` puts the cursor on level N)
 - Run tests: `cargo test`
 - Run single test: `cargo test test_name`
 - Run benchmarks: `cargo bench`
