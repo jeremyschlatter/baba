@@ -2099,6 +2099,7 @@ pub enum LevelResult {
 }
 
 // "levels/2-solitary-island/3-bridge-building.txt" -> "bridge building"
+// "levels/2-solitary-island/4-bridge-building-q.txt" -> "bridge building?"
 // "levels/1-the-lake/index.txt" -> "the lake"
 // "levels/2-solitary-island/extra-1-boiling-river.txt" -> "boiling river"
 fn sub_level_names(graph: &LevelGraph) -> HashMap<LevelName, String> {
@@ -2112,7 +2113,11 @@ fn sub_level_names(graph: &LevelGraph) -> HashMap<LevelName, String> {
             };
             let stem = path.file_stem().unwrap().to_str().unwrap();
             let skip = if stem.starts_with("extra-") { 2 } else { 1 };
-            (l, stem.split('-').skip(skip).collect::<Vec<_>>().join(" "))
+            let mut name = stem.split('-').skip(skip).collect::<Vec<_>>().join(" ");
+            if let Some(base) = name.strip_suffix(" q") {
+                name = format!("{base}?");
+            }
+            (l, name)
         })
         .collect()
 }
@@ -2565,13 +2570,12 @@ fn draw_cursor_level_name(
         // (resources/original/Data/menu.lua): in units of 1/24th of a grid
         // square, anchored at the outer frame origin (one square outside the
         // level bounds; render_level's min_border guarantees this is on
-        // screen), each letter is centered at x = tilesize/2 + 10*(i+1) - 4,
-        // y = tilesize/2, with a fixed advance of 10 per character. The
-        // original's letter glyphs are smaller than the 24px text sprites we
-        // draw them from; 14 units matches.
+        // screen), each letter's hotspot lands at x = tilesize/2 + 10*(i+1)
+        // - 4, y = tilesize/2, with a fixed advance of 10 per character. The
+        // glyphs in resources/font are the engine's own letter frames (8x24,
+        // hotspot 4,12), recovered from Assets.dat, drawn 1:1.
         let sq = bounds.w / level[0].len() as f32;
         let s = sq / 24.;
-        let cell = 14. * s;
         let (ox, oy) = (bounds.x - sq, bounds.y - sq);
         let c = palette.get_pixel(0, 3);
         gl_use_material(&SPRITES_MATERIAL);
@@ -2582,10 +2586,10 @@ fn draw_cursor_level_name(
             }
             draw_texture_ex(
                 &sprites.4[&ch],
-                ox + (18. + 10. * i as f32) * s - cell / 2.,
-                oy + 12. * s - cell / 2.,
+                ox + (18. + 10. * i as f32 - 4.) * s,
+                oy,
                 WHITE,
-                DrawTextureParams { dest_size: Some(Vec2 { x: cell, y: cell }), ..Default::default() },
+                DrawTextureParams { dest_size: Some(Vec2 { x: 8. * s, y: 24. * s }), ..Default::default() },
             );
         }
         gl_use_default_material();
@@ -2878,7 +2882,20 @@ fn load_sprite_map() -> SpriteMap {
         ["island", "island_decor", "flower"].into_iter().map(load_background).collect(),
         ('a'..='z')
             .chain('0'..='9')
-            .map(|c| (c, load_texture_sync(&format!("resources/original/Data/Sprites/text_{c}_0_1.png")).unwrap()))
+            .map(|c| (c, c.to_string()))
+            .chain(
+                [
+                    ('.', "period"),
+                    ('-', "hyphen"),
+                    ('?', "question"),
+                    ('!', "exclamation"),
+                    (',', "comma"),
+                    ('\'', "apostrophe"),
+                    (':', "colon"),
+                ]
+                .map(|(c, name)| (c, name.to_string())),
+            )
+            .map(|(c, name)| (c, load_texture_sync(&format!("resources/font/{name}.png")).unwrap()))
             .collect(),
     );
 
